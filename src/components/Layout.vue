@@ -15,7 +15,7 @@
         class="sidebar-menu"
       >
         <el-menu-item index="/dashboard">
-          <el-icon><Dashboard /></el-icon>
+          <el-icon><Odometer /></el-icon>
           <template #title>仪表板</template>
         </el-menu-item>
         
@@ -74,7 +74,7 @@
                   设置
                 </el-dropdown-item>
                 <el-dropdown-item divided>
-                  <el-icon><SwitchButton /></el-icon>
+                  <el-icon><Switch /></el-icon>
                   关于
                 </el-dropdown-item>
               </el-dropdown-menu>
@@ -94,16 +94,16 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { 
-  Dashboard, 
-  Folder, 
-  List, 
-  User, 
-  Document, 
-  Setting, 
-  Expand, 
+import {
+  Odometer,
+  Folder,
+  List,
+  User,
+  Document,
+  Setting,
+  Expand,
   Fold,
-  SwitchButton
+  Switch
 } from '@element-plus/icons-vue'
 
 const route = useRoute()

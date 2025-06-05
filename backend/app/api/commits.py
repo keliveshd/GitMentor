@@ -79,3 +79,68 @@ async def get_commits_stats(repo_id: Optional[int] = Query(None), db: Session = 
             "total_commits": total_commits,
             "analyzed_repositories": len([repo for repo in repositories if repo.last_analyzed])
         }
+
+@router.get("/repositories/{repo_id}/commits/{commit_hash}")
+async def get_commit_details(repo_id: int, commit_hash: str, db: Session = Depends(get_db)):
+    """获取提交详细信息"""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="仓库不存在")
+
+    try:
+        git_service = GitService(repo.path)
+        commit_details = git_service.get_commit_details(commit_hash)
+
+        if not commit_details:
+            raise HTTPException(status_code=404, detail="提交不存在")
+
+        return commit_details
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取提交详情失败: {str(e)}")
+
+@router.get("/repositories/{repo_id}/branches")
+async def get_branches(repo_id: int, db: Session = Depends(get_db)):
+    """获取仓库分支信息"""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="仓库不存在")
+
+    try:
+        git_service = GitService(repo.path)
+        branches = git_service.get_branches()
+        return {"branches": branches}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取分支信息失败: {str(e)}")
+
+@router.get("/repositories/{repo_id}/contributors")
+async def get_contributors(repo_id: int, db: Session = Depends(get_db)):
+    """获取仓库贡献者信息"""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="仓库不存在")
+
+    try:
+        git_service = GitService(repo.path)
+        contributors = git_service.get_contributors()
+        return {"contributors": contributors}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取贡献者信息失败: {str(e)}")
+
+@router.get("/repositories/{repo_id}/files/{file_path:path}/history")
+async def get_file_history(
+    repo_id: int,
+    file_path: str,
+    max_count: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db)
+):
+    """获取文件变更历史"""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(status_code=404, detail="仓库不存在")
+
+    try:
+        git_service = GitService(repo.path)
+        history = git_service.get_file_history(file_path, max_count)
+        return {"file_path": file_path, "history": history}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"获取文件历史失败: {str(e)}")

@@ -51,18 +51,19 @@ GitMentor是一个基于AI技术的Git提交分析工具，旨在帮助团队和
 
 #### 前端 (Tauri)
 - **Tauri 2.0**: 跨平台桌面应用框架
-- **React 18**: 用户界面库
+- **Vue 3**: 渐进式JavaScript框架
 - **TypeScript**: 类型安全的JavaScript
 - **Tailwind CSS**: 实用优先的CSS框架
-- **Shadcn/ui**: 现代化UI组件库
-- **Recharts**: 数据可视化图表库
-- **Zustand**: 轻量级状态管理
+- **Element Plus**: Vue 3 UI组件库
+- **Vue Router**: 官方路由管理
+- **Pinia**: Vue 3 官方状态管理
+- **Chart.js + Vue-Chartjs**: 数据可视化图表库
 
 **选择理由**:
 - Tauri提供原生性能和小体积
-- React生态系统成熟，组件丰富
-- TypeScript提供类型安全
-- Tailwind CSS快速开发现代UI
+- Vue 3 组合式API提供更好的TypeScript支持
+- Element Plus提供丰富的企业级组件
+- Pinia是Vue 3推荐的状态管理方案
 
 #### 后端 (Python Sidecar)
 - **FastAPI**: 现代化API框架
@@ -333,6 +334,353 @@ GitMentor是一个基于AI技术的Git提交分析工具，旨在帮助团队和
 - 错误率 < 1%
 - 用户满意度 > 4.5/5
 - 文档完整度 > 90%
+
+## 详细技术规范
+
+### 前端技术栈详细配置
+
+#### Tauri配置
+```json
+{
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "sidecar": true
+      },
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "exists": true
+      },
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": true
+      }
+    }
+  }
+}
+```
+
+#### 核心依赖包
+```json
+{
+  "dependencies": {
+    "vue": "^3.3.0",
+    "@tauri-apps/api": "^2.0.0",
+    "vue-router": "^4.2.0",
+    "pinia": "^2.1.0",
+    "element-plus": "^2.4.0",
+    "@element-plus/icons-vue": "^2.1.0",
+    "chart.js": "^4.4.0",
+    "vue-chartjs": "^5.2.0",
+    "axios": "^1.5.0",
+    "@vueuse/core": "^10.4.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^4.4.0",
+    "@vue/tsconfig": "^0.4.0",
+    "typescript": "^5.0.0",
+    "tailwindcss": "^3.3.0",
+    "autoprefixer": "^10.4.0",
+    "postcss": "^8.4.0",
+    "unplugin-auto-import": "^0.16.0",
+    "unplugin-vue-components": "^0.25.0"
+  }
+}
+```
+
+### 后端技术栈详细配置
+
+#### Python依赖
+```txt
+fastapi==0.103.0
+uvicorn==0.23.0
+gitpython==3.1.32
+sqlalchemy==2.0.20
+sqlite3
+pydantic==2.3.0
+httpx==0.24.0
+python-dotenv==1.0.0
+langchain==0.0.300
+openai==0.28.0
+anthropic==0.3.0
+ollama==0.1.0
+pandas==2.1.0
+numpy==1.24.0
+matplotlib==3.7.0
+jinja2==3.1.2
+reportlab==4.0.4
+```
+
+#### 项目结构
+```
+GitMentor/
+├── src-tauri/           # Tauri后端配置
+│   ├── src/
+│   ├── tauri.conf.json
+│   └── Cargo.toml
+├── src/                 # Vue前端源码
+│   ├── components/
+│   ├── views/
+│   ├── composables/
+│   ├── stores/
+│   ├── types/
+│   ├── router/
+│   └── utils/
+├── backend/             # Python后端源码
+│   ├── app/
+│   │   ├── api/
+│   │   ├── core/
+│   │   ├── models/
+│   │   ├── services/
+│   │   └── utils/
+│   ├── requirements.txt
+│   └── main.py
+├── docs/               # 项目文档
+├── tests/              # 测试文件
+└── scripts/            # 构建和部署脚本
+```
+
+### 数据库设计
+
+#### 核心表结构
+```sql
+-- 仓库信息表
+CREATE TABLE repositories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL,
+    remote_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_analyzed TIMESTAMP,
+    total_commits INTEGER DEFAULT 0
+);
+
+-- 提交信息表
+CREATE TABLE commits (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    repo_id INTEGER NOT NULL,
+    hash TEXT NOT NULL,
+    author_name TEXT NOT NULL,
+    author_email TEXT NOT NULL,
+    commit_date TIMESTAMP NOT NULL,
+    message TEXT NOT NULL,
+    files_changed INTEGER DEFAULT 0,
+    insertions INTEGER DEFAULT 0,
+    deletions INTEGER DEFAULT 0,
+    ai_analysis TEXT,
+    category TEXT,
+    FOREIGN KEY (repo_id) REFERENCES repositories (id)
+);
+
+-- 文件变更表
+CREATE TABLE file_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    commit_id INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    change_type TEXT NOT NULL, -- 'A', 'M', 'D', 'R'
+    insertions INTEGER DEFAULT 0,
+    deletions INTEGER DEFAULT 0,
+    FOREIGN KEY (commit_id) REFERENCES commits (id)
+);
+
+-- AI分析结果表
+CREATE TABLE ai_analyses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    commit_id INTEGER NOT NULL,
+    analysis_type TEXT NOT NULL, -- 'summary', 'quality', 'efficiency'
+    result TEXT NOT NULL,
+    confidence_score REAL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (commit_id) REFERENCES commits (id)
+);
+
+-- 配置表
+CREATE TABLE settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### API接口设计
+
+#### 核心API端点
+```python
+# 仓库管理
+POST   /api/repositories          # 添加仓库
+GET    /api/repositories          # 获取仓库列表
+GET    /api/repositories/{id}     # 获取仓库详情
+DELETE /api/repositories/{id}     # 删除仓库
+POST   /api/repositories/{id}/analyze  # 分析仓库
+
+# 提交分析
+GET    /api/commits               # 获取提交列表
+GET    /api/commits/{id}          # 获取提交详情
+POST   /api/commits/{id}/analyze  # 分析单个提交
+GET    /api/commits/stats         # 获取提交统计
+
+# 贡献者分析
+GET    /api/contributors          # 获取贡献者列表
+GET    /api/contributors/{email}  # 获取贡献者详情
+GET    /api/contributors/{email}/summary  # 获取贡献者工作汇总
+
+# 报告生成
+POST   /api/reports/generate      # 生成报告
+GET    /api/reports/{id}          # 获取报告
+GET    /api/reports/{id}/download # 下载报告
+
+# AI服务
+POST   /api/ai/analyze            # AI分析请求
+GET    /api/ai/models             # 获取可用模型
+POST   /api/ai/test-connection    # 测试AI服务连接
+
+# 配置管理
+GET    /api/settings              # 获取设置
+PUT    /api/settings              # 更新设置
+```
+
+## 开发环境搭建指南
+
+### 1. 系统要求
+- Windows 10/11 (推荐)
+- 16GB+ RAM
+- 100GB+ 可用磁盘空间
+- 稳定的网络连接
+
+### 2. 必需软件安装
+```powershell
+# 安装 Node.js (推荐使用 nvm-windows)
+winget install OpenJS.NodeJS
+
+# 安装 Python
+winget install Python.Python.3.11
+
+# 安装 Rust
+winget install Rustlang.Rustup
+
+# 安装 Git
+winget install Git.Git
+
+# 安装 VS Code
+winget install Microsoft.VisualStudioCode
+```
+
+### 3. 开发工具配置
+```powershell
+# 安装 Tauri CLI
+cargo install tauri-cli
+
+# 安装 Python 包管理器
+pip install pipenv
+
+# 全局安装前端工具
+npm install -g @tauri-apps/cli
+npm install -g typescript
+```
+
+### 4. 项目初始化脚本
+```powershell
+# 创建项目目录
+mkdir GitMentor
+cd GitMentor
+
+# 初始化 Tauri 项目
+npm create tauri-app@latest . --template vue-ts
+
+# 创建 Python 后端
+mkdir backend
+cd backend
+pipenv install fastapi uvicorn gitpython sqlalchemy
+
+# 返回项目根目录
+cd ..
+
+# 安装前端依赖
+npm install
+```
+
+## 质量保证计划
+
+### 代码质量标准
+- TypeScript严格模式
+- ESLint + Prettier配置
+- Python Black + isort格式化
+- 单元测试覆盖率 > 80%
+- 集成测试覆盖核心功能
+
+### 测试策略
+```
+测试金字塔:
+┌─────────────────┐
+│   E2E Tests     │  10%
+├─────────────────┤
+│ Integration     │  20%
+│    Tests        │
+├─────────────────┤
+│   Unit Tests    │  70%
+└─────────────────┘
+```
+
+### 性能基准
+- 应用冷启动: < 3秒
+- 仓库分析(1000提交): < 30秒
+- UI响应时间: < 100ms
+- 内存使用峰值: < 1GB
+
+## 项目进度跟踪
+
+### 技术决策记录
+- **2024-01-XX**: 前端框架从React调整为Vue 3
+- **2024-01-XX**: 包管理选择pip + requirements.txt
+- **2024-01-XX**: UI组件库选择Element Plus
+
+### 阶段进度状态
+
+#### 第一阶段：基础架构搭建
+- **状态**: 🟡 进行中
+- **开始时间**: 2025-06-05
+- **预计完成**: 待定
+- **实际完成**: 待定
+- **主要任务**:
+  - [x] 环境检查和开发工具安装
+  - [x] 项目初始化 (Tauri + Vue 3 + TypeScript)
+  - [x] 基础UI框架 (Vue 3 + Element Plus + Tailwind CSS)
+  - [x] Python后端基础架构 (FastAPI + SQLite + GitPython)
+  - [ ] Git集成模块
+  - [ ] 数据存储层完善
+  - [ ] Tauri-Python集成
+
+#### 第二阶段：AI分析引擎
+- **状态**: ⚪ 未开始
+- **开始时间**: 待定
+- **预计完成**: 待定
+
+#### 第三阶段：报告生成和可视化
+- **状态**: ⚪ 未开始
+- **开始时间**: 待定
+- **预计完成**: 待定
+
+#### 第四阶段：高级功能和优化
+- **状态**: ⚪ 未开始
+- **开始时间**: 待定
+- **预计完成**: 待定
+
+#### 第五阶段：用户体验和发布准备
+- **状态**: ⚪ 未开始
+- **开始时间**: 待定
+- **预计完成**: 待定
+
+### 学习点和最佳实践
+*待记录*
+
+### 遇到的问题和解决方案
+*待记录*
 
 ---
 

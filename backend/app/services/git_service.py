@@ -156,3 +156,103 @@ class GitService:
         except Exception as e:
             print(f"获取贡献者列表失败: {e}")
             return []
+
+    def get_commit_details(self, commit_hash: str) -> Dict[str, Any]:
+        """获取提交详细信息"""
+        try:
+            commit = self.repo.commit(commit_hash)
+
+            # 获取文件变更详情
+            file_changes = []
+            if commit.parents:
+                # 与父提交比较
+                parent = commit.parents[0]
+                diffs = parent.diff(commit)
+
+                for diff in diffs:
+                    change_type = "modified"
+                    if diff.new_file:
+                        change_type = "added"
+                    elif diff.deleted_file:
+                        change_type = "deleted"
+                    elif diff.renamed_file:
+                        change_type = "renamed"
+
+                    file_changes.append({
+                        "file_path": diff.b_path or diff.a_path,
+                        "change_type": change_type,
+                        "insertions": diff.b_blob.size if diff.b_blob else 0,
+                        "deletions": diff.a_blob.size if diff.a_blob else 0
+                    })
+
+            return {
+                "hash": commit.hexsha,
+                "message": commit.message.strip(),
+                "author_name": commit.author.name,
+                "author_email": commit.author.email,
+                "commit_date": commit.committed_datetime.isoformat(),
+                "parent_hashes": [p.hexsha for p in commit.parents],
+                "file_changes": file_changes,
+                "stats": {
+                    "files_changed": len(commit.stats.files),
+                    "insertions": commit.stats.total["insertions"],
+                    "deletions": commit.stats.total["deletions"]
+                }
+            }
+        except Exception as e:
+            print(f"获取提交详情失败: {e}")
+            return None
+
+    def get_branches(self) -> List[Dict[str, Any]]:
+        """获取分支信息"""
+        try:
+            branches = []
+
+            # 本地分支
+            for branch in self.repo.branches:
+                branches.append({
+                    "name": branch.name,
+                    "type": "local",
+                    "commit_hash": branch.commit.hexsha,
+                    "commit_date": branch.commit.committed_datetime.isoformat(),
+                    "is_active": branch == self.repo.active_branch
+                })
+
+            # 远程分支
+            for remote in self.repo.remotes:
+                for ref in remote.refs:
+                    if ref.name != f"{remote.name}/HEAD":
+                        branch_name = ref.name.replace(f"{remote.name}/", "")
+                        branches.append({
+                            "name": branch_name,
+                            "type": "remote",
+                            "remote": remote.name,
+                            "commit_hash": ref.commit.hexsha,
+                            "commit_date": ref.commit.committed_datetime.isoformat(),
+                            "is_active": False
+                        })
+
+            return branches
+        except Exception as e:
+            print(f"获取分支信息失败: {e}")
+            return []
+
+    def get_file_history(self, file_path: str, max_count: int = 50) -> List[Dict[str, Any]]:
+        """获取文件变更历史"""
+        try:
+            commits = list(self.repo.iter_commits(paths=file_path, max_count=max_count))
+
+            history = []
+            for commit in commits:
+                history.append({
+                    "hash": commit.hexsha,
+                    "message": commit.message.strip(),
+                    "author_name": commit.author.name,
+                    "author_email": commit.author.email,
+                    "commit_date": commit.committed_datetime.isoformat()
+                })
+
+            return history
+        except Exception as e:
+            print(f"获取文件历史失败: {e}")
+            return []
