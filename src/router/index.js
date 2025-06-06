@@ -3,6 +3,11 @@ import Layout from '../components/Layout.vue'
 
 const routes = [
   {
+    path: '/startup',
+    name: 'Startup',
+    component: () => import('../views/Startup.vue')
+  },
+  {
     path: '/',
     component: Layout,
     redirect: '/dashboard',
@@ -54,6 +59,18 @@ const routes = [
         name: 'AnalysisResults',
         component: () => import('../views/AnalysisResults.vue'),
         meta: { title: '分析结果', icon: 'DataAnalysis' }
+      },
+      {
+        path: '/repository-config',
+        name: 'RepositoryConfig',
+        component: () => import('../views/RepositoryConfig.vue'),
+        meta: { title: '仓库配置', icon: 'Setting' }
+      },
+      {
+        path: '/quality-dashboard',
+        name: 'QualityDashboard',
+        component: () => import('../views/QualityDashboard.vue'),
+        meta: { title: '质量仪表板', icon: 'Monitor' }
       },
       {
         path: '/settings',

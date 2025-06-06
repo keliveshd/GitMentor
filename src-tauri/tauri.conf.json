@@ -37,11 +37,13 @@
       "icons/icon.ico"
     ],
     "resources": [
-      "../backend/**/*"
+      "../backend/gitmentor-backend.exe"
     ],
-    "externalBin": [
-      "python"
-    ]
+    "externalBin": [],
+    "category": "DeveloperTool",
+    "shortDescription": "AI-powered Git commit analysis tool",
+    "longDescription": "GitMentor is an AI Agent-based Git commit analysis and quality control system with dual review mechanism.",
+    "copyright": "Copyright © 2024 GitMentor Team"
   },
   "plugins": {
     "dialog": {

@@ -44,6 +44,16 @@
           <template #title>分析结果</template>
         </el-menu-item>
 
+        <el-menu-item index="/quality-dashboard">
+          <el-icon><Monitor /></el-icon>
+          <template #title>质量仪表板</template>
+        </el-menu-item>
+
+        <el-menu-item index="/repository-config">
+          <el-icon><Setting /></el-icon>
+          <template #title>仓库配置</template>
+        </el-menu-item>
+
         <el-menu-item index="/reports">
           <el-icon><Document /></el-icon>
           <template #title>报告</template>
@@ -115,7 +125,8 @@ import {
   Fold,
   Switch,
   Tools,
-  TrendCharts
+  TrendCharts,
+  Monitor
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
