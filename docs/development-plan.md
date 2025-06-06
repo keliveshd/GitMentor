@@ -652,7 +652,7 @@ npm install
   - [x] 项目初始化 (Tauri + Vue 3 + TypeScript)
   - [x] 基础UI框架 (Vue 3 + Element Plus + Tailwind CSS)
   - [x] Python后端基础架构 (FastAPI + SQLite + GitPython)
-  - [ ] Git集成模块
+  - [x] Git集成模块 (仓库检测、提交历史、分支信息、贡献者统计)
   - [ ] 数据存储层完善
   - [ ] Tauri-Python集成
 

@@ -18,7 +18,10 @@ sys.path.append(str(Path(__file__).parent / "app"))
 from app.api.repositories import router as repositories_router
 from app.api.commits import router as commits_router
 from app.api.health import router as health_router
+from app.api.agents import router as agents_router
+from app.api.analysis import router as analysis_router
 from app.core.database import init_db
+from app.core.initialization import startup_initialization, shutdown_cleanup
 
 # 创建FastAPI应用
 app = FastAPI(
@@ -40,15 +43,32 @@ app.add_middleware(
 app.include_router(health_router, prefix="/api", tags=["健康检查"])
 app.include_router(repositories_router, prefix="/api", tags=["仓库管理"])
 app.include_router(commits_router, prefix="/api", tags=["提交分析"])
+app.include_router(agents_router, prefix="/api", tags=["Agent管理"])
+app.include_router(analysis_router, prefix="/api", tags=["分析结果"])
 
 @app.on_event("startup")
 async def startup_event():
-    """应用启动时初始化数据库"""
+    """应用启动时初始化"""
     try:
+        # 初始化数据库
         init_db()
         print("✅ 数据库初始化成功")
+
+        # 初始化AI服务和Agent
+        await startup_initialization()
+        print("✅ AI服务初始化成功")
+
     except Exception as e:
-        print(f"❌ 数据库初始化失败: {e}")
+        print(f"❌ 应用初始化失败: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """应用关闭时清理"""
+    try:
+        await shutdown_cleanup()
+        print("✅ 应用清理完成")
+    except Exception as e:
+        print(f"❌ 应用清理失败: {e}")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

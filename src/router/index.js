@@ -44,6 +44,18 @@ const routes = [
         meta: { title: '报告', icon: 'Document' }
       },
       {
+        path: '/agents',
+        name: 'AgentManagement',
+        component: () => import('../views/AgentManagement.vue'),
+        meta: { title: 'Agent管理', icon: 'Robot' }
+      },
+      {
+        path: '/analysis',
+        name: 'AnalysisResults',
+        component: () => import('../views/AnalysisResults.vue'),
+        meta: { title: '分析结果', icon: 'DataAnalysis' }
+      },
+      {
         path: '/settings',
         name: 'Settings',
         component: () => import('../views/Settings.vue'),

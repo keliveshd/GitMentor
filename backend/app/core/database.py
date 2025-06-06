@@ -58,6 +58,10 @@ def init_db():
         deletions INTEGER DEFAULT 0,
         ai_analysis TEXT,
         category TEXT,
+        task_id TEXT,
+        analysis_status TEXT DEFAULT 'pending',
+        quality_score REAL,
+        reviewer_feedback TEXT,
         FOREIGN KEY (repo_id) REFERENCES repositories (id),
         UNIQUE(repo_id, hash)
     );
@@ -71,6 +75,48 @@ def init_db():
         insertions INTEGER DEFAULT 0,
         deletions INTEGER DEFAULT 0,
         FOREIGN KEY (commit_id) REFERENCES commits (id)
+    );
+
+    -- Agent执行记录表
+    CREATE TABLE IF NOT EXISTS agent_executions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        agent_id TEXT NOT NULL,
+        agent_type TEXT NOT NULL,
+        input_data TEXT NOT NULL,
+        output_data TEXT NOT NULL,
+        confidence_score REAL,
+        processing_time REAL,
+        status TEXT NOT NULL, -- 'success', 'error'
+        error_message TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+
+    -- 质量控制记录表
+    CREATE TABLE IF NOT EXISTS quality_control_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        commit_hash TEXT NOT NULL,
+        analyzer_execution_id INTEGER,
+        reviewer_execution_id INTEGER,
+        final_status TEXT NOT NULL, -- 'approved', 'rejected', 'pending', 'error'
+        overall_quality_score REAL,
+        retry_count INTEGER DEFAULT 0,
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (analyzer_execution_id) REFERENCES agent_executions (id),
+        FOREIGN KEY (reviewer_execution_id) REFERENCES agent_executions (id)
+    );
+
+    -- Agent配置版本表
+    CREATE TABLE IF NOT EXISTS agent_config_versions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        agent_type TEXT NOT NULL,
+        version TEXT NOT NULL,
+        config_data TEXT NOT NULL,
+        is_active BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        activated_at TIMESTAMP
     );
 
     -- AI分析结果表

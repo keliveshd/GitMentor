@@ -33,7 +33,17 @@
           <el-icon><User /></el-icon>
           <template #title>贡献者</template>
         </el-menu-item>
-        
+
+        <el-menu-item index="/agents">
+          <el-icon><Tools /></el-icon>
+          <template #title>Agent管理</template>
+        </el-menu-item>
+
+        <el-menu-item index="/analysis">
+          <el-icon><TrendCharts /></el-icon>
+          <template #title>分析结果</template>
+        </el-menu-item>
+
         <el-menu-item index="/reports">
           <el-icon><Document /></el-icon>
           <template #title>报告</template>
@@ -103,7 +113,9 @@ import {
   Setting,
   Expand,
   Fold,
-  Switch
+  Switch,
+  Tools,
+  TrendCharts
 } from '@element-plus/icons-vue'
 
 const route = useRoute()
