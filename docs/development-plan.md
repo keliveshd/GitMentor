@@ -1,18 +1,19 @@
-# GitMentor - Git提交分析工具开发计划
+# GitMentor - 纯Rust客户端程序开发计划
 
 ## 项目概述
 
-GitMentor是一个基于AI技术的Git提交分析工具，旨在帮助团队和个人开发者深入了解代码仓库的贡献情况、工作效率和代码质量。
+GitMentor是一个基于AI技术的Git提交分析工具，采用纯Rust架构实现高性能、零依赖的桌面应用程序。项目从零开始搭建，专注于Windows和macOS平台支持。
 
 ### 核心价值
 - 自动化分析Git提交历史
 - 智能整理和汇总贡献者工作内容
 - 生成可视化报告和洞察
 - 提供代码质量和效率评估
+- 零依赖部署，单一可执行文件
 
 ## 技术架构设计
 
-### 整体架构
+### 新架构：纯Rust一体化设计
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                    Tauri Frontend                          │
@@ -20,23 +21,28 @@ GitMentor是一个基于AI技术的Git提交分析工具，旨在帮助团队和
 │  │   Dashboard     │  │   Settings      │  │   Reports   │ │
 │  │   Component     │  │   Component     │  │  Component  │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+│                    Vue 3 + TypeScript                      │
 └─────────────────────────────────────────────────────────────┘
                               │
-                              │ IPC Communication
+                              │ Tauri IPC
                               │
 ┌─────────────────────────────────────────────────────────────┐
-│                 Python Backend (Sidecar)                   │
+│                   Rust Backend (集成)                       │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │   Git Analysis  │  │   AI Service    │  │   Report    │ │
-│  │     Module      │  │     Module      │  │   Generator │ │
+│  │   Git Engine    │  │   Agent System  │  │   Storage   │ │
+│  │   (git2-rs)     │  │   (AI Agents)   │  │  Manager    │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────┘ │
 │  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
-│  │   Data Storage  │  │   API Manager   │  │   Config    │ │
-│  │     Module      │  │     Module      │  │   Manager   │ │
+│  │   LLM Client    │  │   Cache System  │  │   Config    │ │
+│  │   (reqwest)     │  │   (moka)        │  │  Manager    │ │
+│  └─────────────────┘  └─────────────────┘  └─────────────┘ │
+│  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────┐ │
+│  │   Database      │  │   Monitoring    │  │   Utils     │ │
+│  │   (sqlx)        │  │   (tracing)     │  │  (crypto)   │ │
 │  └─────────────────┘  └─────────────────┘  └─────────────┘ │
 └─────────────────────────────────────────────────────────────┘
                               │
-                              │ API Calls
+                              │ HTTPS API Calls
                               │
 ┌─────────────────────────────────────────────────────────────┐
 │                    LLM Services                             │
@@ -49,195 +55,363 @@ GitMentor是一个基于AI技术的Git提交分析工具，旨在帮助团队和
 
 ### 技术栈选择
 
-#### 前端 (Tauri)
-- **Tauri 2.0**: 跨平台桌面应用框架
-- **Vue 3**: 渐进式JavaScript框架
-- **TypeScript**: 类型安全的JavaScript
+#### 前端技术栈 (Tauri + Vue 3)
+- **Tauri 2.0**: 跨平台桌面应用框架，Rust后端集成
+- **Vue 3**: 渐进式JavaScript框架，组合式API
+- **TypeScript**: 类型安全的JavaScript超集
+- **Element Plus**: Vue 3 企业级UI组件库
 - **Tailwind CSS**: 实用优先的CSS框架
-- **Element Plus**: Vue 3 UI组件库
+- **Pinia**: Vue 3 官方状态管理库
 - **Vue Router**: 官方路由管理
-- **Pinia**: Vue 3 官方状态管理
 - **Chart.js + Vue-Chartjs**: 数据可视化图表库
+- **Vite**: 现代化前端构建工具
 
 **选择理由**:
-- Tauri提供原生性能和小体积
-- Vue 3 组合式API提供更好的TypeScript支持
+- Tauri提供原生性能和极小体积
+- Vue 3组合式API与TypeScript完美集成
 - Element Plus提供丰富的企业级组件
-- Pinia是Vue 3推荐的状态管理方案
+- 完全集成的Rust后端，无需外部依赖
 
-#### 后端 (Python Sidecar)
-- **FastAPI**: 现代化API框架
-- **GitPython**: Git仓库操作库
-- **SQLite**: 轻量级数据库
-- **SQLAlchemy**: ORM框架
-- **Pydantic**: 数据验证和序列化
-- **httpx**: 异步HTTP客户端
-- **python-dotenv**: 环境变量管理
+#### Rust后端技术栈 (完全集成)
+- **git2**: 高性能Git操作库，libgit2的Rust绑定
+- **sqlx**: 异步SQL工具包，编译时SQL检查
+- **tokio**: 异步运行时，高性能并发处理
+- **reqwest**: 现代HTTP客户端，支持async/await
+- **serde**: 序列化/反序列化框架
+- **moka**: 高性能缓存库，支持TTL和LRU
+- **handlebars**: 模板引擎，用于提示词管理
+- **tracing**: 结构化日志和监控
+- **anyhow/thiserror**: 错误处理
+- **config/figment**: 配置管理
+- **ring**: 加密库，用于API密钥安全存储
 
 **选择理由**:
-- FastAPI性能优秀，文档自动生成
-- GitPython提供完整的Git操作能力
-- SQLite无需额外安装，适合桌面应用
-- 丰富的Python生态系统
+- 零运行时依赖，静态编译
+- 内存安全和并发安全保证
+- 极致性能，特别是Git操作和数据处理
+- 丰富的异步生态系统
+- 编译时错误检查，减少运行时问题
 
-#### AI集成
-- **OpenAI API**: GPT-4/GPT-3.5支持
-- **Anthropic API**: Claude支持
-- **Ollama**: 本地LLM运行环境
-- **LangChain**: LLM应用开发框架
+#### AI集成策略
+- **统一LLM客户端**: 支持多个LLM提供商
+- **OpenAI API**: GPT-4/GPT-3.5支持，使用reqwest实现
+- **Anthropic API**: Claude支持，自实现客户端
+- **Ollama**: 本地LLM运行环境，HTTP API调用
+- **提示词管理**: 基于handlebars的模板系统
+- **API密钥安全**: 使用ring加密存储
 
-## 分阶段实施计划
+## 从零开始分阶段实施计划
 
-### 第一阶段：基础架构搭建 (2-3周)
-
-#### 目标
-建立项目基础架构，实现基本的Git仓库读取功能
-
-#### 具体任务
-1. **项目初始化**
-   - 创建Tauri项目结构
-   - 配置Python后端环境
-   - 设置开发工具链
-
-2. **基础UI框架**
-   - 实现主窗口布局
-   - 创建基础组件库
-   - 设置路由系统
-
-3. **Git集成模块**
-   - 实现Git仓库检测和读取
-   - 提取提交历史数据
-   - 解析提交信息和文件变更
-
-4. **数据存储层**
-   - 设计数据库模式
-   - 实现基础CRUD操作
-   - 数据缓存机制
-
-#### 可交付成果
-- 可运行的桌面应用原型
-- Git仓库基础信息展示
-- 提交历史列表功能
-
-### 第二阶段：AI分析引擎 (3-4周)
+### 第一阶段：项目基础搭建 (2周)
 
 #### 目标
-集成AI服务，实现智能提交分析功能
+建立完整的开发环境和基础架构，实现Tauri + Rust的基础框架
 
-#### 具体任务
-1. **AI服务集成**
-   - 实现多LLM提供商支持
-   - API密钥管理和安全存储
-   - 请求限流和错误处理
+#### Week 1: 环境搭建和项目初始化
 
-2. **提交分析算法**
-   - 提交消息语义分析
-   - 代码变更模式识别
-   - 工作内容自动分类
+**Day 1-2: 开发环境准备**
+```bash
+# 安装Rust工具链
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+rustup target add x86_64-pc-windows-msvc    # Windows目标
+rustup target add x86_64-apple-darwin       # macOS Intel目标
+rustup target add aarch64-apple-darwin      # macOS Apple Silicon目标
 
-3. **贡献者分析**
-   - 个人工作内容汇总
-   - 贡献度量化指标
-   - 协作模式分析
+# 安装Node.js和前端工具
+npm install -g @tauri-apps/cli
+npm install -g typescript
+```
 
-4. **本地LLM支持**
-   - Ollama集成
-   - 模型管理界面
-   - 离线分析能力
+**Day 3-4: 项目初始化**
+```bash
+# 创建Tauri项目
+npm create tauri-app@latest GitMentor --template vue-ts
+cd GitMentor
+
+# 配置基础依赖
+# 设置项目结构
+# 配置开发环境
+```
+
+**Day 5-7: 基础架构代码**
+- 实现基础的Rust模块结构
+- 设置tracing日志系统
+- 配置管理系统(config/figment)
+- 基础的Tauri命令框架
+- 错误处理系统(anyhow/thiserror)
+
+#### Week 2: 核心模块框架
+
+**Day 8-10: Git引擎基础**
+- 集成git2库
+- 实现Repository管理
+- 基础提交信息提取
+- 文件变更分析
+
+**Day 11-12: 数据库设计**
+- SQLite数据库设计
+- sqlx集成和迁移系统
+- 基础数据模型定义
+- 数据库连接池配置
+
+**Day 13-14: 前端基础框架**
+- Vue 3 + TypeScript项目结构
+- Element Plus集成
+- 基础路由和状态管理(Pinia)
+- Tauri命令调用封装
 
 #### 可交付成果
-- AI驱动的提交分析功能
-- 贡献者工作内容汇总
-- 支持本地和云端LLM
+- ✅ 完整的开发环境和工具链
+- ✅ 基础项目结构和模块框架
+- ✅ Git仓库基础读取功能
+- ✅ 数据库连接和基础操作
+- ✅ 前后端通信框架
+- ✅ 基础UI界面和路由系统
 
-### 第三阶段：报告生成和可视化 (2-3周)
+### 第二阶段：Git分析引擎 (3周)
 
 #### 目标
-实现丰富的数据可视化和报告生成功能
+实现完整的Git操作和基础分析功能，建立LLM集成基础
 
-#### 具体任务
-1. **数据可视化**
-   - 提交时间线图表
-   - 贡献者活跃度热力图
-   - 代码量变化趋势
-   - 文件修改频率分析
+#### Week 3: Git操作核心功能
 
-2. **报告生成**
-   - 自定义报告模板
-   - 多格式导出(PDF, HTML, Markdown)
-   - 定期报告自动生成
+**Day 15-17: 高级Git操作**
+- 实现完整的提交分析功能
+- 差异(diff)分析和统计
+- 分支信息和合并历史
+- 文件变更模式识别
+- 贡献者统计和分析
 
-3. **交互式仪表板**
-   - 实时数据更新
-   - 筛选和搜索功能
-   - 钻取分析能力
+**Day 18-19: 仓库监控和缓存**
+- 文件系统监控(notify)
+- 智能缓存系统(moka)
+- LRU缓存策略
+- 缓存命中率统计
+- 性能优化
+
+**Day 20-21: Tauri命令集成**
+- Git操作的Tauri命令封装
+- 异步操作处理
+- 错误处理和用户反馈
+- 进度报告机制
+
+#### Week 4: LLM集成基础
+
+**Day 22-24: LLM客户端实现**
+- 统一LLM客户端接口设计
+- reqwest HTTP客户端配置
+- API密钥安全存储(ring加密)
+- 请求限流和重试机制
+- 错误处理和降级策略
+
+**Day 25-26: OpenAI集成**
+- OpenAI API客户端实现
+- Chat Completions API集成
+- 流式响应处理
+- 令牌计数和成本控制
+- API响应缓存
+
+**Day 27-28: 提示词管理系统**
+- handlebars模板引擎集成
+- 动态提示词加载
+- 模板版本管理
+- 上下文数据注入
+- 提示词优化和A/B测试
+
+#### Week 5: Agent系统基础
+
+**Day 29-31: Agent基础架构**
+- Agent trait定义
+- 异步Agent执行框架
+- Agent生命周期管理
+- 配置热重载
+- 健康检查机制
+
+**Day 32-35: AnalyzerAgent实现**
+- Git提交分析Agent
+- 语义理解和分类
+- 代码质量评估
+- 影响范围分析
+- 置信度计算
 
 #### 可交付成果
-- 完整的数据可视化界面
-- 多格式报告导出功能
-- 交互式分析仪表板
+- ✅ 完整的Git分析引擎
+- ✅ 高性能缓存系统
+- ✅ LLM客户端基础框架
+- ✅ 提示词管理系统
+- ✅ Agent系统基础架构
+- ✅ 基础的提交分析功能
 
-### 第四阶段：高级功能和优化 (3-4周)
+### 第三阶段：AI Agent系统完善 (3周)
 
 #### 目标
-实现高级分析功能和性能优化
+实现完整的双重审核AI Agent系统和质量控制机制
 
-#### 具体任务
-1. **代码质量分析**
-   - 潜在bug检测
-   - 代码复杂度分析
-   - 最佳实践检查
+#### Week 6: ReviewerAgent和质量控制
 
-2. **效率指标分析**
-   - 开发速度评估
-   - 问题解决效率
-   - 代码审查质量
+**Day 36-38: ReviewerAgent实现**
+- 质量审核Agent设计
+- 多维度质量评估
+- 准确性、完整性、一致性评分
+- 审核决策逻辑
+- 改进建议生成
 
-3. **团队协作分析**
-   - 协作网络图
-   - 知识传播分析
-   - 团队健康度评估
+**Day 39-40: 质量控制器**
+- 双重审核流程控制
+- Agent执行编排
+- 重试和错误恢复
+- 质量阈值管理
+- 审核结果聚合
 
-4. **性能优化**
-   - 大型仓库处理优化
-   - 缓存策略改进
-   - 并发处理能力
+**Day 41-42: Agent管理系统**
+- Agent注册和发现
+- 动态配置更新
+- 性能监控和指标
+- 负载均衡
+- 健康检查和故障转移
+
+#### Week 7: 存储和报告系统
+
+**Day 43-45: 存储管理器**
+- 双重存储策略(SQLite + Markdown)
+- 数据一致性保证
+- 批量操作优化
+- 数据压缩和归档
+- 备份和恢复机制
+
+**Day 46-47: Markdown报告生成**
+- 结构化报告模板
+- 动态内容生成
+- 层级目录组织
+- 搜索和索引
+- 版本控制集成
+
+**Day 48-49: 数据可视化基础**
+- Chart.js集成
+- 实时数据更新
+- 交互式图表
+- 自定义图表类型
+- 导出功能
+
+#### Week 8: 高级功能和优化
+
+**Day 50-52: 缓存和性能优化**
+- 多层缓存策略
+- 预加载和预计算
+- 内存使用优化
+- 并发处理优化
+- 性能监控和调优
+
+**Day 53-54: 配置和安全**
+- 配置热重载
+- API密钥轮换
+- 数据加密存储
+- 访问控制
+- 审计日志
+
+**Day 55-56: 错误处理和监控**
+- 全局错误处理
+- 结构化日志
+- 性能指标收集
+- 告警机制
+- 故障诊断工具
 
 #### 可交付成果
-- 代码质量评估功能
-- 团队效率分析报告
-- 高性能的大型仓库支持
+- ✅ 完整的双重审核AI Agent系统
+- ✅ 质量控制和流程编排
+- ✅ 双重存储系统(数据库+文件)
+- ✅ Markdown报告生成
+- ✅ 基础数据可视化
+- ✅ 性能优化和监控系统
 
-### 第五阶段：用户体验和发布准备 (2-3周)
+### 第四阶段：用户界面和体验优化 (2周)
 
 #### 目标
-完善用户体验，准备产品发布
+完善用户界面，实现完整的用户体验和高级分析功能
 
-#### 具体任务
-1. **用户体验优化**
-   - 界面响应性改进
-   - 操作流程简化
-   - 错误处理和用户反馈
+#### Week 9: 前端界面完善
 
-2. **配置和设置**
-   - 高级配置选项
-   - 主题和个性化
-   - 数据导入导出
+**Day 57-59: 核心界面组件**
+- 仓库管理界面
+- 分析结果展示
+- Agent状态监控
+- 配置管理界面
+- 实时日志查看
 
-3. **文档和帮助**
-   - 用户手册编写
-   - 在线帮助系统
-   - 视频教程制作
+**Day 60-61: 数据可视化增强**
+- 提交时间线图表
+- 贡献者活跃度热力图
+- 代码量变化趋势
+- 质量评分趋势
+- 交互式仪表板
 
-4. **测试和发布**
-   - 全面功能测试
-   - 跨平台兼容性测试
-   - 安装包制作和分发
+**Day 62-63: 用户体验优化**
+- 响应式设计
+- 加载状态和进度指示
+- 错误提示和用户引导
+- 快捷键支持
+- 主题和个性化设置
+
+#### Week 10: 高级功能和发布准备
+
+**Day 64-66: 高级分析功能**
+- 团队协作分析
+- 代码质量趋势
+- 效率指标计算
+- 自定义分析规则
+- 批量处理和导出
+
+**Day 67-68: 系统集成测试**
+- 端到端测试
+- 性能基准测试
+- 内存泄漏检测
+- 跨平台兼容性测试
+- 用户接受度测试
+
+**Day 69-70: 发布准备**
+- 构建脚本优化
+- 安装包制作
+- 文档完善
+- 部署指南
+- 版本发布流程
 
 #### 可交付成果
-- 完整的用户文档
-- 跨平台安装包
-- 生产就绪的应用程序
+- ✅ 完整的用户界面和交互体验
+- ✅ 丰富的数据可视化功能
+- ✅ 高级分析和报告功能
+- ✅ 跨平台构建和部署
+- ✅ 完整的文档和用户指南
+- ✅ 生产就绪的应用程序
+
+## 项目里程碑和时间线
+
+### 总体时间规划 (10周)
+
+| 阶段 | 时间 | 主要目标 | 关键交付物 |
+|------|------|----------|------------|
+| 第一阶段 | Week 1-2 | 基础架构搭建 | 开发环境、基础框架、Git引擎 |
+| 第二阶段 | Week 3-5 | Git分析引擎 | LLM集成、Agent系统、分析功能 |
+| 第三阶段 | Week 6-8 | AI系统完善 | 双重审核、存储系统、报告生成 |
+| 第四阶段 | Week 9-10 | 界面和发布 | 用户界面、测试、发布准备 |
+
+### 关键里程碑
+
+- **里程碑1** (Week 2结束): 基础架构完成，Git基础功能可用
+- **里程碑2** (Week 5结束): AI分析引擎完成，基础Agent系统运行
+- **里程碑3** (Week 8结束): 完整的双重审核系统，存储和报告功能
+- **里程碑4** (Week 10结束): 生产就绪的应用程序，跨平台发布
+
+### 风险缓解计划
+
+#### 高风险项目
+1. **LLM API集成复杂性** - 预留额外1周时间用于API调试
+2. **Rust异步编程复杂性** - 分阶段实现，先同步后异步
+3. **跨平台构建问题** - 早期建立CI/CD流程
+
+#### 应急方案
+- 保持功能的最小可行版本(MVP)
+- 关键功能优先，高级功能可延后
+- 建立回滚机制和版本控制
 
 ## 技术挑战和解决方案
 
@@ -417,38 +591,171 @@ jinja2==3.1.2
 reportlab==4.0.4
 ```
 
-#### 项目结构
+#### 纯Rust架构项目结构
 ```
 GitMentor/
-├── src-tauri/           # Tauri后端配置
+├── src-tauri/                    # Tauri Rust后端
 │   ├── src/
-│   ├── tauri.conf.json
-│   └── Cargo.toml
-├── src/                 # Vue前端源码
-│   ├── components/
-│   ├── views/
-│   ├── composables/
-│   ├── stores/
-│   ├── types/
-│   ├── router/
-│   └── utils/
-├── backend/             # Python后端源码
-│   ├── app/
-│   │   ├── api/
-│   │   ├── core/
-│   │   ├── models/
-│   │   ├── services/
-│   │   └── utils/
-│   ├── requirements.txt
-│   └── main.py
-├── docs/               # 项目文档
-├── tests/              # 测试文件
-└── scripts/            # 构建和部署脚本
+│   │   ├── main.rs              # 应用入口
+│   │   ├── lib.rs               # 库入口
+│   │   ├── commands/            # Tauri命令
+│   │   │   ├── mod.rs
+│   │   │   ├── git_commands.rs
+│   │   │   ├── analysis_commands.rs
+│   │   │   └── config_commands.rs
+│   │   ├── core/                # 核心功能模块
+│   │   │   ├── mod.rs
+│   │   │   ├── git_engine.rs    # Git操作引擎
+│   │   │   ├── database.rs      # 数据库管理
+│   │   │   ├── cache.rs         # 缓存管理
+│   │   │   └── config.rs        # 配置管理
+│   │   ├── agents/              # AI Agent系统
+│   │   │   ├── mod.rs
+│   │   │   ├── base_agent.rs    # Agent基类
+│   │   │   ├── analyzer_agent.rs
+│   │   │   ├── reviewer_agent.rs
+│   │   │   └── agent_manager.rs
+│   │   ├── llm/                 # LLM集成
+│   │   │   ├── mod.rs
+│   │   │   ├── client.rs        # 统一LLM客户端
+│   │   │   ├── openai.rs        # OpenAI实现
+│   │   │   ├── anthropic.rs     # Anthropic实现
+│   │   │   └── ollama.rs        # Ollama实现
+│   │   ├── storage/             # 存储管理
+│   │   │   ├── mod.rs
+│   │   │   ├── database_manager.rs
+│   │   │   ├── file_manager.rs
+│   │   │   └── markdown_generator.rs
+│   │   ├── utils/               # 工具函数
+│   │   │   ├── mod.rs
+│   │   │   ├── crypto.rs        # 加密工具
+│   │   │   ├── file_utils.rs
+│   │   │   └── time_utils.rs
+│   │   └── types/               # 类型定义
+│   │       ├── mod.rs
+│   │       ├── git_types.rs
+│   │       ├── agent_types.rs
+│   │       └── config_types.rs
+│   ├── tauri.conf.json          # Tauri配置
+│   ├── Cargo.toml               # Rust依赖
+│   ├── build.rs                 # 构建脚本
+│   └── icons/                   # 应用图标
+├── src/                         # Vue前端
+│   ├── main.ts
+│   ├── App.vue
+│   ├── views/                   # 页面组件
+│   │   ├── Dashboard.vue
+│   │   ├── RepositoryConfig.vue
+│   │   ├── AnalysisResults.vue
+│   │   ├── AgentManagement.vue
+│   │   └── Settings.vue
+│   ├── components/              # 通用组件
+│   │   ├── GitRepositoryCard.vue
+│   │   ├── AnalysisChart.vue
+│   │   ├── AgentStatusCard.vue
+│   │   └── ConfigEditor.vue
+│   ├── composables/             # Vue组合式函数
+│   │   ├── useGitOperations.ts
+│   │   ├── useAnalysis.ts
+│   │   └── useConfig.ts
+│   ├── stores/                  # Pinia状态管理
+│   │   ├── git.ts
+│   │   ├── analysis.ts
+│   │   └── config.ts
+│   ├── types/                   # TypeScript类型
+│   │   ├── git.ts
+│   │   ├── analysis.ts
+│   │   └── config.ts
+│   └── utils/                   # 前端工具
+│       ├── api.ts
+│       └── format.ts
+├── docs/                        # 项目文档
+├── tests/                       # 测试文件
+│   ├── rust_tests/              # Rust单元测试
+│   └── integration_tests/       # 集成测试
+├── scripts/                     # 构建脚本
+│   ├── build.sh                 # Unix构建脚本
+│   └── build.bat                # Windows构建脚本
+├── config/                      # 配置文件模板
+│   ├── default.toml
+│   └── prompts/
+│       ├── analyzer_prompts.toml
+│       └── reviewer_prompts.toml
+└── migrations/                  # 数据库迁移文件
+    ├── 001_initial.sql
+    ├── 002_agents.sql
+    └── 003_analysis_results.sql
+```
+
+### Rust依赖配置
+
+#### Cargo.toml
+```toml
+[package]
+name = "gitmentor"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+# Tauri核心
+tauri = { version = "2.0", features = ["shell-open"] }
+tauri-build = { version = "2.0", features = [] }
+
+# Git操作
+git2 = "0.18"
+
+# 数据库
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls", "chrono", "migrate"] }
+
+# 异步运行时
+tokio = { version = "1.0", features = ["full"] }
+
+# HTTP客户端 (LLM API调用)
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+
+# 序列化
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# 配置管理
+config = "0.14"
+figment = { version = "0.10", features = ["toml", "json", "env"] }
+
+# 缓存
+moka = { version = "0.12", features = ["future"] }
+
+# 模板引擎 (提示词)
+handlebars = "4.5"
+
+# 日志
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# 错误处理
+anyhow = "1.0"
+thiserror = "1.0"
+
+# 时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
+# 文件系统
+walkdir = "2.4"
+notify = "6.1"
+
+# 加密 (API密钥存储)
+ring = "0.17"
+base64 = "0.21"
+
+# 异步trait
+async-trait = "0.1"
+
+# UUID生成
+uuid = { version = "1.6", features = ["v4", "serde"] }
 ```
 
 ### 数据库设计
 
-#### 核心表结构
+#### 核心表结构 (适配Rust/sqlx)
 ```sql
 -- 仓库信息表
 CREATE TABLE repositories (
@@ -456,93 +763,125 @@ CREATE TABLE repositories (
     path TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
     remote_url TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    last_analyzed TIMESTAMP,
-    total_commits INTEGER DEFAULT 0
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_analyzed DATETIME,
+    total_commits INTEGER DEFAULT 0,
+    enabled BOOLEAN DEFAULT TRUE
 );
 
 -- 提交信息表
 CREATE TABLE commits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     repo_id INTEGER NOT NULL,
-    hash TEXT NOT NULL,
+    hash TEXT NOT NULL UNIQUE,
     author_name TEXT NOT NULL,
     author_email TEXT NOT NULL,
-    commit_date TIMESTAMP NOT NULL,
+    commit_date DATETIME NOT NULL,
     message TEXT NOT NULL,
     files_changed INTEGER DEFAULT 0,
     insertions INTEGER DEFAULT 0,
     deletions INTEGER DEFAULT 0,
-    ai_analysis TEXT,
-    category TEXT,
-    FOREIGN KEY (repo_id) REFERENCES repositories (id)
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (repo_id) REFERENCES repositories (id) ON DELETE CASCADE
 );
 
--- 文件变更表
-CREATE TABLE file_changes (
+-- Agent执行记录表
+CREATE TABLE agent_executions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL,
+    agent_type TEXT NOT NULL, -- 'analyzer', 'reviewer'
     commit_id INTEGER NOT NULL,
-    file_path TEXT NOT NULL,
-    change_type TEXT NOT NULL, -- 'A', 'M', 'D', 'R'
-    insertions INTEGER DEFAULT 0,
-    deletions INTEGER DEFAULT 0,
-    FOREIGN KEY (commit_id) REFERENCES commits (id)
-);
-
--- AI分析结果表
-CREATE TABLE ai_analyses (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    commit_id INTEGER NOT NULL,
-    analysis_type TEXT NOT NULL, -- 'summary', 'quality', 'efficiency'
-    result TEXT NOT NULL,
+    input_data_hash TEXT NOT NULL,
+    output_data TEXT NOT NULL,
     confidence_score REAL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (commit_id) REFERENCES commits (id)
+    processing_time_ms INTEGER,
+    status TEXT NOT NULL, -- 'success', 'failed', 'timeout'
+    error_message TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (commit_id) REFERENCES commits (id) ON DELETE CASCADE
+);
+
+-- 质量控制记录表
+CREATE TABLE quality_control_records (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    task_id TEXT NOT NULL UNIQUE,
+    commit_id INTEGER NOT NULL,
+    analyzer_execution_id INTEGER,
+    reviewer_execution_id INTEGER,
+    final_status TEXT NOT NULL, -- 'approved', 'rejected', 'pending'
+    overall_quality_score REAL,
+    dimension_scores TEXT, -- JSON格式存储各维度分数
+    retry_count INTEGER DEFAULT 0,
+    completed_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (commit_id) REFERENCES commits (id) ON DELETE CASCADE,
+    FOREIGN KEY (analyzer_execution_id) REFERENCES agent_executions (id),
+    FOREIGN KEY (reviewer_execution_id) REFERENCES agent_executions (id)
 );
 
 -- 配置表
 CREATE TABLE settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    category TEXT DEFAULT 'general', -- 'general', 'llm', 'agent', 'storage'
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 缓存表
+CREATE TABLE cache_entries (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    expires_at DATETIME,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
-### API接口设计
+### Tauri命令接口设计
 
-#### 核心API端点
-```python
-# 仓库管理
-POST   /api/repositories          # 添加仓库
-GET    /api/repositories          # 获取仓库列表
-GET    /api/repositories/{id}     # 获取仓库详情
-DELETE /api/repositories/{id}     # 删除仓库
-POST   /api/repositories/{id}/analyze  # 分析仓库
+#### 核心Tauri命令 (替代REST API)
+```rust
+// Git操作命令
+#[tauri::command]
+async fn open_repository(path: String) -> Result<String, String>;
 
-# 提交分析
-GET    /api/commits               # 获取提交列表
-GET    /api/commits/{id}          # 获取提交详情
-POST   /api/commits/{id}/analyze  # 分析单个提交
-GET    /api/commits/stats         # 获取提交统计
+#[tauri::command]
+async fn get_repository_info(path: String) -> Result<RepositoryInfo, String>;
 
-# 贡献者分析
-GET    /api/contributors          # 获取贡献者列表
-GET    /api/contributors/{email}  # 获取贡献者详情
-GET    /api/contributors/{email}/summary  # 获取贡献者工作汇总
+#[tauri::command]
+async fn get_commit_history(repo_path: String, limit: usize) -> Result<Vec<CommitInfo>, String>;
 
-# 报告生成
-POST   /api/reports/generate      # 生成报告
-GET    /api/reports/{id}          # 获取报告
-GET    /api/reports/{id}/download # 下载报告
+#[tauri::command]
+async fn analyze_commit(repo_path: String, commit_hash: String) -> Result<CommitAnalysis, String>;
 
-# AI服务
-POST   /api/ai/analyze            # AI分析请求
-GET    /api/ai/models             # 获取可用模型
-POST   /api/ai/test-connection    # 测试AI服务连接
+// Agent操作命令
+#[tauri::command]
+async fn start_analysis(task_config: AnalysisConfig) -> Result<String, String>;
 
-# 配置管理
-GET    /api/settings              # 获取设置
-PUT    /api/settings              # 更新设置
+#[tauri::command]
+async fn get_analysis_status(task_id: String) -> Result<AnalysisStatus, String>;
+
+#[tauri::command]
+async fn get_analysis_result(task_id: String) -> Result<AnalysisResult, String>;
+
+// 配置管理命令
+#[tauri::command]
+async fn get_config() -> Result<AppConfig, String>;
+
+#[tauri::command]
+async fn update_config(config: AppConfig) -> Result<(), String>;
+
+#[tauri::command]
+async fn test_llm_connection(provider: String, api_key: String) -> Result<bool, String>;
+
+// 存储和报告命令
+#[tauri::command]
+async fn get_stored_analyses(filter: AnalysisFilter) -> Result<Vec<StoredAnalysis>, String>;
+
+#[tauri::command]
+async fn export_analysis(task_id: String, format: String) -> Result<String, String>;
+
+#[tauri::command]
+async fn generate_report(config: ReportConfig) -> Result<String, String>;
 ```
 
 ## 开发环境搭建指南

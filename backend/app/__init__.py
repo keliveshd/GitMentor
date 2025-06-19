@@ -1,1 +1,0 @@
-# GitMentor Backend Application
