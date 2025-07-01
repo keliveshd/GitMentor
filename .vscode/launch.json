@@ -1,0 +1,32 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "🚀 Debug Tauri App",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/GitMentor-Lite",
+      "program": "${workspaceFolder}/GitMentor-Lite/node_modules/@tauri-apps/cli/bin/tauri.js",
+      "args": ["dev"],
+      "console": "integratedTerminal",
+      "env": {
+        "RUST_LOG": "debug"
+      },
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    },
+    {
+      "name": "🔍 Debug Frontend Only",
+      "type": "node",
+      "request": "launch",
+      "cwd": "${workspaceFolder}/GitMentor-Lite",
+      "program": "${workspaceFolder}/GitMentor-Lite/node_modules/vite/bin/vite.js",
+      "args": ["dev"],
+      "console": "integratedTerminal",
+      "skipFiles": [
+        "<node_internals>/**"
+      ]
+    }
+  ]
+}

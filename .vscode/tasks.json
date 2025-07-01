@@ -1,0 +1,126 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "🚀 Start Dev Mode",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "tauri:dev"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "options": {
+        "cwd": "${workspaceFolder}/GitMentor-Lite"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new",
+        "showReuseMessage": false,
+        "clear": true
+      },
+      "problemMatcher": [],
+      "detail": "启动Tauri开发模式（热重载）"
+    },
+    {
+      "label": "🔨 Build Release",
+      "type": "shell",
+      "command": "npm",
+      "args": ["run", "tauri:build"],
+      "group": "build",
+      "options": {
+        "cwd": "${workspaceFolder}/GitMentor-Lite"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "detail": "构建生产版本"
+    },
+    {
+      "label": "📦 Install Dependencies",
+      "type": "shell",
+      "command": "npm",
+      "args": ["install"],
+      "options": {
+        "cwd": "${workspaceFolder}/GitMentor-Lite"
+      },
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "detail": "安装前端依赖"
+    },
+    {
+      "label": "🧹 Clean Build",
+      "type": "shell",
+      "command": "powershell",
+      "args": [
+        "-Command",
+        "cd GitMentor-Lite; if (Test-Path 'node_modules') { Remove-Item -Recurse -Force 'node_modules' }; if (Test-Path 'src-tauri/target') { Remove-Item -Recurse -Force 'src-tauri/target' }; if (Test-Path 'dist') { Remove-Item -Recurse -Force 'dist' }; npm install"
+      ],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "detail": "清理所有构建缓存并重新安装依赖"
+    },
+    {
+      "label": "🔍 Check Rust Code",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["check"],
+      "options": {
+        "cwd": "${workspaceFolder}/GitMentor-Lite/src-tauri"
+      },
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "detail": "检查Rust代码语法"
+    },
+    {
+      "label": "🧪 Test Rust Code",
+      "type": "shell",
+      "command": "cargo",
+      "args": ["test"],
+      "options": {
+        "cwd": "${workspaceFolder}/GitMentor-Lite/src-tauri"
+      },
+      "group": "test",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "detail": "运行Rust单元测试"
+    },
+    {
+      "label": "🎯 Build with Script",
+      "type": "shell",
+      "command": "powershell",
+      "args": ["-File", "${workspaceFolder}/build-windows-package.bat", "--dev"],
+      "group": "build",
+      "presentation": {
+        "echo": true,
+        "reveal": "always",
+        "focus": false,
+        "panel": "new"
+      },
+      "detail": "使用统一构建脚本启动开发模式"
+    }
+  ]
+}

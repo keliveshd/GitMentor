@@ -1,7 +1,19 @@
 {
   "recommendations": [
-    "Vue.volar",
+    "rust-lang.rust-analyzer",
     "tauri-apps.tauri-vscode",
-    "rust-lang.rust-analyzer"
+    "vue.volar",
+    "bradlc.vscode-tailwindcss",
+    "ms-vscode.powershell",
+    "formulahendry.auto-rename-tag",
+    "esbenp.prettier-vscode",
+    "ms-vscode.vscode-typescript-next",
+    "usernamehw.errorlens",
+    "christian-kohler.path-intellisense",
+    "ms-vscode.vscode-json",
+    "be5invis.toml"
+  ],
+  "unwantedRecommendations": [
+    "ms-vscode.vscode-typescript"
   ]
 }
