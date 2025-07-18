@@ -144,8 +144,6 @@ const handleRevert = () => {
 
 const viewDiff = () => {
   emit('viewDiff', props.file.path)
-  // 这里可以实现差异查看功能
-  alert(`查看 ${props.file.path} 的差异（功能待实现）`)
 }
 </script>
 

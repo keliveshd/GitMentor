@@ -3,7 +3,10 @@ mod core;
 mod types;
 
 use commands::git_commands;
-use core::{git_engine::GitEngine, llm_client::{LLMClient, LLMConfig}};
+use core::{
+    git_engine::GitEngine,
+    llm_client::{LLMClient, LLMConfig},
+};
 use tokio::sync::Mutex;
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
@@ -38,6 +41,7 @@ pub fn run() {
             git_commands::stage_all_changes,
             git_commands::unstage_all_changes,
             git_commands::open_folder_dialog,
+            git_commands::get_file_diff,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

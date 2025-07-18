@@ -1,11 +1,10 @@
-use git2::{Repository, StatusOptions, Signature};
-use anyhow::{Result, anyhow};
-use std::path::Path;
 use crate::types::git_types::{
-    FileStatus, GitStatusResult, FileStatusType, CommitInfo,
-    StageRequest, RevertRequest, RevertType, BranchInfo,
-    GitOperationResult, CommitRequest
+    BranchInfo, CommitInfo, CommitRequest, DiffType, FileDiffRequest, FileDiffResult, FileStatus,
+    FileStatusType, GitOperationResult, GitStatusResult, RevertRequest, RevertType, StageRequest,
 };
+use anyhow::{anyhow, Result};
+use git2::{Repository, Signature, StatusOptions};
+use std::path::Path;
 
 /// Git引擎，提供类似VSCode的Git功能
 /// 作者：Evilek
@@ -26,7 +25,9 @@ impl GitEngine {
 
     /// 获取当前仓库引用
     fn get_repository(&self) -> Result<Repository> {
-        let repo_path = self.repo_path.as_ref()
+        let repo_path = self
+            .repo_path
+            .as_ref()
             .ok_or_else(|| anyhow!("No repository opened"))?;
         Ok(Repository::open(repo_path)?)
     }
@@ -102,7 +103,9 @@ impl GitEngine {
 
         Ok(GitStatusResult {
             branch,
-            has_changes: !staged_files.is_empty() || !unstaged_files.is_empty() || !untracked_files.is_empty(),
+            has_changes: !staged_files.is_empty()
+                || !unstaged_files.is_empty()
+                || !untracked_files.is_empty(),
             staged_files,
             unstaged_files,
             untracked_files,
@@ -223,8 +226,12 @@ impl GitEngine {
     fn get_signature(&self, repo: &Repository) -> Result<Signature> {
         // 尝试从配置获取用户信息
         let config = repo.config()?;
-        let name = config.get_string("user.name").unwrap_or_else(|_| "GitMentor User".to_string());
-        let email = config.get_string("user.email").unwrap_or_else(|_| "user@gitmentor.local".to_string());
+        let name = config
+            .get_string("user.name")
+            .unwrap_or_else(|_| "GitMentor User".to_string());
+        let email = config
+            .get_string("user.email")
+            .unwrap_or_else(|_| "user@gitmentor.local".to_string());
 
         Ok(Signature::now(&name, &email)?)
     }
@@ -252,10 +259,13 @@ impl GitEngine {
 
                 Ok(GitOperationResult {
                     success: true,
-                    message: format!("Reverted {} file(s) in working tree", request.file_paths.len()),
+                    message: format!(
+                        "Reverted {} file(s) in working tree",
+                        request.file_paths.len()
+                    ),
                     details: None,
                 })
-            },
+            }
             RevertType::Staged => {
                 // 回滚暂存区更改 - 从索引中移除文件
                 let mut index = repo.index()?;
@@ -269,10 +279,13 @@ impl GitEngine {
 
                 Ok(GitOperationResult {
                     success: true,
-                    message: format!("Reverted {} file(s) in staging area", request.file_paths.len()),
+                    message: format!(
+                        "Reverted {} file(s) in staging area",
+                        request.file_paths.len()
+                    ),
                     details: None,
                 })
-            },
+            }
             RevertType::Commit => {
                 // 回滚提交（简化实现）
                 Ok(GitOperationResult {
@@ -409,5 +422,247 @@ impl GitEngine {
         }
 
         Ok(diff_output)
+    }
+
+    /// 获取文件差异
+    /// 作者：Evilek
+    /// 编写日期：2025-01-18
+    pub fn get_file_diff(&self, request: &FileDiffRequest) -> Result<FileDiffResult> {
+        let repo = self.get_repository()?;
+        let file_path = &request.file_path;
+
+        // 检查文件是否为二进制文件
+        let is_binary = self.is_binary_file(&repo, file_path)?;
+
+        if is_binary {
+            return Ok(FileDiffResult {
+                file_path: file_path.clone(),
+                old_content: None,
+                new_content: None,
+                old_file_name: Some(file_path.clone()),
+                new_file_name: Some(file_path.clone()),
+                file_language: None,
+                diff_hunks: vec!["Binary file".to_string()],
+                is_binary: true,
+                is_new_file: false,
+                is_deleted_file: false,
+            });
+        }
+
+        match request.diff_type {
+            DiffType::WorkingTree => self.get_working_tree_diff(&repo, file_path),
+            DiffType::Staged => self.get_staged_diff(&repo, file_path),
+            DiffType::HeadToWorking => self.get_head_to_working_diff(&repo, file_path),
+        }
+    }
+
+    /// 检查文件是否为二进制文件
+    /// 作者：Evilek
+    /// 编写日期：2025-01-18
+    fn is_binary_file(&self, repo: &Repository, file_path: &str) -> Result<bool> {
+        let workdir = repo
+            .workdir()
+            .ok_or_else(|| anyhow!("Repository has no working directory"))?;
+        let full_path = workdir.join(file_path);
+
+        if !full_path.exists() {
+            return Ok(false);
+        }
+
+        // 简单的二进制文件检测：检查文件扩展名
+        let extension = full_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+
+        let binary_extensions = [
+            "exe", "dll", "so", "dylib", "bin", "obj", "o", "a", "lib", "jpg", "jpeg", "png",
+            "gif", "bmp", "ico", "svg", "mp3", "mp4", "avi", "mov", "wav", "flac", "zip", "rar",
+            "7z", "tar", "gz", "bz2", "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+        ];
+
+        Ok(binary_extensions.contains(&extension.to_lowercase().as_str()))
+    }
+
+    /// 获取工作区与暂存区的差异
+    /// 作者：Evilek
+    /// 编写日期：2025-01-18
+    fn get_working_tree_diff(&self, repo: &Repository, file_path: &str) -> Result<FileDiffResult> {
+        use std::fs;
+
+        let workdir = repo
+            .workdir()
+            .ok_or_else(|| anyhow!("Repository has no working directory"))?;
+        let full_path = workdir.join(file_path);
+
+        // 获取工作区文件内容
+        let new_content = if full_path.exists() {
+            Some(fs::read_to_string(&full_path)?)
+        } else {
+            None
+        };
+
+        // 获取暂存区文件内容
+        let index = repo.index()?;
+        let old_content = if let Some(entry) = index.get_path(Path::new(file_path), 0) {
+            let blob = repo.find_blob(entry.id)?;
+            Some(String::from_utf8_lossy(blob.content()).to_string())
+        } else {
+            None
+        };
+
+        let file_language = self.detect_file_language(file_path);
+        let is_new_file = old_content.is_none() && new_content.is_some();
+        let is_deleted_file = old_content.is_some() && new_content.is_none();
+
+        Ok(FileDiffResult {
+            file_path: file_path.to_string(),
+            old_content,
+            new_content,
+            old_file_name: Some(file_path.to_string()),
+            new_file_name: Some(file_path.to_string()),
+            file_language,
+            diff_hunks: vec![], // 将由前端生成
+            is_binary: false,
+            is_new_file,
+            is_deleted_file,
+        })
+    }
+
+    /// 获取暂存区与HEAD的差异
+    /// 作者：Evilek
+    /// 编写日期：2025-01-18
+    fn get_staged_diff(&self, repo: &Repository, file_path: &str) -> Result<FileDiffResult> {
+        // 获取HEAD文件内容
+        let head = repo.head()?;
+        let head_commit = head.peel_to_commit()?;
+        let head_tree = head_commit.tree()?;
+
+        let old_content = if let Ok(entry) = head_tree.get_path(Path::new(file_path)) {
+            let blob = repo.find_blob(entry.id())?;
+            Some(String::from_utf8_lossy(blob.content()).to_string())
+        } else {
+            None
+        };
+
+        // 获取暂存区文件内容
+        let index = repo.index()?;
+        let new_content = if let Some(entry) = index.get_path(Path::new(file_path), 0) {
+            let blob = repo.find_blob(entry.id)?;
+            Some(String::from_utf8_lossy(blob.content()).to_string())
+        } else {
+            None
+        };
+
+        let file_language = self.detect_file_language(file_path);
+        let is_new_file = old_content.is_none() && new_content.is_some();
+        let is_deleted_file = old_content.is_some() && new_content.is_none();
+
+        Ok(FileDiffResult {
+            file_path: file_path.to_string(),
+            old_content,
+            new_content,
+            old_file_name: Some(file_path.to_string()),
+            new_file_name: Some(file_path.to_string()),
+            file_language,
+            diff_hunks: vec![], // 将由前端生成
+            is_binary: false,
+            is_new_file,
+            is_deleted_file,
+        })
+    }
+
+    /// 获取HEAD与工作区的差异
+    /// 作者：Evilek
+    /// 编写日期：2025-01-18
+    fn get_head_to_working_diff(
+        &self,
+        repo: &Repository,
+        file_path: &str,
+    ) -> Result<FileDiffResult> {
+        use std::fs;
+
+        // 获取HEAD文件内容
+        let head = repo.head()?;
+        let head_commit = head.peel_to_commit()?;
+        let head_tree = head_commit.tree()?;
+
+        let old_content = if let Ok(entry) = head_tree.get_path(Path::new(file_path)) {
+            let blob = repo.find_blob(entry.id())?;
+            Some(String::from_utf8_lossy(blob.content()).to_string())
+        } else {
+            None
+        };
+
+        // 获取工作区文件内容
+        let workdir = repo
+            .workdir()
+            .ok_or_else(|| anyhow!("Repository has no working directory"))?;
+        let full_path = workdir.join(file_path);
+
+        let new_content = if full_path.exists() {
+            Some(fs::read_to_string(&full_path)?)
+        } else {
+            None
+        };
+
+        let file_language = self.detect_file_language(file_path);
+        let is_new_file = old_content.is_none() && new_content.is_some();
+        let is_deleted_file = old_content.is_some() && new_content.is_none();
+
+        Ok(FileDiffResult {
+            file_path: file_path.to_string(),
+            old_content,
+            new_content,
+            old_file_name: Some(file_path.to_string()),
+            new_file_name: Some(file_path.to_string()),
+            file_language,
+            diff_hunks: vec![], // 将由前端生成
+            is_binary: false,
+            is_new_file,
+            is_deleted_file,
+        })
+    }
+
+    /// 检测文件语言类型
+    /// 作者：Evilek
+    /// 编写日期：2025-01-18
+    fn detect_file_language(&self, file_path: &str) -> Option<String> {
+        let extension = Path::new(file_path)
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or("");
+
+        match extension.to_lowercase().as_str() {
+            "rs" => Some("rust".to_string()),
+            "js" | "mjs" => Some("javascript".to_string()),
+            "ts" => Some("typescript".to_string()),
+            "vue" => Some("vue".to_string()),
+            "py" => Some("python".to_string()),
+            "java" => Some("java".to_string()),
+            "cpp" | "cc" | "cxx" => Some("cpp".to_string()),
+            "c" => Some("c".to_string()),
+            "h" | "hpp" => Some("c".to_string()),
+            "cs" => Some("csharp".to_string()),
+            "go" => Some("go".to_string()),
+            "php" => Some("php".to_string()),
+            "rb" => Some("ruby".to_string()),
+            "swift" => Some("swift".to_string()),
+            "kt" => Some("kotlin".to_string()),
+            "scala" => Some("scala".to_string()),
+            "html" | "htm" => Some("html".to_string()),
+            "css" => Some("css".to_string()),
+            "scss" | "sass" => Some("scss".to_string()),
+            "less" => Some("less".to_string()),
+            "json" => Some("json".to_string()),
+            "xml" => Some("xml".to_string()),
+            "yaml" | "yml" => Some("yaml".to_string()),
+            "toml" => Some("toml".to_string()),
+            "md" => Some("markdown".to_string()),
+            "sh" | "bash" => Some("bash".to_string()),
+            "ps1" => Some("powershell".to_string()),
+            "sql" => Some("sql".to_string()),
+            _ => None,
+        }
     }
 }

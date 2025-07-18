@@ -35,6 +35,7 @@
             :is-staged="true"
             @toggle-stage="toggleStage"
             @revert="revertFile"
+            @view-diff="openDiffViewer"
           />
         </div>
       </div>
@@ -89,6 +90,7 @@
             :is-staged="false"
             @toggle-stage="toggleStage"
             @revert="revertFile"
+            @view-diff="openDiffViewer"
           />
         </div>
       </div>
@@ -111,6 +113,7 @@
             :is-staged="false"
             @toggle-stage="toggleStage"
             @revert="revertFile"
+            @view-diff="openDiffViewer"
           />
         </div>
       </div>
@@ -128,6 +131,7 @@
             :is-staged="false"
             @toggle-stage="toggleStage"
             @revert="revertFile"
+            @view-diff="openDiffViewer"
           />
         </div>
       </div>
@@ -161,6 +165,15 @@
         </div>
       </div>
     </div>
+
+    <!-- 差异查看器弹窗 -->
+    <div v-if="showDiffViewer" class="diff-viewer-overlay">
+      <DiffViewer
+        :file-path="diffFilePath"
+        :diff-type="diffType"
+        @close="closeDiffViewer"
+      />
+    </div>
   </div>
 </template>
 
@@ -168,6 +181,7 @@
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import FileItem from './FileItem.vue'
+import DiffViewer from './DiffViewer.vue'
 
 // 响应式数据
 const currentRepoPath = ref<string>('')
@@ -176,6 +190,11 @@ const commitMessage = ref('')
 const commitHistory = ref<any[]>([])
 const loading = ref(false)
 const tauriReady = ref(false)
+
+// 差异查看器状态
+const showDiffViewer = ref(false)
+const diffFilePath = ref<string>('')
+const diffType = ref<'WorkingTree' | 'Staged' | 'HeadToWorking'>('WorkingTree')
 
 // 方法
 const openRepository = async () => {
@@ -350,6 +369,33 @@ const getRepoName = (path: string) => {
 
 const formatTime = (timestamp: number) => {
   return new Date(timestamp * 1000).toLocaleString()
+}
+
+// 差异查看器方法
+const openDiffViewer = (filePath: string) => {
+  diffFilePath.value = filePath
+
+  // 根据文件状态确定差异类型
+  const stagedFile = gitStatus.value?.staged_files?.find((f: any) => f.path === filePath)
+  const unstagedFile = gitStatus.value?.unstaged_files?.find((f: any) => f.path === filePath)
+
+  if (stagedFile) {
+    // 如果文件在暂存区，显示暂存区与HEAD的差异
+    diffType.value = 'Staged'
+  } else if (unstagedFile) {
+    // 如果文件在工作区，显示工作区与暂存区的差异
+    diffType.value = 'WorkingTree'
+  } else {
+    // 默认显示工作区与HEAD的差异
+    diffType.value = 'HeadToWorking'
+  }
+
+  showDiffViewer.value = true
+}
+
+const closeDiffViewer = () => {
+  showDiffViewer.value = false
+  diffFilePath.value = ''
 }
 
 // 生命周期
@@ -739,5 +785,29 @@ onMounted(async () => {
     background-color: #2d3748;
     color: #a0aec0;
   }
+}
+
+/* 差异查看器弹窗样式 */
+.diff-viewer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.diff-viewer-overlay > * {
+  width: 90vw;
+  height: 90vh;
+  max-width: 1200px;
+  max-height: 800px;
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
 }
 </style>

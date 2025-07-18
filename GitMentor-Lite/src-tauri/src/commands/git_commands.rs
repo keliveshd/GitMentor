@@ -4,7 +4,7 @@ use crate::core::git_engine::GitEngine;
 use crate::core::llm_client::LLMClient;
 use crate::types::git_types::{
     GitStatusResult, CommitRequest, CommitMessageResult, StageRequest,
-    RevertRequest, CommitInfo, BranchInfo, GitOperationResult
+    RevertRequest, CommitInfo, BranchInfo, GitOperationResult, FileDiffRequest, FileDiffResult
 };
 use std::time::Instant;
 
@@ -191,4 +191,17 @@ pub async fn open_folder_dialog(app_handle: tauri::AppHandle) -> Result<Option<S
         },
         None => Ok(None), // 用户取消了选择
     }
+}
+
+/// 获取文件差异
+/// 作者：Evilek
+/// 编写日期：2025-01-18
+#[tauri::command]
+pub async fn get_file_diff(
+    request: FileDiffRequest,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<FileDiffResult, String> {
+    let engine = git_engine.lock().await;
+    engine.get_file_diff(&request)
+        .map_err(|e| format!("Failed to get file diff: {}", e))
 }
