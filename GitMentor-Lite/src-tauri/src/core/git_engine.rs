@@ -3,7 +3,7 @@ use crate::types::git_types::{
     FileStatusType, GitOperationResult, GitStatusResult, RevertRequest, RevertType, StageRequest,
 };
 use anyhow::{anyhow, Result};
-use git2::{Repository, Signature, StatusOptions};
+use git2::{DiffOptions, Repository, Signature, StatusOptions};
 use std::path::Path;
 
 /// Git引擎，提供类似VSCode的Git功能
@@ -442,7 +442,7 @@ impl GitEngine {
                 old_file_name: Some(file_path.clone()),
                 new_file_name: Some(file_path.clone()),
                 file_language: None,
-                diff_hunks: vec!["Binary file".to_string()],
+                diff_string: "Binary file".to_string(),
                 is_binary: true,
                 is_new_file: false,
                 is_deleted_file: false,
@@ -502,14 +502,31 @@ impl GitEngine {
             None
         };
 
-        // 获取暂存区文件内容
+        // 获取暂存区文件内容，如果暂存区没有则从HEAD获取
         let index = repo.index()?;
         let old_content = if let Some(entry) = index.get_path(Path::new(file_path), 0) {
+            // 暂存区有该文件
             let blob = repo.find_blob(entry.id)?;
             Some(String::from_utf8_lossy(blob.content()).to_string())
         } else {
-            None
+            // 暂存区没有该文件，从HEAD获取
+            match repo.head() {
+                Ok(head) => {
+                    let head_commit = head.peel_to_commit()?;
+                    let head_tree = head_commit.tree()?;
+                    if let Ok(entry) = head_tree.get_path(Path::new(file_path)) {
+                        let blob = repo.find_blob(entry.id())?;
+                        Some(String::from_utf8_lossy(blob.content()).to_string())
+                    } else {
+                        None
+                    }
+                }
+                Err(_) => None,
+            }
         };
+
+        // 生成diff字符串
+        let diff_string = self.generate_diff_string(repo, file_path, DiffType::WorkingTree)?;
 
         let file_language = self.detect_file_language(file_path);
         let is_new_file = old_content.is_none() && new_content.is_some();
@@ -522,7 +539,7 @@ impl GitEngine {
             old_file_name: Some(file_path.to_string()),
             new_file_name: Some(file_path.to_string()),
             file_language,
-            diff_hunks: vec![], // 将由前端生成
+            diff_string,
             is_binary: false,
             is_new_file,
             is_deleted_file,
@@ -554,6 +571,9 @@ impl GitEngine {
             None
         };
 
+        // 生成diff字符串
+        let diff_string = self.generate_diff_string(repo, file_path, DiffType::Staged)?;
+
         let file_language = self.detect_file_language(file_path);
         let is_new_file = old_content.is_none() && new_content.is_some();
         let is_deleted_file = old_content.is_some() && new_content.is_none();
@@ -565,7 +585,7 @@ impl GitEngine {
             old_file_name: Some(file_path.to_string()),
             new_file_name: Some(file_path.to_string()),
             file_language,
-            diff_hunks: vec![], // 将由前端生成
+            diff_string,
             is_binary: false,
             is_new_file,
             is_deleted_file,
@@ -606,6 +626,9 @@ impl GitEngine {
             None
         };
 
+        // 生成diff字符串
+        let diff_string = self.generate_diff_string(repo, file_path, DiffType::HeadToWorking)?;
+
         let file_language = self.detect_file_language(file_path);
         let is_new_file = old_content.is_none() && new_content.is_some();
         let is_deleted_file = old_content.is_some() && new_content.is_none();
@@ -617,7 +640,7 @@ impl GitEngine {
             old_file_name: Some(file_path.to_string()),
             new_file_name: Some(file_path.to_string()),
             file_language,
-            diff_hunks: vec![], // 将由前端生成
+            diff_string,
             is_binary: false,
             is_new_file,
             is_deleted_file,
@@ -664,5 +687,87 @@ impl GitEngine {
             "sql" => Some("sql".to_string()),
             _ => None,
         }
+    }
+
+    /// 生成diff字符串
+    /// 作者：Evilek
+    /// 编写日期：2025-01-18
+    fn generate_diff_string(
+        &self,
+        repo: &Repository,
+        file_path: &str,
+        diff_type: DiffType,
+    ) -> Result<String> {
+        let mut diff_options = DiffOptions::new();
+        diff_options.pathspec(file_path);
+        diff_options.context_lines(3); // 设置上下文行数
+
+        let diff = match diff_type {
+            DiffType::WorkingTree => {
+                // 工作区与暂存区的差异
+                let mut index = repo.index()?;
+                let tree = index.write_tree()?;
+                let tree = repo.find_tree(tree)?;
+                repo.diff_tree_to_workdir(Some(&tree), Some(&mut diff_options))?
+            }
+            DiffType::Staged => {
+                // 暂存区与HEAD的差异
+                let head = repo.head()?;
+                let head_commit = head.peel_to_commit()?;
+                let head_tree = head_commit.tree()?;
+                let mut index = repo.index()?;
+                let index_tree = index.write_tree()?;
+                let index_tree = repo.find_tree(index_tree)?;
+                repo.diff_tree_to_tree(
+                    Some(&head_tree),
+                    Some(&index_tree),
+                    Some(&mut diff_options),
+                )?
+            }
+            DiffType::HeadToWorking => {
+                // HEAD与工作区的差异
+                let head = repo.head()?;
+                let head_commit = head.peel_to_commit()?;
+                let head_tree = head_commit.tree()?;
+                repo.diff_tree_to_workdir(Some(&head_tree), Some(&mut diff_options))?
+            }
+        };
+
+        let mut diff_string = String::new();
+
+        diff.print(git2::DiffFormat::Patch, |delta, hunk, line| {
+            let content = String::from_utf8_lossy(line.content());
+
+            match line.origin() {
+                'F' => {
+                    // File header
+                    if let Some(old_file) = delta.old_file().path() {
+                        if let Some(new_file) = delta.new_file().path() {
+                            diff_string.push_str(&format!("--- a/{}\n", old_file.display()));
+                            diff_string.push_str(&format!("+++ b/{}\n", new_file.display()));
+                        }
+                    }
+                }
+                'H' => {
+                    // Hunk header
+                    if let Some(hunk) = hunk {
+                        diff_string.push_str(&format!(
+                            "@@ -{},{} +{},{} @@\n",
+                            hunk.old_start(),
+                            hunk.old_lines(),
+                            hunk.new_start(),
+                            hunk.new_lines()
+                        ));
+                    }
+                }
+                '+' => diff_string.push_str(&format!("+{}", content)),
+                '-' => diff_string.push_str(&format!("-{}", content)),
+                ' ' => diff_string.push_str(&format!(" {}", content)),
+                _ => diff_string.push_str(&content),
+            }
+            true
+        })?;
+
+        Ok(diff_string)
     }
 }

@@ -25,10 +25,12 @@
       </div>
     </div>
 
+
+
     <!-- 差异内容 -->
-    <div class="diff-content" v-if="diffData && !diffData.is_binary && diffViewData">
+    <div class="diff-content" v-if="diffData && !diffData.is_binary && diffFile">
       <DiffView
-        :data="diffViewData"
+        :diff-file="diffFile"
         :diff-view-mode="diffMode"
         :diff-view-theme="'light'"
         :diff-view-highlight="true"
@@ -70,6 +72,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
+import { generateDiffFile } from '@git-diff-view/file'
 import '@git-diff-view/vue/styles/diff-view.css'
 
 // Props
@@ -99,21 +102,32 @@ const diffMode = computed(() =>
   isUnified.value ? DiffModeEnum.Unified : DiffModeEnum.Split
 )
 
-const diffViewData = computed(() => {
+const diffFile = computed(() => {
   if (!diffData.value) return null
-  
-  return {
-    oldFile: {
-      fileName: diffData.value.old_file_name,
-      content: diffData.value.old_content || '',
-      fileLang: diffData.value.file_language
-    },
-    newFile: {
-      fileName: diffData.value.new_file_name,
-      content: diffData.value.new_content || '',
-      fileLang: diffData.value.file_language
-    },
-    hunks: diffData.value.diff_hunks || []
+
+  try {
+    // 使用generateDiffFile方法，这是推荐的方式
+    const file = generateDiffFile(
+      diffData.value.old_file_name || diffData.value.file_path,
+      diffData.value.old_content || '',
+      diffData.value.new_file_name || diffData.value.file_path,
+      diffData.value.new_content || '',
+      diffData.value.file_language || '',
+      diffData.value.file_language || ''
+    )
+
+    // 初始化主题和构建差异行
+    file.initTheme('light')
+    file.init()
+    file.buildSplitDiffLines()
+    file.buildUnifiedDiffLines()
+
+    return file
+  } catch (error) {
+    console.error('Failed to generate diff file:', error)
+    console.error('Old content length:', diffData.value.old_content?.length || 0)
+    console.error('New content length:', diffData.value.new_content?.length || 0)
+    return null
   }
 })
 
@@ -122,14 +136,14 @@ const loadDiff = async () => {
   try {
     loading.value = true
     error.value = null
-    
+
     const result = await invoke('get_file_diff', {
       request: {
         file_path: props.filePath,
         diff_type: props.diffType
       }
     })
-    
+
     diffData.value = result
   } catch (err) {
     error.value = err instanceof Error ? err.message : '未知错误'

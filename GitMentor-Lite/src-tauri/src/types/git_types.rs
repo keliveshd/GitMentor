@@ -134,7 +134,7 @@ pub struct FileDiffResult {
     pub old_file_name: Option<String>,
     pub new_file_name: Option<String>,
     pub file_language: Option<String>,
-    pub diff_hunks: Vec<String>,
+    pub diff_string: String, // 完整的Git diff字符串
     pub is_binary: bool,
     pub is_new_file: bool,
     pub is_deleted_file: bool,
