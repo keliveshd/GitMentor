@@ -40,6 +40,10 @@
           <button @click="toggleWrap" class="control-btn" :title="wrapLines ? '禁用换行' : '启用换行'">
             {{ wrapLines ? '📏' : '📐' }}
           </button>
+          <button @click="toggleIgnoreWhitespace" class="control-btn"
+            :title="ignoreWhitespace ? '显示空白字符差异' : '忽略空白字符差异'">
+            {{ ignoreWhitespace ? '🔍' : '👁️' }}
+          </button>
           <button @click="toggleWhitespace" class="control-btn" :title="showWhitespace ? '隐藏空白字符' : '显示空白字符'">
             {{ showWhitespace ? '⚪' : '⚫' }}
           </button>
@@ -184,6 +188,7 @@ const error = ref<string | null>(null)
 const isUnified = ref(false)
 const wrapLines = ref(false)
 const showWhitespace = ref(false)
+const ignoreWhitespace = ref(true) // 默认启用忽略空白字符
 const syntaxHighlight = ref(true)
 const currentDiffIndex = ref(0)
 const fontSize = ref(14)
@@ -271,11 +276,41 @@ const loadDiff = async () => {
     if (result && !result.is_binary && hasValidContent.value) {
       await nextTick()
 
+      // 根据设置决定是否标准化内容
+      let oldContent = result.old_content || ''
+      let newContent = result.new_content || ''
+
+      if (ignoreWhitespace.value) {
+        console.log('🔧 [EnhancedDiffViewer] 标准化文件内容以忽略空白字符差异')
+
+        const normalizeContent = (content: string): string => {
+          return content
+            // 统一换行符为 \n
+            .replace(/\r\n/g, '\n')
+            .replace(/\r/g, '\n')
+            // 移除行尾空白字符
+            .replace(/[ \t]+$/gm, '')
+            // 移除文件末尾的多余空行
+            .replace(/\n+$/, '\n')
+        }
+
+        const originalOldLength = oldContent.length
+        const originalNewLength = newContent.length
+
+        oldContent = normalizeContent(oldContent)
+        newContent = normalizeContent(newContent)
+
+        console.log('📊 [EnhancedDiffViewer] 内容标准化结果:', {
+          old: { original: originalOldLength, normalized: oldContent.length },
+          new: { original: originalNewLength, normalized: newContent.length }
+        })
+      }
+
       const file = generateDiffFile(
         result.old_file_name || result.file_path,
-        result.old_content || '',
+        oldContent,
         result.new_file_name || result.file_path,
-        result.new_content || '',
+        newContent,
         result.file_language || '',
         result.file_language || ''
       )
@@ -357,6 +392,15 @@ const toggleMode = async () => {
  */
 const toggleWrap = () => {
   wrapLines.value = !wrapLines.value
+}
+
+/**
+ * 切换忽略空白字符模式
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const toggleIgnoreWhitespace = () => {
+  ignoreWhitespace.value = !ignoreWhitespace.value
 }
 
 /**

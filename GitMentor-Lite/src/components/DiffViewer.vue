@@ -34,6 +34,9 @@
         <button @click="toggleWrap" class="control-btn" :title="wrapLines ? '禁用换行' : '启用换行'">
           {{ wrapLines ? '📏' : '📐' }}
         </button>
+        <button @click="toggleIgnoreWhitespace" class="control-btn" :title="ignoreWhitespace ? '显示空白字符差异' : '忽略空白字符差异'">
+          {{ ignoreWhitespace ? '🔍' : '👁️' }}
+        </button>
         <button @click="toggleCollapse" class="control-btn" :title="collapseUnchanged ? '展开相同代码' : '折叠相同代码'">
           {{ collapseUnchanged ? '📖' : '📕' }}
         </button>
@@ -54,6 +57,7 @@
           <summary><strong>🔍 DiffView调试信息</strong></summary>
           <div style="margin-top: 8px;">
             <p><strong>使用方法:</strong> {{ diffFile ? 'diffFile模式' : 'data模式' }}</p>
+            <p><strong>忽略空白字符:</strong> {{ ignoreWhitespace ? '是' : '否' }}</p>
             <div v-if="diffFile">
               <p><strong>DiffFile对象:</strong> 已生成</p>
             </div>
@@ -192,6 +196,7 @@ const error = ref<string | null>(null)
 const isUnified = ref(false)
 const wrapLines = ref(false)
 const collapseUnchanged = ref(false)
+const ignoreWhitespace = ref(true) // 默认启用忽略空白字符
 const currentDiffIndex = ref(0)
 
 // 计算属性
@@ -227,6 +232,26 @@ const totalDiffs = computed(() => {
 })
 
 /**
+ * 标准化文本内容，处理换行符和空白字符
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const normalizeContent = (content: string): string => {
+  if (!ignoreWhitespace.value) {
+    return content
+  }
+
+  return content
+    // 统一换行符为 \n
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    // 移除行尾空白字符
+    .replace(/[ \t]+$/gm, '')
+    // 移除文件末尾的多余空行
+    .replace(/\n+$/, '\n')
+}
+
+/**
  * 使用@git-diff-view/file库生成DiffFile对象
  * 作者：Evilek
  * 编写日期：2025-07-22
@@ -238,12 +263,28 @@ const diffFile = computed(() => {
 
   try {
     console.log('🔧 [DiffViewer] 使用@git-diff-view/file库生成DiffFile')
+    console.log('🔧 [DiffViewer] 忽略空白字符:', ignoreWhitespace.value)
+
+    // 根据设置决定是否标准化内容
+    const oldContent = normalizeContent(diffData.value.old_content || '')
+    const newContent = normalizeContent(diffData.value.new_content || '')
+
+    console.log('📊 [DiffViewer] 内容长度对比:', {
+      original: {
+        old: diffData.value.old_content?.length || 0,
+        new: diffData.value.new_content?.length || 0
+      },
+      normalized: {
+        old: oldContent.length,
+        new: newContent.length
+      }
+    })
 
     const file = generateDiffFile(
       diffData.value.old_file_name || diffData.value.file_path,
-      diffData.value.old_content || '',
+      oldContent,
       diffData.value.new_file_name || diffData.value.file_path,
-      diffData.value.new_content || '',
+      newContent,
       diffData.value.file_language || '',
       diffData.value.file_language || ''
     )
@@ -277,7 +318,8 @@ const diffViewData = computed(() => {
 
   try {
     console.log('🔧 [DiffViewer] 开始转换hunks数据')
-    console.log('📥 [DiffViewer] 输入的hunks数据:', diffData.value.hunks)
+    console.log('� [DiffViewer] 忽略空白字符:', ignoreWhitespace.value)
+    console.log('�📥 [DiffViewer] 输入的hunks数据:', diffData.value.hunks)
 
     // 转换后端返回的hunks数据为Git diff字符串格式
     const hunks: string[] = []
@@ -306,16 +348,27 @@ const diffViewData = computed(() => {
           }
 
           // 确保content不为undefined或null
-          // 注意：即使是空字符串也是有效的差异行（表示空行的添加/删除）
-          const content = line.content ?? ''
+          let content = line.content ?? ''
+
+          // 如果启用了忽略空白字符，则标准化内容
+          if (ignoreWhitespace.value) {
+            const originalContent = content
+            content = content
+              .replace(/\r\n/g, '\n')
+              .replace(/\r/g, '\n')
+              .replace(/[ \t]+$/, '') // 移除行尾空白
+
+            if (originalContent !== content && lineIndex < 3) {
+              console.log(`    🔧 [DiffViewer] 标准化行内容: "${originalContent}" -> "${content}"`)
+            }
+          }
 
           // Git diff格式要求：前缀 + 内容
-          // 对于空行，仍然需要保留前缀，这是标准的Git diff格式
           const diffLine = prefix + content
           hunks.push(diffLine)
 
           if (lineIndex < 5) { // 显示前5行的详细信息
-            console.log(`    📄 [DiffViewer] 行${lineIndex + 1}: ${line.line_type} -> "${diffLine}" (content长度: ${content.length}, 原始: "${content}")`)
+            console.log(`    📄 [DiffViewer] 行${lineIndex + 1}: ${line.line_type} -> "${diffLine}" (content长度: ${content.length})`)
           }
         })
         console.log(`  ✅ [DiffViewer] Hunk ${hunkIndex + 1} 处理完成，共${hunk.lines.length}行`)
@@ -343,15 +396,19 @@ const diffViewData = computed(() => {
       console.warn(`  ⚠️ [DiffViewer] 总共发现 ${emptyLines.length} 个异常行`)
     }
 
+    // 根据设置决定是否标准化文件内容
+    const oldContent = normalizeContent(diffData.value.old_content || '')
+    const newContent = normalizeContent(diffData.value.new_content || '')
+
     const result = {
       oldFile: {
         fileName: diffData.value.old_file_name || diffData.value.file_path,
-        content: diffData.value.old_content || '',
+        content: oldContent,
         fileLang: diffData.value.file_language || ''
       },
       newFile: {
         fileName: diffData.value.new_file_name || diffData.value.file_path,
-        content: diffData.value.new_content || '',
+        content: newContent,
         fileLang: diffData.value.file_language || ''
       },
       hunks
@@ -490,6 +547,15 @@ const toggleMode = () => {
  */
 const toggleWrap = () => {
   wrapLines.value = !wrapLines.value
+}
+
+/**
+ * 切换忽略空白字符模式
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const toggleIgnoreWhitespace = () => {
+  ignoreWhitespace.value = !ignoreWhitespace.value
 }
 
 /**
