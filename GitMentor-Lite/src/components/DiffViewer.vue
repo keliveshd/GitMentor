@@ -47,9 +47,52 @@
 
     <!-- 差异内容 -->
     <div class="diff-content" v-if="diffData && !diffData.is_binary && hasValidContent">
-      <DiffView :data="diffViewData" :diff-view-mode="diffMode" :diff-view-theme="'light'" :diff-view-highlight="true"
-        :diff-view-wrap="wrapLines" :diff-view-font-size="14" :diff-view-add-widget="false"
+      <!-- 调试信息 -->
+      <div class="debug-info"
+        style="padding: 10px; background: #f0f8ff; border: 1px solid #ccc; margin-bottom: 10px; font-size: 12px;">
+        <details>
+          <summary><strong>🔍 DiffView调试信息</strong></summary>
+          <div style="margin-top: 8px;">
+            <p><strong>使用方法:</strong> {{ diffFile ? 'diffFile模式' : 'data模式' }}</p>
+            <div v-if="diffFile">
+              <p><strong>DiffFile对象:</strong> 已生成</p>
+            </div>
+            <div v-else-if="diffViewData">
+              <p><strong>diffViewData结构:</strong></p>
+              <pre style="background: #f5f5f5; padding: 8px; border-radius: 4px; overflow-x: auto;">{{ JSON.stringify({
+                oldFile: diffViewData.oldFile ? {
+                  fileName: diffViewData.oldFile.fileName,
+                  contentLength: diffViewData.oldFile.content?.length || 0,
+                  fileLang: diffViewData.oldFile.fileLang
+                } : null,
+                newFile: diffViewData.newFile ? {
+                  fileName: diffViewData.newFile.fileName,
+                  contentLength: diffViewData.newFile.content?.length || 0,
+                  fileLang: diffViewData.newFile.fileLang
+                } : null,
+                hunksCount: diffViewData.hunks?.length || 0,
+                hunksPreview: diffViewData.hunks?.slice(0, 5) || []
+              }, null, 2) }}</pre>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <!-- 优先使用diffFile模式 -->
+      <DiffView v-if="diffFile" :diffFile="diffFile" :diff-view-mode="diffMode" :diff-view-theme="'light'"
+        :diff-view-highlight="true" :diff-view-wrap="wrapLines" :diff-view-font-size="14" :diff-view-add-widget="false"
         @error="handleDiffViewError" />
+
+      <!-- 备用data模式 -->
+      <DiffView v-else-if="diffViewData" :data="diffViewData" :diff-view-mode="diffMode" :diff-view-theme="'light'"
+        :diff-view-highlight="true" :diff-view-wrap="wrapLines" :diff-view-font-size="14" :diff-view-add-widget="false"
+        @error="handleDiffViewError" />
+
+      <!-- 无法生成差异 -->
+      <div v-else class="diff-generation-error" style="padding: 20px; text-align: center; color: #d73a49;">
+        <p>⚠️ 无法生成差异显示</p>
+        <p>请检查数据格式或查看控制台错误信息</p>
+      </div>
     </div>
 
     <!-- 无差异内容提示 -->
@@ -94,6 +137,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
+import { generateDiffFile } from '@git-diff-view/file'
 import '@git-diff-view/vue/styles/diff-view.css'
 
 // 类型定义
@@ -183,6 +227,45 @@ const totalDiffs = computed(() => {
 })
 
 /**
+ * 使用@git-diff-view/file库生成DiffFile对象
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const diffFile = computed(() => {
+  if (!diffData.value || !hasValidContent.value) {
+    return null
+  }
+
+  try {
+    console.log('🔧 [DiffViewer] 使用@git-diff-view/file库生成DiffFile')
+
+    const file = generateDiffFile(
+      diffData.value.old_file_name || diffData.value.file_path,
+      diffData.value.old_content || '',
+      diffData.value.new_file_name || diffData.value.file_path,
+      diffData.value.new_content || '',
+      diffData.value.file_language || '',
+      diffData.value.file_language || ''
+    )
+
+    file.initTheme('light')
+    file.init()
+
+    if (isUnified.value) {
+      file.buildUnifiedDiffLines()
+    } else {
+      file.buildSplitDiffLines()
+    }
+
+    console.log('✅ [DiffViewer] DiffFile生成成功')
+    return file
+  } catch (error) {
+    console.error('❌ [DiffViewer] DiffFile生成失败:', error)
+    return null
+  }
+})
+
+/**
  * 转换数据为DiffView组件所需格式
  * 作者：Evilek
  * 编写日期：2025-07-22
@@ -193,7 +276,73 @@ const diffViewData = computed(() => {
   }
 
   try {
-    // 直接使用文件内容，让@git-diff-view/vue库自动计算差异
+    console.log('🔧 [DiffViewer] 开始转换hunks数据')
+    console.log('📥 [DiffViewer] 输入的hunks数据:', diffData.value.hunks)
+
+    // 转换后端返回的hunks数据为Git diff字符串格式
+    const hunks: string[] = []
+
+    if (!diffData.value.hunks || diffData.value.hunks.length === 0) {
+      console.warn('⚠️ [DiffViewer] hunks数组为空或不存在')
+      return null
+    }
+
+    diffData.value.hunks.forEach((hunk, hunkIndex) => {
+      console.log(`🔍 [DiffViewer] 处理Hunk ${hunkIndex + 1}:`, hunk)
+
+      // 添加hunk头
+      const hunkHeader = `@@ -${hunk.old_start},${hunk.old_lines} +${hunk.new_start},${hunk.new_lines} @@`
+      hunks.push(hunkHeader)
+      console.log(`  📝 [DiffViewer] 添加hunk头: ${hunkHeader}`)
+
+      // 添加hunk中的每一行
+      if (hunk.lines && hunk.lines.length > 0) {
+        hunk.lines.forEach((line, lineIndex) => {
+          let prefix = ' ' // 默认为上下文行
+          if (line.line_type === 'Delete') {
+            prefix = '-'
+          } else if (line.line_type === 'Insert') {
+            prefix = '+'
+          }
+
+          // 确保content不为undefined或null
+          // 注意：即使是空字符串也是有效的差异行（表示空行的添加/删除）
+          const content = line.content ?? ''
+
+          // Git diff格式要求：前缀 + 内容
+          // 对于空行，仍然需要保留前缀，这是标准的Git diff格式
+          const diffLine = prefix + content
+          hunks.push(diffLine)
+
+          if (lineIndex < 5) { // 显示前5行的详细信息
+            console.log(`    📄 [DiffViewer] 行${lineIndex + 1}: ${line.line_type} -> "${diffLine}" (content长度: ${content.length}, 原始: "${content}")`)
+          }
+        })
+        console.log(`  ✅ [DiffViewer] Hunk ${hunkIndex + 1} 处理完成，共${hunk.lines.length}行`)
+      } else {
+        console.warn(`  ⚠️ [DiffViewer] Hunk ${hunkIndex + 1} 没有lines数据`)
+      }
+    })
+
+    console.log('📤 [DiffViewer] 转换后的Git diff字符串数组:')
+    console.log('  总行数:', hunks.length)
+    console.log('  前10行:', hunks.slice(0, 10))
+
+    // 检查是否有空行或异常行
+    const emptyLines = hunks.filter((line, index) => {
+      const isEmpty = line.length <= 1 // 只有前缀字符
+      const isOnlyPrefix = line === '+' || line === '-' || line === ' '
+      if (isEmpty || isOnlyPrefix) {
+        console.warn(`  ⚠️ [DiffViewer] 发现异常行 ${index}: "${line}" (长度: ${line.length})`)
+        return true
+      }
+      return false
+    })
+
+    if (emptyLines.length > 0) {
+      console.warn(`  ⚠️ [DiffViewer] 总共发现 ${emptyLines.length} 个异常行`)
+    }
+
     const result = {
       oldFile: {
         fileName: diffData.value.old_file_name || diffData.value.file_path,
@@ -205,12 +354,27 @@ const diffViewData = computed(() => {
         content: diffData.value.new_content || '',
         fileLang: diffData.value.file_language || ''
       },
-      hunks: [] // 让库自动生成hunks
+      hunks
     }
+
+    console.log('🎯 [DiffViewer] 最终传递给DiffView的data对象:', {
+      oldFile: {
+        fileName: result.oldFile.fileName,
+        contentLength: result.oldFile.content.length,
+        fileLang: result.oldFile.fileLang
+      },
+      newFile: {
+        fileName: result.newFile.fileName,
+        contentLength: result.newFile.content.length,
+        fileLang: result.newFile.fileLang
+      },
+      hunksCount: result.hunks.length
+    })
 
     return result
   } catch (error) {
     console.error('❌ [DiffViewer] 处理diff数据失败:', error)
+    console.error('❌ [DiffViewer] 错误堆栈:', error instanceof Error ? error.stack : 'No stack trace')
     return null
   }
 })
@@ -226,12 +390,47 @@ const loadDiff = async () => {
     loading.value = true
     error.value = null
 
+    console.log('🔍 [DiffViewer] 开始加载差异数据')
+    console.log('📋 [DiffViewer] 请求参数:', {
+      file_path: props.filePath,
+      diff_type: props.diffType
+    })
+
     const result = await invoke('get_file_diff', {
       request: {
         file_path: props.filePath,
         diff_type: props.diffType
       }
     }) as FileDiffResult
+
+    console.log('📦 [DiffViewer] 后端返回的原始数据:', result)
+    console.log('📊 [DiffViewer] 数据结构分析:', {
+      hunks_count: result?.hunks?.length || 0,
+      old_content_length: result?.old_content?.length || 0,
+      new_content_length: result?.new_content?.length || 0,
+      is_binary: result?.is_binary,
+      is_new_file: result?.is_new_file,
+      is_deleted_file: result?.is_deleted_file,
+      file_language: result?.file_language
+    })
+
+    if (result?.hunks?.length > 0) {
+      console.log('🔍 [DiffViewer] Hunks详细内容:')
+      result.hunks.forEach((hunk, index) => {
+        console.log(`  Hunk ${index + 1}:`, {
+          old_start: hunk.old_start,
+          old_lines: hunk.old_lines,
+          new_start: hunk.new_start,
+          new_lines: hunk.new_lines,
+          lines_count: hunk.lines?.length || 0
+        })
+        if (hunk.lines?.length > 0) {
+          console.log(`    前3行内容:`, hunk.lines.slice(0, 3))
+        }
+      })
+    } else {
+      console.warn('⚠️ [DiffViewer] 没有找到任何hunks数据')
+    }
 
     diffData.value = result
   } catch (err) {
@@ -266,25 +465,68 @@ const goToNextDiff = () => {
   }
 }
 
+/**
+ * 切换视图模式（并排/统一）
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
 const toggleMode = () => {
   isUnified.value = !isUnified.value
+
+  // 如果使用diffFile模式，需要重新构建差异行
+  if (diffFile.value) {
+    if (isUnified.value) {
+      diffFile.value.buildUnifiedDiffLines()
+    } else {
+      diffFile.value.buildSplitDiffLines()
+    }
+  }
 }
 
+/**
+ * 切换换行模式
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
 const toggleWrap = () => {
   wrapLines.value = !wrapLines.value
 }
 
+/**
+ * 切换折叠模式
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const toggleCollapse = () => {
+  collapseUnchanged.value = !collapseUnchanged.value
+}
+
+/**
+ * 关闭差异查看器
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
 const closeViewer = () => {
   emit('close')
 }
 
+/**
+ * 重试加载差异
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
 const retry = () => {
   loadDiff()
 }
 
-const handleDiffViewError = (error: any) => {
-  console.error('❌ [DiffViewer] DiffView组件渲染错误:', error)
-  error.value = 'DiffView组件渲染失败: ' + (error?.message || '未知错误')
+/**
+ * 处理DiffView组件错误
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const handleDiffViewError = (errorEvent: any) => {
+  console.error('❌ [DiffViewer] DiffView组件渲染错误:', errorEvent)
+  error.value = 'DiffView组件渲染失败: ' + (errorEvent?.message || '未知错误')
 }
 
 // 生命周期
@@ -356,7 +598,38 @@ onMounted(() => {
 
 .diff-controls {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+}
+
+.diff-navigation {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  background: #f6f8fa;
+  border: 1px solid #d1d5da;
+  border-radius: 6px;
+}
+
+.diff-counter {
+  font-size: 12px;
+  color: #586069;
+  font-weight: 500;
+  min-width: 40px;
+  text-align: center;
+}
+
+.nav-btn {
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+  min-width: 24px;
+}
+
+.nav-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background: #f6f8fa !important;
 }
 
 .control-btn {
@@ -389,6 +662,7 @@ onMounted(() => {
   overflow: hidden;
 }
 
+.no-diff,
 .binary-notice,
 .loading,
 .error {
@@ -399,11 +673,19 @@ onMounted(() => {
   padding: 40px;
 }
 
+.no-diff-content,
 .notice-content,
 .loading-content,
 .error-content {
   text-align: center;
   max-width: 400px;
+}
+
+.no-diff-icon {
+  font-size: 48px;
+  display: block;
+  margin-bottom: 16px;
+  opacity: 0.6;
 }
 
 .notice-icon,
