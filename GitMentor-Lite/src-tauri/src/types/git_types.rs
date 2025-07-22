@@ -123,6 +123,39 @@ pub enum DiffType {
     HeadToWorking, // HEAD与工作区的差异
 }
 
+/// 差异行类型
+/// 作者：Evilek
+/// 编写日期：2025-01-18
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum DiffLineType {
+    Context, // 上下文行（未修改）
+    Delete,  // 删除行
+    Insert,  // 新增行
+}
+
+/// 差异行
+/// 作者：Evilek
+/// 编写日期：2025-01-18
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffLine {
+    pub line_type: DiffLineType,
+    pub content: String,
+    pub old_line_number: Option<u32>,
+    pub new_line_number: Option<u32>,
+}
+
+/// 差异块（Hunk）
+/// 作者：Evilek
+/// 编写日期：2025-01-18
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiffHunk {
+    pub old_start: u32,
+    pub old_lines: u32,
+    pub new_start: u32,
+    pub new_lines: u32,
+    pub lines: Vec<DiffLine>,
+}
+
 /// 文件差异结果
 /// 作者：Evilek
 /// 编写日期：2025-01-18
@@ -134,7 +167,7 @@ pub struct FileDiffResult {
     pub old_file_name: Option<String>,
     pub new_file_name: Option<String>,
     pub file_language: Option<String>,
-    pub diff_string: String, // 完整的Git diff字符串
+    pub hunks: Vec<DiffHunk>,
     pub is_binary: bool,
     pub is_new_file: bool,
     pub is_deleted_file: bool,

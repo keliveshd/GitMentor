@@ -1,6 +1,7 @@
 use crate::types::git_types::{
-    BranchInfo, CommitInfo, CommitRequest, DiffType, FileDiffRequest, FileDiffResult, FileStatus,
-    FileStatusType, GitOperationResult, GitStatusResult, RevertRequest, RevertType, StageRequest,
+    BranchInfo, CommitInfo, CommitRequest, DiffHunk, DiffLine, DiffLineType, DiffType,
+    FileDiffRequest, FileDiffResult, FileStatus, FileStatusType, GitOperationResult,
+    GitStatusResult, RevertRequest, RevertType, StageRequest,
 };
 use anyhow::{anyhow, Result};
 use git2::{DiffOptions, Repository, Signature, StatusOptions};
@@ -442,7 +443,7 @@ impl GitEngine {
                 old_file_name: Some(file_path.clone()),
                 new_file_name: Some(file_path.clone()),
                 file_language: None,
-                diff_string: "Binary file".to_string(),
+                hunks: vec![],
                 is_binary: true,
                 is_new_file: false,
                 is_deleted_file: false,
@@ -525,8 +526,8 @@ impl GitEngine {
             }
         };
 
-        // 生成diff字符串
-        let diff_string = self.generate_diff_string(repo, file_path, DiffType::WorkingTree)?;
+        // 生成diff hunks
+        let hunks = self.generate_diff_hunks(repo, file_path, DiffType::WorkingTree)?;
 
         let file_language = self.detect_file_language(file_path);
         let is_new_file = old_content.is_none() && new_content.is_some();
@@ -539,7 +540,7 @@ impl GitEngine {
             old_file_name: Some(file_path.to_string()),
             new_file_name: Some(file_path.to_string()),
             file_language,
-            diff_string,
+            hunks,
             is_binary: false,
             is_new_file,
             is_deleted_file,
@@ -571,8 +572,8 @@ impl GitEngine {
             None
         };
 
-        // 生成diff字符串
-        let diff_string = self.generate_diff_string(repo, file_path, DiffType::Staged)?;
+        // 生成diff hunks
+        let hunks = self.generate_diff_hunks(repo, file_path, DiffType::Staged)?;
 
         let file_language = self.detect_file_language(file_path);
         let is_new_file = old_content.is_none() && new_content.is_some();
@@ -585,7 +586,7 @@ impl GitEngine {
             old_file_name: Some(file_path.to_string()),
             new_file_name: Some(file_path.to_string()),
             file_language,
-            diff_string,
+            hunks,
             is_binary: false,
             is_new_file,
             is_deleted_file,
@@ -626,8 +627,8 @@ impl GitEngine {
             None
         };
 
-        // 生成diff字符串
-        let diff_string = self.generate_diff_string(repo, file_path, DiffType::HeadToWorking)?;
+        // 生成diff hunks
+        let hunks = self.generate_diff_hunks(repo, file_path, DiffType::HeadToWorking)?;
 
         let file_language = self.detect_file_language(file_path);
         let is_new_file = old_content.is_none() && new_content.is_some();
@@ -640,7 +641,7 @@ impl GitEngine {
             old_file_name: Some(file_path.to_string()),
             new_file_name: Some(file_path.to_string()),
             file_language,
-            diff_string,
+            hunks,
             is_binary: false,
             is_new_file,
             is_deleted_file,
@@ -689,28 +690,36 @@ impl GitEngine {
         }
     }
 
-    /// 生成diff字符串
+    /// 生成diff hunks
     /// 作者：Evilek
     /// 编写日期：2025-01-18
-    fn generate_diff_string(
+    fn generate_diff_hunks(
         &self,
         repo: &Repository,
         file_path: &str,
         diff_type: DiffType,
-    ) -> Result<String> {
+    ) -> Result<Vec<DiffHunk>> {
+        println!("🔍 [GitEngine] 开始生成diff hunks");
+        println!(
+            "📋 [GitEngine] 输入参数: file_path={}, diff_type={:?}",
+            file_path, diff_type
+        );
         let mut diff_options = DiffOptions::new();
         diff_options.pathspec(file_path);
         diff_options.context_lines(3); // 设置上下文行数
 
         let diff = match diff_type {
             DiffType::WorkingTree => {
+                println!("🔧 [GitEngine] 生成工作区与暂存区的差异");
                 // 工作区与暂存区的差异
                 let mut index = repo.index()?;
                 let tree = index.write_tree()?;
                 let tree = repo.find_tree(tree)?;
+                println!("📊 [GitEngine] 暂存区tree ID: {}", tree.id());
                 repo.diff_tree_to_workdir(Some(&tree), Some(&mut diff_options))?
             }
             DiffType::Staged => {
+                println!("🔧 [GitEngine] 生成暂存区与HEAD的差异");
                 // 暂存区与HEAD的差异
                 let head = repo.head()?;
                 let head_commit = head.peel_to_commit()?;
@@ -718,6 +727,11 @@ impl GitEngine {
                 let mut index = repo.index()?;
                 let index_tree = index.write_tree()?;
                 let index_tree = repo.find_tree(index_tree)?;
+                println!(
+                    "📊 [GitEngine] HEAD tree ID: {}, Index tree ID: {}",
+                    head_tree.id(),
+                    index_tree.id()
+                );
                 repo.diff_tree_to_tree(
                     Some(&head_tree),
                     Some(&index_tree),
@@ -725,49 +739,149 @@ impl GitEngine {
                 )?
             }
             DiffType::HeadToWorking => {
+                println!("🔧 [GitEngine] 生成HEAD与工作区的差异");
                 // HEAD与工作区的差异
                 let head = repo.head()?;
                 let head_commit = head.peel_to_commit()?;
                 let head_tree = head_commit.tree()?;
+                println!("📊 [GitEngine] HEAD tree ID: {}", head_tree.id());
                 repo.diff_tree_to_workdir(Some(&head_tree), Some(&mut diff_options))?
             }
         };
 
-        let mut diff_string = String::new();
+        println!("📈 [GitEngine] Git diff操作完成，开始解析结果");
 
-        diff.print(git2::DiffFormat::Patch, |delta, hunk, line| {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+
+        let hunks = Rc::new(RefCell::new(Vec::new()));
+        let current_hunk = Rc::new(RefCell::new(None::<DiffHunk>));
+        let current_lines = Rc::new(RefCell::new(Vec::new()));
+        let old_line_num = Rc::new(RefCell::new(0u32));
+        let new_line_num = Rc::new(RefCell::new(0u32));
+
+        let hunks_clone = hunks.clone();
+        let current_hunk_clone = current_hunk.clone();
+        let current_lines_clone = current_lines.clone();
+        let old_line_num_clone = old_line_num.clone();
+        let new_line_num_clone = new_line_num.clone();
+
+        diff.print(git2::DiffFormat::Patch, move |_delta, hunk, line| {
             let content = String::from_utf8_lossy(line.content());
 
             match line.origin() {
-                'F' => {
-                    // File header
-                    if let Some(old_file) = delta.old_file().path() {
-                        if let Some(new_file) = delta.new_file().path() {
-                            diff_string.push_str(&format!("--- a/{}\n", old_file.display()));
-                            diff_string.push_str(&format!("+++ b/{}\n", new_file.display()));
-                        }
-                    }
-                }
                 'H' => {
-                    // Hunk header
+                    // Hunk header - 保存之前的hunk并开始新的hunk
+                    if let Some(mut prev_hunk) = current_hunk_clone.borrow_mut().take() {
+                        prev_hunk.lines = current_lines_clone.borrow().clone();
+                        hunks_clone.borrow_mut().push(prev_hunk);
+                        current_lines_clone.borrow_mut().clear();
+                    }
+
                     if let Some(hunk) = hunk {
-                        diff_string.push_str(&format!(
-                            "@@ -{},{} +{},{} @@\n",
-                            hunk.old_start(),
-                            hunk.old_lines(),
-                            hunk.new_start(),
-                            hunk.new_lines()
-                        ));
+                        *current_hunk_clone.borrow_mut() = Some(DiffHunk {
+                            old_start: hunk.old_start(),
+                            old_lines: hunk.old_lines(),
+                            new_start: hunk.new_start(),
+                            new_lines: hunk.new_lines(),
+                            lines: Vec::new(),
+                        });
+                        *old_line_num_clone.borrow_mut() = hunk.old_start();
+                        *new_line_num_clone.borrow_mut() = hunk.new_start();
                     }
                 }
-                '+' => diff_string.push_str(&format!("+{}", content)),
-                '-' => diff_string.push_str(&format!("-{}", content)),
-                ' ' => diff_string.push_str(&format!(" {}", content)),
-                _ => diff_string.push_str(&content),
+                '+' => {
+                    // 新增行
+                    let new_line = *new_line_num_clone.borrow();
+                    current_lines_clone.borrow_mut().push(DiffLine {
+                        line_type: DiffLineType::Insert,
+                        content: content.trim_end().to_string(),
+                        old_line_number: None,
+                        new_line_number: Some(new_line),
+                    });
+                    *new_line_num_clone.borrow_mut() += 1;
+                }
+                '-' => {
+                    // 删除行
+                    let old_line = *old_line_num_clone.borrow();
+                    current_lines_clone.borrow_mut().push(DiffLine {
+                        line_type: DiffLineType::Delete,
+                        content: content.trim_end().to_string(),
+                        old_line_number: Some(old_line),
+                        new_line_number: None,
+                    });
+                    *old_line_num_clone.borrow_mut() += 1;
+                }
+                ' ' => {
+                    // 上下文行
+                    let old_line = *old_line_num_clone.borrow();
+                    let new_line = *new_line_num_clone.borrow();
+                    current_lines_clone.borrow_mut().push(DiffLine {
+                        line_type: DiffLineType::Context,
+                        content: content.trim_end().to_string(),
+                        old_line_number: Some(old_line),
+                        new_line_number: Some(new_line),
+                    });
+                    *old_line_num_clone.borrow_mut() += 1;
+                    *new_line_num_clone.borrow_mut() += 1;
+                }
+                _ => {
+                    // 忽略其他类型的行（如文件头）
+                }
             }
             true
         })?;
 
-        Ok(diff_string)
+        // 保存最后一个hunk
+        if let Some(mut last_hunk) = current_hunk.borrow_mut().take() {
+            last_hunk.lines = current_lines.borrow().clone();
+            hunks.borrow_mut().push(last_hunk);
+        }
+
+        let result = hunks.borrow().clone();
+
+        println!("📊 [GitEngine] Diff解析完成统计:");
+        println!("  总Hunk数量: {}", result.len());
+        for (i, hunk) in result.iter().enumerate() {
+            println!(
+                "  Hunk {}: 老文件{}行起{}行, 新文件{}行起{}行, 包含{}行差异",
+                i + 1,
+                hunk.old_start,
+                hunk.old_lines,
+                hunk.new_start,
+                hunk.new_lines,
+                hunk.lines.len()
+            );
+
+            let mut context_count = 0;
+            let mut delete_count = 0;
+            let mut insert_count = 0;
+
+            for line in &hunk.lines {
+                match line.line_type {
+                    DiffLineType::Context => context_count += 1,
+                    DiffLineType::Delete => delete_count += 1,
+                    DiffLineType::Insert => insert_count += 1,
+                }
+            }
+
+            println!(
+                "    行类型统计: 上下文{}行, 删除{}行, 新增{}行",
+                context_count, delete_count, insert_count
+            );
+
+            if i == 0 && !hunk.lines.is_empty() {
+                println!("    第一个hunk的前3行内容:");
+                for (j, line) in hunk.lines.iter().take(3).enumerate() {
+                    println!("      {}. {:?}: {}", j + 1, line.line_type, line.content);
+                }
+            }
+        }
+
+        if result.is_empty() {
+            println!("⚠️ [GitEngine] 警告: 没有生成任何hunks，可能文件没有差异");
+        }
+
+        Ok(result)
     }
 }

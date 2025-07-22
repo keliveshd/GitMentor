@@ -11,13 +11,31 @@
           <span v-if="diffData.file_language" class="language">{{ diffData.file_language }}</span>
         </div>
       </div>
-      
+
       <div class="diff-controls">
+        <!-- 差异导航 -->
+        <div class="diff-navigation" v-if="diffData && !diffData.is_binary">
+          <button @click="goToPreviousDiff" class="control-btn nav-btn" :disabled="currentDiffIndex <= 0" title="上一个差异">
+            ↑
+          </button>
+          <span class="diff-counter" v-if="totalDiffs > 0">
+            {{ currentDiffIndex + 1 }} / {{ totalDiffs }}
+          </span>
+          <button @click="goToNextDiff" class="control-btn nav-btn" :disabled="currentDiffIndex >= totalDiffs - 1"
+            title="下一个差异">
+            ↓
+          </button>
+        </div>
+
+        <!-- 视图控制 -->
         <button @click="toggleMode" class="control-btn" :title="isUnified ? '切换到并排视图' : '切换到统一视图'">
           {{ isUnified ? '📄' : '📋' }}
         </button>
         <button @click="toggleWrap" class="control-btn" :title="wrapLines ? '禁用换行' : '启用换行'">
           {{ wrapLines ? '📏' : '📐' }}
+        </button>
+        <button @click="toggleCollapse" class="control-btn" :title="collapseUnchanged ? '展开相同代码' : '折叠相同代码'">
+          {{ collapseUnchanged ? '📖' : '📕' }}
         </button>
         <button @click="closeViewer" class="control-btn close-btn" title="关闭">
           ✕
@@ -28,15 +46,19 @@
 
 
     <!-- 差异内容 -->
-    <div class="diff-content" v-if="diffData && !diffData.is_binary && diffFile">
-      <DiffView
-        :diff-file="diffFile"
-        :diff-view-mode="diffMode"
-        :diff-view-theme="'light'"
-        :diff-view-highlight="true"
-        :diff-view-wrap="wrapLines"
-        :diff-view-font-size="14"
-      />
+    <div class="diff-content" v-if="diffData && !diffData.is_binary && hasValidContent">
+      <DiffView :data="diffViewData" :diff-view-mode="diffMode" :diff-view-theme="'light'" :diff-view-highlight="true"
+        :diff-view-wrap="wrapLines" :diff-view-font-size="14" :diff-view-add-widget="false"
+        @error="handleDiffViewError" />
+    </div>
+
+    <!-- 无差异内容提示 -->
+    <div v-else-if="diffData && !diffData.is_binary && !hasValidContent" class="no-diff">
+      <div class="no-diff-content">
+        <span class="no-diff-icon">📄</span>
+        <h4>没有差异</h4>
+        <p>此文件没有检测到任何更改</p>
+      </div>
     </div>
 
     <!-- 二进制文件提示 -->
@@ -72,8 +94,37 @@
 import { ref, computed, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { DiffView, DiffModeEnum } from '@git-diff-view/vue'
-import { generateDiffFile } from '@git-diff-view/file'
 import '@git-diff-view/vue/styles/diff-view.css'
+
+// 类型定义
+/**
+ * 文件差异结果类型
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+interface FileDiffResult {
+  file_path: string
+  old_content?: string
+  new_content?: string
+  old_file_name?: string
+  new_file_name?: string
+  file_language?: string
+  hunks: Array<{
+    old_start: number
+    old_lines: number
+    new_start: number
+    new_lines: number
+    lines: Array<{
+      line_type: 'Context' | 'Delete' | 'Insert'
+      content: string
+      old_line_number?: number
+      new_line_number?: number
+    }>
+  }>
+  is_binary: boolean
+  is_new_file: boolean
+  is_deleted_file: boolean
+}
 
 // Props
 interface Props {
@@ -91,47 +142,85 @@ const emit = defineEmits<{
 }>()
 
 // 响应式数据
-const diffData = ref<any>(null)
+const diffData = ref<FileDiffResult | null>(null)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const isUnified = ref(false)
 const wrapLines = ref(false)
+const collapseUnchanged = ref(false)
+const currentDiffIndex = ref(0)
 
 // 计算属性
-const diffMode = computed(() => 
+const diffMode = computed(() =>
   isUnified.value ? DiffModeEnum.Unified : DiffModeEnum.Split
 )
 
-const diffFile = computed(() => {
-  if (!diffData.value) return null
+/**
+ * 检查是否有有效的差异内容
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const hasValidContent = computed(() => {
+  if (!diffData.value) return false
+
+  // 检查是否有内容差异
+  const hasContentDiff = diffData.value.old_content !== diffData.value.new_content
+
+  // 检查是否有hunks
+  const hasHunks = diffData.value.hunks && diffData.value.hunks.length > 0
+
+  return hasContentDiff || hasHunks
+})
+
+/**
+ * 计算总差异数量
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const totalDiffs = computed(() => {
+  if (!diffData.value?.hunks) return 0
+  return diffData.value.hunks.length
+})
+
+/**
+ * 转换数据为DiffView组件所需格式
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const diffViewData = computed(() => {
+  if (!diffData.value || !hasValidContent.value) {
+    return null
+  }
 
   try {
-    // 使用generateDiffFile方法，这是推荐的方式
-    const file = generateDiffFile(
-      diffData.value.old_file_name || diffData.value.file_path,
-      diffData.value.old_content || '',
-      diffData.value.new_file_name || diffData.value.file_path,
-      diffData.value.new_content || '',
-      diffData.value.file_language || '',
-      diffData.value.file_language || ''
-    )
+    // 直接使用文件内容，让@git-diff-view/vue库自动计算差异
+    const result = {
+      oldFile: {
+        fileName: diffData.value.old_file_name || diffData.value.file_path,
+        content: diffData.value.old_content || '',
+        fileLang: diffData.value.file_language || ''
+      },
+      newFile: {
+        fileName: diffData.value.new_file_name || diffData.value.file_path,
+        content: diffData.value.new_content || '',
+        fileLang: diffData.value.file_language || ''
+      },
+      hunks: [] // 让库自动生成hunks
+    }
 
-    // 初始化主题和构建差异行
-    file.initTheme('light')
-    file.init()
-    file.buildSplitDiffLines()
-    file.buildUnifiedDiffLines()
-
-    return file
+    return result
   } catch (error) {
-    console.error('Failed to generate diff file:', error)
-    console.error('Old content length:', diffData.value.old_content?.length || 0)
-    console.error('New content length:', diffData.value.new_content?.length || 0)
+    console.error('❌ [DiffViewer] 处理diff数据失败:', error)
     return null
   }
 })
 
 // 方法
+/**
+ * 加载文件差异数据
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
 const loadDiff = async () => {
   try {
     loading.value = true
@@ -142,14 +231,38 @@ const loadDiff = async () => {
         file_path: props.filePath,
         diff_type: props.diffType
       }
-    })
+    }) as FileDiffResult
 
     diffData.value = result
   } catch (err) {
     error.value = err instanceof Error ? err.message : '未知错误'
-    console.error('Failed to load diff:', err)
+    console.error('❌ [DiffViewer] 加载差异失败:', err)
   } finally {
     loading.value = false
+  }
+}
+
+/**
+ * 跳转到上一个差异
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const goToPreviousDiff = () => {
+  if (currentDiffIndex.value > 0) {
+    currentDiffIndex.value--
+    // TODO: 实现滚动到对应差异位置的逻辑
+  }
+}
+
+/**
+ * 跳转到下一个差异
+ * 作者：Evilek
+ * 编写日期：2025-07-22
+ */
+const goToNextDiff = () => {
+  if (currentDiffIndex.value < totalDiffs.value - 1) {
+    currentDiffIndex.value++
+    // TODO: 实现滚动到对应差异位置的逻辑
   }
 }
 
@@ -167,6 +280,11 @@ const closeViewer = () => {
 
 const retry = () => {
   loadDiff()
+}
+
+const handleDiffViewError = (error: any) => {
+  console.error('❌ [DiffViewer] DiffView组件渲染错误:', error)
+  error.value = 'DiffView组件渲染失败: ' + (error?.message || '未知错误')
 }
 
 // 生命周期
@@ -301,8 +419,13 @@ onMounted(() => {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .notice-content h4,
