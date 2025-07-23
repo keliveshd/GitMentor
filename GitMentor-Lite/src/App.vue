@@ -13,38 +13,38 @@ async function greet() {
 </script>
 
 <template>
-  <div class="app">
-    <!-- 主要内容区域 -->
-    <main class="main-content">
-      <!-- Git面板 -->
-      <div class="git-panel-container">
-        <GitPanel />
-      </div>
+  <!-- 路由视图 - 支持多页面 -->
+  <router-view v-slot="{ Component }">
+    <component :is="Component" v-if="Component" />
+    <!-- 默认主页面 -->
+    <div v-else class="app">
+      <!-- 主要内容区域 -->
+      <main class="main-content">
+        <!-- Git面板 -->
+        <div class="git-panel-container">
+          <GitPanel />
+        </div>
 
-      <!-- 测试区域（可选） -->
-      <div class="test-section" v-if="showTestSection">
-        <h3>🧪 Tauri连接测试</h3>
-        <form class="test-form" @submit.prevent="greet">
-          <input
-            id="greet-input"
-            v-model="name"
-            placeholder="输入名称进行测试..."
-            class="test-input"
-          />
-          <button type="submit" class="test-button">测试连接</button>
-        </form>
-        <p v-if="greetMsg" class="test-result">{{ greetMsg }}</p>
-      </div>
-    </main>
+        <!-- 测试区域（可选） -->
+        <div class="test-section" v-if="showTestSection">
+          <h3>🧪 Tauri连接测试</h3>
+          <form class="test-form" @submit.prevent="greet">
+            <input id="greet-input" v-model="name" placeholder="输入名称进行测试..." class="test-input" />
+            <button type="submit" class="test-button">测试连接</button>
+          </form>
+          <p v-if="greetMsg" class="test-result">{{ greetMsg }}</p>
+        </div>
+      </main>
 
-    <!-- 页脚 -->
-    <footer class="app-footer">
-      <p>GitMentor MVP v2.0 - 作者：Evilek | 基于 Tauri + Vue 3 + Rust</p>
-      <button @click="showTestSection = !showTestSection" class="toggle-test-btn">
-        {{ showTestSection ? '隐藏' : '显示' }}测试区域
-      </button>
-    </footer>
-  </div>
+      <!-- 页脚 -->
+      <footer class="app-footer">
+        <p>GitMentor MVP v2.0 - 作者：Evilek | 基于 Tauri + Vue 3 + Rust</p>
+        <button @click="showTestSection = !showTestSection" class="toggle-test-btn">
+          {{ showTestSection ? '隐藏' : '显示' }}测试区域
+        </button>
+      </footer>
+    </div>
+  </router-view>
 </template>
 
 <style scoped>
@@ -266,6 +266,7 @@ button {
 button:hover {
   border-color: #396cd8;
 }
+
 button:active {
   border-color: #396cd8;
   background-color: #e8e8e8;
@@ -400,9 +401,9 @@ button {
     color: #ffffff;
     background-color: #0f0f0f98;
   }
+
   button:active {
     background-color: #0f0f0f69;
   }
 }
-
 </style>

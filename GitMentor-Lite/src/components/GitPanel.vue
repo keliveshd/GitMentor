@@ -28,41 +28,23 @@
           </div>
         </div>
         <div class="file-list">
-          <FileItem
-            v-for="file in gitStatus.staged_files"
-            :key="file.path"
-            :file="file"
-            :is-staged="true"
-            @toggle-stage="toggleStage"
-            @revert="revertFile"
-            @view-diff="openDiffViewer"
-          />
+          <FileItem v-for="file in gitStatus.staged_files" :key="file.path" :file="file" :is-staged="true"
+            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
         </div>
       </div>
 
       <!-- 提交区域 -->
       <div class="commit-section" v-if="gitStatus">
         <div class="commit-input">
-          <textarea
-            v-model="commitMessage"
-            placeholder="输入提交消息..."
-            rows="3"
-            class="commit-textarea"
-            :disabled="!gitStatus.staged_files.length"
-          ></textarea>
+          <textarea v-model="commitMessage" placeholder="输入提交消息..." rows="3" class="commit-textarea"
+            :disabled="!gitStatus.staged_files.length"></textarea>
           <div class="commit-actions">
-            <button
-              @click="generateCommitMessage"
-              class="generate-btn"
-              :disabled="loading || !gitStatus.staged_files.length"
-            >
+            <button @click="generateCommitMessage" class="generate-btn"
+              :disabled="loading || !gitStatus.staged_files.length">
               🤖 AI生成
             </button>
-            <button
-              @click="commitChanges"
-              class="commit-btn"
-              :disabled="!commitMessage.trim() || loading || !gitStatus.staged_files.length"
-            >
+            <button @click="commitChanges" class="commit-btn"
+              :disabled="!commitMessage.trim() || loading || !gitStatus.staged_files.length">
               ✅ 提交
             </button>
           </div>
@@ -83,15 +65,8 @@
           </div>
         </div>
         <div class="file-list">
-          <FileItem
-            v-for="file in gitStatus.unstaged_files"
-            :key="file.path"
-            :file="file"
-            :is-staged="false"
-            @toggle-stage="toggleStage"
-            @revert="revertFile"
-            @view-diff="openDiffViewer"
-          />
+          <FileItem v-for="file in gitStatus.unstaged_files" :key="file.path" :file="file" :is-staged="false"
+            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
         </div>
       </div>
 
@@ -106,15 +81,8 @@
           </div>
         </div>
         <div class="file-list">
-          <FileItem
-            v-for="file in gitStatus.untracked_files"
-            :key="file.path"
-            :file="file"
-            :is-staged="false"
-            @toggle-stage="toggleStage"
-            @revert="revertFile"
-            @view-diff="openDiffViewer"
-          />
+          <FileItem v-for="file in gitStatus.untracked_files" :key="file.path" :file="file" :is-staged="false"
+            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
         </div>
       </div>
 
@@ -124,15 +92,8 @@
           <h4>⚠️ 合并冲突 ({{ gitStatus.conflicted_files.length }})</h4>
         </div>
         <div class="file-list">
-          <FileItem
-            v-for="file in gitStatus.conflicted_files"
-            :key="file.path"
-            :file="file"
-            :is-staged="false"
-            @toggle-stage="toggleStage"
-            @revert="revertFile"
-            @view-diff="openDiffViewer"
-          />
+          <FileItem v-for="file in gitStatus.conflicted_files" :key="file.path" :file="file" :is-staged="false"
+            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
         </div>
       </div>
 
@@ -149,11 +110,7 @@
         <button @click="refreshHistory" class="action-btn">🔄</button>
       </div>
       <div class="history-list">
-        <div
-          v-for="commit in commitHistory"
-          :key="commit.hash"
-          class="commit-item"
-        >
+        <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
           <div class="commit-info">
             <div class="commit-message">{{ commit.message }}</div>
             <div class="commit-meta">
@@ -166,14 +123,7 @@
       </div>
     </div>
 
-    <!-- 差异查看器弹窗 -->
-    <div v-if="showDiffViewer" class="diff-viewer-overlay">
-      <DiffViewer
-        :file-path="diffFilePath"
-        :diff-type="diffType"
-        @close="closeDiffViewer"
-      />
-    </div>
+    <!-- 差异查看器已改为独立窗口，此处不再需要模态框 -->
   </div>
 </template>
 
@@ -181,7 +131,7 @@
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import FileItem from './FileItem.vue'
-import DiffViewer from './DiffViewer.vue'
+import WindowManager from '../utils/WindowManager'
 
 // 响应式数据
 const currentRepoPath = ref<string>('')
@@ -191,10 +141,7 @@ const commitHistory = ref<any[]>([])
 const loading = ref(false)
 const tauriReady = ref(false)
 
-// 差异查看器状态
-const showDiffViewer = ref(false)
-const diffFilePath = ref<string>('')
-const diffType = ref<'WorkingTree' | 'Staged' | 'HeadToWorking'>('WorkingTree')
+// 差异查看器已改为独立窗口，不再需要本地状态
 
 // 方法
 const openRepository = async () => {
@@ -258,7 +205,7 @@ const toggleStage = async (filePath: string, shouldStage: boolean) => {
 
 const stageAll = async () => {
   if (!gitStatus.value?.unstaged_files.length) return
-  
+
   try {
     const filePaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
     await invoke('stage_files', {
@@ -273,7 +220,7 @@ const stageAll = async () => {
 
 const unstageAll = async () => {
   if (!gitStatus.value?.staged_files.length) return
-  
+
   try {
     const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
     await invoke('stage_files', {
@@ -288,7 +235,7 @@ const unstageAll = async () => {
 
 const stageAllUntracked = async () => {
   if (!gitStatus.value?.untracked_files.length) return
-  
+
   try {
     const filePaths = gitStatus.value.untracked_files.map((f: any) => f.path)
     await invoke('stage_files', {
@@ -303,7 +250,7 @@ const stageAllUntracked = async () => {
 
 const generateCommitMessage = async () => {
   if (!gitStatus.value?.staged_files.length) return
-  
+
   try {
     loading.value = true
     const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
@@ -324,7 +271,7 @@ const generateCommitMessage = async () => {
 
 const commitChanges = async () => {
   if (!commitMessage.value.trim() || !gitStatus.value?.staged_files.length) return
-  
+
   try {
     loading.value = true
     await invoke('commit_changes', {
@@ -372,30 +319,33 @@ const formatTime = (timestamp: number) => {
 }
 
 // 差异查看器方法
-const openDiffViewer = (filePath: string) => {
-  diffFilePath.value = filePath
+const openDiffViewer = async (filePath: string) => {
+  try {
+    // 根据文件状态确定差异类型
+    const stagedFile = gitStatus.value?.staged_files?.find((f: any) => f.path === filePath)
+    const unstagedFile = gitStatus.value?.unstaged_files?.find((f: any) => f.path === filePath)
 
-  // 根据文件状态确定差异类型
-  const stagedFile = gitStatus.value?.staged_files?.find((f: any) => f.path === filePath)
-  const unstagedFile = gitStatus.value?.unstaged_files?.find((f: any) => f.path === filePath)
+    let currentDiffType: 'WorkingTree' | 'Staged' | 'HeadToWorking' = 'HeadToWorking'
 
-  if (stagedFile) {
-    // 如果文件在暂存区，显示暂存区与HEAD的差异
-    diffType.value = 'Staged'
-  } else if (unstagedFile) {
-    // 如果文件在工作区，显示工作区与暂存区的差异
-    diffType.value = 'WorkingTree'
-  } else {
-    // 默认显示工作区与HEAD的差异
-    diffType.value = 'HeadToWorking'
+    if (stagedFile) {
+      // 如果文件在暂存区，显示暂存区与HEAD的差异
+      currentDiffType = 'Staged'
+    } else if (unstagedFile) {
+      // 如果文件在工作区，显示工作区与暂存区的差异
+      currentDiffType = 'WorkingTree'
+    } else {
+      // 默认显示工作区与HEAD的差异
+      currentDiffType = 'HeadToWorking'
+    }
+
+    // 使用WindowManager打开新窗口
+    await WindowManager.openDiffViewer(filePath, currentDiffType)
+    console.log(`✅ [GitPanel] 已打开差异查看器窗口: ${filePath}`)
+  } catch (error) {
+    console.error('❌ [GitPanel] 打开差异查看器失败:', error)
+    // 可以在这里添加用户友好的错误提示
+    alert(`打开差异查看器失败: ${error instanceof Error ? error.message : '未知错误'}`)
   }
-
-  showDiffViewer.value = true
-}
-
-const closeDiffViewer = () => {
-  showDiffViewer.value = false
-  diffFilePath.value = ''
 }
 
 // 生命周期
@@ -724,6 +674,7 @@ onMounted(async () => {
 
 /* 深色主题支持 */
 @media (prefers-color-scheme: dark) {
+
   .repo-header,
   .file-section,
   .commit-section,
@@ -801,7 +752,7 @@ onMounted(async () => {
   justify-content: center;
 }
 
-.diff-viewer-overlay > * {
+.diff-viewer-overlay>* {
   width: 90vw;
   height: 90vh;
   max-width: 1200px;

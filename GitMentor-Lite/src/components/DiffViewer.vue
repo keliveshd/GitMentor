@@ -570,10 +570,24 @@ const toggleCollapse = () => {
 /**
  * 关闭差异查看器
  * 作者：Evilek
- * 编写日期：2025-07-22
+ * 编写日期：2025-07-23
  */
-const closeViewer = () => {
-  emit('close')
+const closeViewer = async () => {
+  try {
+    // 检查是否在Tauri环境中
+    if (typeof window !== 'undefined' && (window as any).__TAURI__) {
+      const { getCurrentWebviewWindow } = await import('@tauri-apps/api/webviewWindow')
+      const currentWindow = getCurrentWebviewWindow()
+      await currentWindow.close()
+    } else {
+      // 降级到emit事件（用于开发环境或非Tauri环境）
+      emit('close')
+    }
+  } catch (error) {
+    console.error('❌ [DiffViewer] 关闭窗口失败:', error)
+    // 降级到emit事件
+    emit('close')
+  }
 }
 
 /**
