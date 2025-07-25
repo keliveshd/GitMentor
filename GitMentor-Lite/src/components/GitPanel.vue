@@ -10,31 +10,39 @@
           <span v-if="gitStatus.behind > 0" class="behind">↓{{ gitStatus.behind }}</span>
         </span>
       </div>
-      <!-- 选择仓库按钮组 -->
-      <div class="repo-selector">
-        <button @click="openRepository" class="select-repo-btn" :disabled="loading || !tauriReady">
-          {{ loading ? '加载中...' : !tauriReady ? '初始化中...' : '选择仓库' }}
+      <!-- 功能按钮组 -->
+      <div class="function-buttons">
+        <!-- AI服务设置按钮 -->
+        <button @click="openAISettings" class="ai-settings-btn" :disabled="loading || !tauriReady" title="AI服务设置">
+          🤖 AI设置
         </button>
 
-        <!-- 最近仓库下拉菜单 -->
-        <div class="recent-repos-dropdown" v-if="recentRepos.length > 0">
-          <button @click="toggleRecentDropdown" class="recent-dropdown-btn" :disabled="loading || !tauriReady"
-            title="最近打开的仓库">
-            📋
+        <!-- 选择仓库按钮组 -->
+        <div class="repo-selector">
+          <button @click="openRepository" class="select-repo-btn" :disabled="loading || !tauriReady">
+            {{ loading ? '加载中...' : !tauriReady ? '初始化中...' : '选择仓库' }}
           </button>
-          <div v-if="showRecentDropdown" class="recent-dropdown-menu">
-            <div class="recent-dropdown-header">
-              <span>最近打开的仓库</span>
-              <button @click="clearRecentRepos" class="clear-recent-btn" title="清空历史">🗑️</button>
-            </div>
-            <div class="recent-repo-item" v-for="repo in recentRepos" :key="repo.path"
-              @click="openRecentRepo(repo.path)" :class="{ active: repo.path === currentRepoPath }">
-              <div class="repo-item-info">
-                <div class="repo-item-name">📂 {{ repo.name }}</div>
-                <div class="repo-item-path">{{ repo.path }}</div>
-                <div class="repo-item-time">{{ getRepoDisplayTime(repo) }}</div>
+
+          <!-- 最近仓库下拉菜单 -->
+          <div class="recent-repos-dropdown" v-if="recentRepos.length > 0">
+            <button @click="toggleRecentDropdown" class="recent-dropdown-btn" :disabled="loading || !tauriReady"
+              title="最近打开的仓库">
+              📋
+            </button>
+            <div v-if="showRecentDropdown" class="recent-dropdown-menu">
+              <div class="recent-dropdown-header">
+                <span>最近打开的仓库</span>
+                <button @click="clearRecentRepos" class="clear-recent-btn" title="清空历史">🗑️</button>
               </div>
-              <button @click.stop="removeRecentRepo(repo.path)" class="remove-repo-btn" title="从历史中移除">×</button>
+              <div class="recent-repo-item" v-for="repo in recentRepos" :key="repo.path"
+                @click="openRecentRepo(repo.path)" :class="{ active: repo.path === currentRepoPath }">
+                <div class="repo-item-info">
+                  <div class="repo-item-name">📂 {{ repo.name }}</div>
+                  <div class="repo-item-path">{{ repo.path }}</div>
+                  <div class="repo-item-time">{{ getRepoDisplayTime(repo) }}</div>
+                </div>
+                <button @click.stop="removeRecentRepo(repo.path)" class="remove-repo-btn" title="从历史中移除">×</button>
+              </div>
             </div>
           </div>
         </div>
@@ -421,6 +429,22 @@ const autoLoadLastRepo = async () => {
   }
 }
 
+// AI服务设置方法
+// 作者：Evilek
+// 编写日期：2025-07-25
+const openAISettings = async () => {
+  try {
+    console.log('🤖 [GitPanel] 打开AI服务设置窗口')
+
+    // 使用WindowManager打开AI设置窗口
+    await WindowManager.openAISettings()
+    console.log('✅ [GitPanel] 已打开AI服务设置窗口')
+  } catch (error) {
+    console.error('❌ [GitPanel] 打开AI服务设置窗口失败:', error)
+    alert(`打开AI服务设置失败: ${error instanceof Error ? error.message : '未知错误'}`)
+  }
+}
+
 // 差异查看器方法
 const openDiffViewer = async (filePath: string, isStaged?: boolean) => {
   try {
@@ -510,6 +534,37 @@ onMounted(async () => {
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   min-height: 40px;
+}
+
+/* 功能按钮组样式 */
+.function-buttons {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+/* AI设置按钮样式 */
+.ai-settings-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
+  white-space: nowrap;
+}
+
+.ai-settings-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
+}
+
+.ai-settings-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* 仓库选择器样式 */

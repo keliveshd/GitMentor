@@ -156,6 +156,95 @@ export class WindowManager {
   }
 
   /**
+   * 打开AI服务设置窗口
+   * 作者：Evilek
+   * 编写日期：2025-07-25
+   */
+  static async openAISettings() {
+    try {
+      console.log(`🚀 [WindowManager] 开始创建AI服务设置窗口`);
+
+      const windowLabel = "ai-settings";
+
+      // 检查窗口是否已经存在
+      if (this.openWindows.has(windowLabel)) {
+        const existingWindow = this.openWindows.get(windowLabel);
+        if (existingWindow) {
+          console.log(`♻️ [WindowManager] AI设置窗口已存在，聚焦到现有窗口`);
+          // 聚焦到已存在的窗口
+          await existingWindow.setFocus();
+          return existingWindow;
+        }
+      }
+
+      // 构建URL
+      const fullUrl = "/ai-settings";
+      console.log(`🔗 [WindowManager] 构建的URL: ${fullUrl}`);
+
+      // 创建新窗口
+      const window = new WebviewWindow(windowLabel, {
+        url: fullUrl,
+        title: "AI服务设置",
+        width: 800,
+        height: 600,
+        center: true,
+        resizable: true,
+        minimizable: true,
+        maximizable: true,
+        closable: true,
+        skipTaskbar: false,
+        alwaysOnTop: false,
+      });
+
+      console.log(`🪟 [WindowManager] AI设置窗口实例已创建`);
+
+      // 监听窗口关闭事件
+      window.once("tauri://close-requested", () => {
+        this.openWindows.delete(windowLabel);
+      });
+
+      // 监听窗口创建完成事件
+      window.once("tauri://created", () => {
+        console.log(`✅ [WindowManager] AI设置窗口创建成功`);
+      });
+
+      // 监听窗口错误事件
+      window.once("tauri://error", (error) => {
+        console.error(`❌ [WindowManager] AI设置窗口创建失败`, error);
+        this.openWindows.delete(windowLabel);
+      });
+
+      // 保存窗口引用
+      this.openWindows.set(windowLabel, window);
+
+      return window;
+    } catch (error) {
+      console.error("❌ [WindowManager] 创建AI设置窗口失败:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * 关闭AI服务设置窗口
+   * 作者：Evilek
+   * 编写日期：2025-07-25
+   */
+  static async closeAISettings() {
+    const windowLabel = "ai-settings";
+    const window = this.openWindows.get(windowLabel);
+
+    if (window) {
+      try {
+        await window.close();
+        this.openWindows.delete(windowLabel);
+        console.log(`✅ [WindowManager] AI设置窗口已关闭`);
+      } catch (error) {
+        console.error(`❌ [WindowManager] 关闭AI设置窗口失败`, error);
+      }
+    }
+  }
+
+  /**
    * 从文件路径提取文件名
    * @param filePath 文件路径
    */
