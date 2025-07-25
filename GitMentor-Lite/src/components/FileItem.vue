@@ -67,7 +67,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   toggleStage: [filePath: string, shouldStage: boolean]
   revert: [filePath: string, isStaged: boolean]
-  viewDiff: [filePath: string]
+  viewDiff: [filePath: string, isStaged: boolean]
 }>()
 
 // 计算属性
@@ -143,7 +143,7 @@ const handleRevert = () => {
 }
 
 const viewDiff = () => {
-  emit('viewDiff', props.file.path)
+  emit('viewDiff', props.file.path, props.isStaged)
 }
 </script>
 

@@ -29,7 +29,7 @@
         </div>
         <div class="file-list">
           <FileItem v-for="file in gitStatus.staged_files" :key="file.path" :file="file" :is-staged="true"
-            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
+            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
         </div>
       </div>
 
@@ -66,7 +66,7 @@
         </div>
         <div class="file-list">
           <FileItem v-for="file in gitStatus.unstaged_files" :key="file.path" :file="file" :is-staged="false"
-            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
+            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
         </div>
       </div>
 
@@ -82,7 +82,7 @@
         </div>
         <div class="file-list">
           <FileItem v-for="file in gitStatus.untracked_files" :key="file.path" :file="file" :is-staged="false"
-            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
+            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
         </div>
       </div>
 
@@ -93,7 +93,7 @@
         </div>
         <div class="file-list">
           <FileItem v-for="file in gitStatus.conflicted_files" :key="file.path" :file="file" :is-staged="false"
-            @toggle-stage="toggleStage" @revert="revertFile" @view-diff="openDiffViewer" />
+            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
         </div>
       </div>
 
@@ -319,24 +319,40 @@ const formatTime = (timestamp: number) => {
 }
 
 // 差异查看器方法
-const openDiffViewer = async (filePath: string) => {
+const openDiffViewer = async (filePath: string, isStaged?: boolean) => {
   try {
-    // 根据文件状态确定差异类型
+    console.log(`🔍 [GitPanel] 打开差异查看器: ${filePath}, isStaged: ${isStaged}`)
+
+    // 根据文件状态和用户点击的区域确定差异类型
     const stagedFile = gitStatus.value?.staged_files?.find((f: any) => f.path === filePath)
     const unstagedFile = gitStatus.value?.unstaged_files?.find((f: any) => f.path === filePath)
 
     let currentDiffType: 'WorkingTree' | 'Staged' | 'HeadToWorking' = 'HeadToWorking'
 
-    if (stagedFile) {
-      // 如果文件在暂存区，显示暂存区与HEAD的差异
-      currentDiffType = 'Staged'
-    } else if (unstagedFile) {
-      // 如果文件在工作区，显示工作区与暂存区的差异
-      currentDiffType = 'WorkingTree'
+    // 如果明确指定了isStaged参数，优先使用
+    if (isStaged !== undefined) {
+      if (isStaged && stagedFile) {
+        // 用户点击的是暂存区的文件，显示暂存区与HEAD的差异
+        currentDiffType = 'Staged'
+      } else if (!isStaged && unstagedFile) {
+        // 用户点击的是工作区的文件，显示工作区与暂存区的差异
+        currentDiffType = 'WorkingTree'
+      } else {
+        // 默认显示工作区与HEAD的差异
+        currentDiffType = 'HeadToWorking'
+      }
     } else {
-      // 默认显示工作区与HEAD的差异
-      currentDiffType = 'HeadToWorking'
+      // 兼容旧的逻辑（没有isStaged参数时）
+      if (stagedFile) {
+        currentDiffType = 'Staged'
+      } else if (unstagedFile) {
+        currentDiffType = 'WorkingTree'
+      } else {
+        currentDiffType = 'HeadToWorking'
+      }
     }
+
+    console.log(`📋 [GitPanel] 差异类型: ${currentDiffType}`)
 
     // 使用WindowManager打开新窗口
     await WindowManager.openDiffViewer(filePath, currentDiffType)

@@ -63,22 +63,36 @@ const closeWindow = async () => {
  */
 const parseParams = () => {
   try {
+    console.log('🔍 [DiffViewerPage] 开始解析URL参数')
+    console.log('🔍 [DiffViewerPage] 当前路由信息:', {
+      path: route.path,
+      query: route.query,
+      fullPath: route.fullPath
+    })
+
     // 从路由查询参数获取数据
     const routeFilePath = route.query.filePath as string
     const routeDiffType = route.query.diffType as string
 
+    console.log('🔍 [DiffViewerPage] 提取的参数:', {
+      routeFilePath,
+      routeDiffType
+    })
+
     if (!routeFilePath) {
+      console.error('❌ [DiffViewerPage] 缺少文件路径参数')
       paramError.value = '缺少必需的文件路径参数'
       return
     }
 
     filePath.value = routeFilePath
-    
+
     // 验证差异类型
     const validDiffTypes = ['WorkingTree', 'Staged', 'HeadToWorking']
     if (routeDiffType && validDiffTypes.includes(routeDiffType)) {
       diffType.value = routeDiffType as 'WorkingTree' | 'Staged' | 'HeadToWorking'
     } else {
+      console.warn('⚠️ [DiffViewerPage] 无效的差异类型，使用默认值:', routeDiffType)
       diffType.value = 'WorkingTree' // 默认值
     }
 
