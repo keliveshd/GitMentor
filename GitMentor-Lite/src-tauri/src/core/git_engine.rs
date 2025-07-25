@@ -123,21 +123,26 @@ impl GitEngine {
     }
 
     /// 暂存或取消暂存文件
+    /// 作者：Evilek
+    /// 编写日期：2025-01-25
     pub fn stage_files(&self, request: &StageRequest) -> Result<GitOperationResult> {
         let repo = self.get_repository()?;
         let mut index = repo.index()?;
 
-        for file_path in &request.file_paths {
-            if request.stage {
-                // 暂存文件
+        if request.stage {
+            // 暂存文件
+            for file_path in &request.file_paths {
                 index.add_path(Path::new(file_path))?;
-            } else {
-                // 取消暂存文件 - 简化实现，直接从索引中移除
-                index.remove_path(Path::new(file_path))?;
             }
-        }
+            index.write()?;
+        } else {
+            // 取消暂存文件 - 使用正确的reset方法
+            let head = repo.head()?;
+            let head_commit = head.peel_to_commit()?;
 
-        index.write()?;
+            // 将指定文件从暂存区重置到HEAD状态
+            repo.reset_default(Some(head_commit.as_object()), request.file_paths.iter())?;
+        }
 
         Ok(GitOperationResult {
             success: true,
