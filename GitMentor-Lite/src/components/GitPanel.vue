@@ -10,9 +10,35 @@
           <span v-if="gitStatus.behind > 0" class="behind">↓{{ gitStatus.behind }}</span>
         </span>
       </div>
-      <button @click="openRepository" class="select-repo-btn" :disabled="loading || !tauriReady">
-        {{ loading ? '加载中...' : !tauriReady ? '初始化中...' : '选择仓库' }}
-      </button>
+      <!-- 选择仓库按钮组 -->
+      <div class="repo-selector">
+        <button @click="openRepository" class="select-repo-btn" :disabled="loading || !tauriReady">
+          {{ loading ? '加载中...' : !tauriReady ? '初始化中...' : '选择仓库' }}
+        </button>
+
+        <!-- 最近仓库下拉菜单 -->
+        <div class="recent-repos-dropdown" v-if="recentRepos.length > 0">
+          <button @click="toggleRecentDropdown" class="recent-dropdown-btn" :disabled="loading || !tauriReady"
+            title="最近打开的仓库">
+            📋
+          </button>
+          <div v-if="showRecentDropdown" class="recent-dropdown-menu">
+            <div class="recent-dropdown-header">
+              <span>最近打开的仓库</span>
+              <button @click="clearRecentRepos" class="clear-recent-btn" title="清空历史">🗑️</button>
+            </div>
+            <div class="recent-repo-item" v-for="repo in recentRepos" :key="repo.path"
+              @click="openRecentRepo(repo.path)" :class="{ active: repo.path === currentRepoPath }">
+              <div class="repo-item-info">
+                <div class="repo-item-name">📂 {{ repo.name }}</div>
+                <div class="repo-item-path">{{ repo.path }}</div>
+                <div class="repo-item-time">{{ getRepoDisplayTime(repo) }}</div>
+              </div>
+              <button @click.stop="removeRecentRepo(repo.path)" class="remove-repo-btn" title="从历史中移除">×</button>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Git状态面板 -->
@@ -132,6 +158,7 @@ import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import FileItem from './FileItem.vue'
 import WindowManager from '../utils/WindowManager'
+import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 
 // 响应式数据
 const currentRepoPath = ref<string>('')
@@ -140,6 +167,10 @@ const commitMessage = ref('')
 const commitHistory = ref<any[]>([])
 const loading = ref(false)
 const tauriReady = ref(false)
+
+// 最近仓库相关状态
+const recentRepos = ref<RecentRepo[]>([])
+const showRecentDropdown = ref(false)
 
 // 差异查看器已改为独立窗口，不再需要本地状态
 
@@ -155,10 +186,7 @@ const openRepository = async () => {
 
     const selectedPath = await invoke('open_folder_dialog') as string | null
     if (selectedPath) {
-      currentRepoPath.value = selectedPath
-      await invoke('select_repository', { path: selectedPath })
-      await refreshGitStatus()
-      await refreshHistory()
+      await openRepoByPath(selectedPath)
     }
     // 如果 selectedPath 为 null，说明用户取消了选择或选择的不是有效的Git仓库
     // 这种情况下不需要显示错误消息，因为后端已经处理了
@@ -168,6 +196,21 @@ const openRepository = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// 通过路径打开仓库的通用方法
+const openRepoByPath = async (path: string) => {
+  currentRepoPath.value = path
+  await invoke('select_repository', { path })
+  await refreshGitStatus()
+  await refreshHistory()
+
+  // 保存到最近仓库列表
+  RecentReposManager.addRecentRepo(path)
+  loadRecentRepos()
+
+  // 关闭下拉菜单
+  showRecentDropdown.value = false
 }
 
 const refreshGitStatus = async () => {
@@ -318,6 +361,66 @@ const formatTime = (timestamp: number) => {
   return new Date(timestamp * 1000).toLocaleString()
 }
 
+// 最近仓库相关方法
+const loadRecentRepos = () => {
+  recentRepos.value = RecentReposManager.getRecentRepos()
+}
+
+const toggleRecentDropdown = () => {
+  showRecentDropdown.value = !showRecentDropdown.value
+}
+
+const openRecentRepo = async (path: string) => {
+  if (!tauriReady.value || loading.value) return
+
+  try {
+    loading.value = true
+    await openRepoByPath(path)
+  } catch (error) {
+    console.error('Failed to open recent repository:', error)
+    alert('打开仓库失败: ' + error)
+  } finally {
+    loading.value = false
+  }
+}
+
+const removeRecentRepo = (path: string) => {
+  RecentReposManager.removeRecentRepo(path)
+  loadRecentRepos()
+}
+
+const clearRecentRepos = () => {
+  if (confirm('确定要清空所有最近打开的仓库记录吗？')) {
+    RecentReposManager.clearRecentRepos()
+    loadRecentRepos()
+    showRecentDropdown.value = false
+  }
+}
+
+const getRepoDisplayTime = (repo: RecentRepo) => {
+  return RecentReposManager.getDisplayText(repo)
+}
+
+// 自动加载上次打开的仓库
+const autoLoadLastRepo = async () => {
+  const lastRepoPath = RecentReposManager.getLastOpenedRepo()
+  if (lastRepoPath && tauriReady.value) {
+    try {
+      // 验证路径是否仍然有效
+      await invoke('select_repository', { path: lastRepoPath })
+      currentRepoPath.value = lastRepoPath
+      await refreshGitStatus()
+      await refreshHistory()
+      console.log('自动加载上次仓库:', lastRepoPath)
+    } catch (error) {
+      console.warn('自动加载上次仓库失败:', error)
+      // 如果加载失败，从最近列表中移除该路径
+      RecentReposManager.removeRecentRepo(lastRepoPath)
+      loadRecentRepos()
+    }
+  }
+}
+
 // 差异查看器方法
 const openDiffViewer = async (filePath: string, isStaged?: boolean) => {
   try {
@@ -373,6 +476,12 @@ onMounted(async () => {
     if (typeof invoke === 'function') {
       tauriReady.value = true
       console.log('Tauri API 已就绪')
+
+      // 加载最近仓库列表
+      loadRecentRepos()
+
+      // 自动加载上次打开的仓库
+      await autoLoadLastRepo()
     } else {
       console.error('Tauri API 未正确加载')
     }
@@ -401,6 +510,163 @@ onMounted(async () => {
   border: 1px solid #e2e8f0;
   border-radius: 6px;
   min-height: 40px;
+}
+
+/* 仓库选择器样式 */
+.repo-selector {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.select-repo-btn {
+  padding: 8px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.select-repo-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.select-repo-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* 最近仓库下拉菜单样式 */
+.recent-repos-dropdown {
+  position: relative;
+}
+
+.recent-dropdown-btn {
+  padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+.recent-dropdown-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 1);
+  transform: translateY(-1px);
+}
+
+.recent-dropdown-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.recent-dropdown-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  z-index: 1000;
+  min-width: 350px;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-top: 4px;
+}
+
+.recent-dropdown-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #eee;
+  background: #f8f9fa;
+  border-radius: 8px 8px 0 0;
+  font-weight: 600;
+  color: #333;
+}
+
+.clear-recent-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  padding: 4px;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.clear-recent-btn:hover {
+  background: rgba(255, 0, 0, 0.1);
+}
+
+.recent-repo-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background-color 0.2s;
+}
+
+.recent-repo-item:hover {
+  background: #f8f9fa;
+}
+
+.recent-repo-item.active {
+  background: rgba(102, 126, 234, 0.1);
+  border-left: 3px solid #667eea;
+}
+
+.recent-repo-item:last-child {
+  border-bottom: none;
+}
+
+.repo-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-item-name {
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+}
+
+.repo-item-path {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 2px;
+  word-break: break-all;
+}
+
+.repo-item-time {
+  font-size: 11px;
+  color: #999;
+}
+
+.remove-repo-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 18px;
+  color: #999;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: all 0.2s;
+  margin-left: 8px;
+}
+
+.remove-repo-btn:hover {
+  background: rgba(255, 0, 0, 0.1);
+  color: #ff4444;
 }
 
 .repo-info {
@@ -451,27 +717,7 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-.select-repo-btn {
-  padding: 6px 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  border: none;
-  border-radius: 4px;
-  font-weight: 500;
-  font-size: 12px;
-  cursor: pointer;
-  transition: transform 0.2s ease;
-  flex-shrink: 0;
-}
 
-.select-repo-btn:hover:not(:disabled) {
-  transform: translateY(-1px);
-}
-
-.select-repo-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
 
 /* Git状态面板 */
 .git-status-panel {
