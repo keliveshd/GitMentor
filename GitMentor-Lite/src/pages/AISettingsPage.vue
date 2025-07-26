@@ -69,12 +69,12 @@
               <div v-if="settings.base.provider === 'OpenAI'" class="provider-config">
                 <div class="setting-item">
                   <label for="openai-api-key">API Key</label>
-                  <input id="openai-api-key" type="password" v-model="settings.providers.openai.apiKey"
+                  <input id="openai-api-key" type="password" v-model="settings.providers.openai.api_key"
                     placeholder="sk-..." class="setting-input" />
                 </div>
                 <div class="setting-item">
                   <label for="openai-base-url">Base URL</label>
-                  <input id="openai-base-url" type="text" v-model="settings.providers.openai.baseUrl"
+                  <input id="openai-base-url" type="text" v-model="settings.providers.openai.base_url"
                     placeholder="https://api.openai.com/v1" class="setting-input" />
                 </div>
               </div>
@@ -83,7 +83,7 @@
               <div v-if="settings.base.provider === 'Ollama'" class="provider-config">
                 <div class="setting-item">
                   <label for="ollama-base-url">服务地址</label>
-                  <input id="ollama-base-url" type="text" v-model="settings.providers.ollama.baseUrl"
+                  <input id="ollama-base-url" type="text" v-model="settings.providers.ollama.base_url"
                     placeholder="http://localhost:11434" class="setting-input" />
                 </div>
               </div>
@@ -92,7 +92,7 @@
               <div v-if="settings.base.provider === 'Zhipu'" class="provider-config">
                 <div class="setting-item">
                   <label for="zhipu-api-key">API Key</label>
-                  <input id="zhipu-api-key" type="password" v-model="settings.providers.zhipu.apiKey"
+                  <input id="zhipu-api-key" type="password" v-model="settings.providers.zhipu.api_key"
                     placeholder="请输入智谱AI API Key" class="setting-input" />
                 </div>
               </div>
@@ -101,7 +101,7 @@
               <div v-if="settings.base.provider === 'Anthropic'" class="provider-config">
                 <div class="setting-item">
                   <label for="anthropic-api-key">API Key</label>
-                  <input id="anthropic-api-key" type="password" v-model="settings.providers.anthropic.apiKey"
+                  <input id="anthropic-api-key" type="password" v-model="settings.providers.anthropic.api_key"
                     placeholder="请输入Anthropic API Key" class="setting-input" />
                 </div>
               </div>
@@ -110,7 +110,7 @@
               <div v-if="settings.base.provider === 'DashScope'" class="provider-config">
                 <div class="setting-item">
                   <label for="dashscope-api-key">API Key</label>
-                  <input id="dashscope-api-key" type="password" v-model="settings.providers.dashscope.apiKey"
+                  <input id="dashscope-api-key" type="password" v-model="settings.providers.dashscope.api_key"
                     placeholder="请输入阿里云通义API Key" class="setting-input" />
                 </div>
               </div>
@@ -119,7 +119,7 @@
               <div v-if="settings.base.provider === 'Doubao'" class="provider-config">
                 <div class="setting-item">
                   <label for="doubao-api-key">API Key</label>
-                  <input id="doubao-api-key" type="password" v-model="settings.providers.doubao.apiKey"
+                  <input id="doubao-api-key" type="password" v-model="settings.providers.doubao.api_key"
                     placeholder="请输入豆包AI API Key" class="setting-input" />
                 </div>
               </div>
@@ -128,7 +128,7 @@
               <div v-if="settings.base.provider === 'Gemini'" class="provider-config">
                 <div class="setting-item">
                   <label for="gemini-api-key">API Key</label>
-                  <input id="gemini-api-key" type="password" v-model="settings.providers.gemini.apiKey"
+                  <input id="gemini-api-key" type="password" v-model="settings.providers.gemini.api_key"
                     placeholder="请输入Google Gemini API Key" class="setting-input" />
                 </div>
               </div>
@@ -137,7 +137,7 @@
               <div v-if="settings.base.provider === 'Deepseek'" class="provider-config">
                 <div class="setting-item">
                   <label for="deepseek-api-key">API Key</label>
-                  <input id="deepseek-api-key" type="password" v-model="settings.providers.deepseek.apiKey"
+                  <input id="deepseek-api-key" type="password" v-model="settings.providers.deepseek.api_key"
                     placeholder="请输入Deepseek API Key" class="setting-input" />
                 </div>
               </div>
@@ -175,21 +175,21 @@
             <div class="section-card">
               <h3>📝 提交信息格式</h3>
               <div class="setting-item checkbox-item">
-                <input id="enable-emoji" type="checkbox" v-model="settings.features.enableEmoji"
+                <input id="enable-emoji" type="checkbox" v-model="settings.features.enable_emoji"
                   class="setting-checkbox" />
                 <label for="enable-emoji">启用Emoji表情</label>
                 <p class="setting-description">在提交信息中添加相关的emoji表情</p>
               </div>
 
               <div class="setting-item checkbox-item">
-                <input id="enable-body" type="checkbox" v-model="settings.features.enableBody"
+                <input id="enable-body" type="checkbox" v-model="settings.features.enable_body"
                   class="setting-checkbox" />
                 <label for="enable-body">启用详细描述</label>
                 <p class="setting-description">生成包含详细描述的提交信息</p>
               </div>
 
               <div class="setting-item checkbox-item">
-                <input id="enable-layered-commit" type="checkbox" v-model="settings.features.enableLayeredCommit"
+                <input id="enable-layered-commit" type="checkbox" v-model="settings.features.enable_layered_commit"
                   class="setting-checkbox" />
                 <label for="enable-layered-commit">启用分层提交</label>
                 <p class="setting-description">为每个文件生成单独的变更描述</p>
@@ -199,14 +199,14 @@
             <div class="section-card">
               <h3>🔧 AI生成选项</h3>
               <div class="setting-item checkbox-item">
-                <input id="use-recent-commits" type="checkbox" v-model="settings.features.useRecentCommits"
+                <input id="use-recent-commits" type="checkbox" v-model="settings.features.use_recent_commits"
                   class="setting-checkbox" />
                 <label for="use-recent-commits">参考最近提交</label>
                 <p class="setting-description">使用最近的提交记录作为生成参考</p>
               </div>
 
               <div class="setting-item checkbox-item">
-                <input id="enable-streaming" type="checkbox" v-model="settings.features.enableStreaming"
+                <input id="enable-streaming" type="checkbox" v-model="settings.features.enable_streaming"
                   class="setting-checkbox" />
                 <label for="enable-streaming">启用流式生成</label>
                 <p class="setting-description">实时显示AI生成过程</p>
@@ -227,7 +227,7 @@
 
               <div class="setting-item">
                 <label for="max-tokens">最大令牌数</label>
-                <input id="max-tokens" type="number" v-model="settings.advanced.maxTokens" min="100" max="8192"
+                <input id="max-tokens" type="number" v-model="settings.advanced.max_tokens" min="100" max="8192"
                   class="setting-input" />
                 <p class="setting-description">限制AI生成内容的最大长度</p>
               </div>
@@ -243,7 +243,7 @@
 
               <div class="setting-item">
                 <label for="retry-count">重试次数</label>
-                <input id="retry-count" type="number" v-model="settings.advanced.retryCount" min="0" max="5"
+                <input id="retry-count" type="number" v-model="settings.advanced.retry_count" min="0" max="5"
                   class="setting-input" />
               </div>
             </div>
@@ -256,6 +256,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 
 /**
  * AI设置页面组件
@@ -275,7 +276,9 @@ interface AIProvider {
 interface AIModel {
   id: string
   name: string
-  maxTokens?: number
+  max_tokens?: number
+  provider: string
+  default?: boolean
 }
 
 interface AISettings {
@@ -286,44 +289,94 @@ interface AISettings {
   }
   providers: {
     openai: {
-      apiKey: string
-      baseUrl: string
+      api_key: string
+      base_url: string
     }
     ollama: {
-      baseUrl: string
+      base_url: string
     }
     zhipu: {
-      apiKey: string
+      api_key: string
     }
     anthropic: {
-      apiKey: string
+      api_key: string
     }
     dashscope: {
-      apiKey: string
+      api_key: string
     }
     doubao: {
-      apiKey: string
+      api_key: string
     }
     gemini: {
-      apiKey: string
+      api_key: string
     }
     deepseek: {
-      apiKey: string
+      api_key: string
+    }
+    siliconflow: {
+      api_key: string
+    }
+    openrouter: {
+      api_key: string
+    }
+    together: {
+      api_key: string
+    }
+    mistral: {
+      api_key: string
+    }
+    baidu_qianfan: {
+      api_key: string
+      secret_key: string
+    }
+    azure_openai: {
+      api_key: string
+      endpoint: string
+      api_version: string
+    }
+    cloudflare: {
+      api_key: string
+      account_id: string
+    }
+    vertexai: {
+      project_id: string
+      location: string
+      credentials_path: string
+    }
+    groq: {
+      api_key: string
     }
   }
   features: {
-    enableEmoji: boolean
-    enableBody: boolean
-    enableLayeredCommit: boolean
-    useRecentCommits: boolean
-    enableStreaming: boolean
+    enable_emoji: boolean
+    enable_body: boolean
+    enable_layered_commit: boolean
+    use_recent_commits: boolean
+    enable_streaming: boolean
   }
   advanced: {
     temperature: number
-    maxTokens: number
+    max_tokens: number
     timeout: number
-    retryCount: number
+    retry_count: number
   }
+}
+
+interface ProviderInfo {
+  id: string
+  name: string
+  available: boolean
+}
+
+interface ProvidersInfoResponse {
+  providers: ProviderInfo[]
+}
+
+interface ConnectionTestResult {
+  success: boolean
+  message: string
+  latency_ms?: number
+  model_count?: number
 }
 
 // 响应式数据
@@ -402,43 +455,76 @@ const defaultSettings: AISettings = {
   },
   providers: {
     openai: {
-      apiKey: '',
-      baseUrl: 'https://api.openai.com/v1'
+      api_key: '',
+      base_url: 'https://api.openai.com/v1'
     },
     ollama: {
-      baseUrl: 'http://localhost:11434'
+      base_url: 'http://localhost:11434'
     },
     zhipu: {
-      apiKey: ''
+      api_key: ''
     },
     anthropic: {
-      apiKey: ''
+      api_key: ''
     },
     dashscope: {
-      apiKey: ''
+      api_key: ''
     },
     doubao: {
-      apiKey: ''
+      api_key: ''
     },
     gemini: {
-      apiKey: ''
+      api_key: ''
     },
     deepseek: {
-      apiKey: ''
+      api_key: ''
+    },
+    siliconflow: {
+      api_key: ''
+    },
+    openrouter: {
+      api_key: ''
+    },
+    together: {
+      api_key: ''
+    },
+    mistral: {
+      api_key: ''
+    },
+    baidu_qianfan: {
+      api_key: '',
+      secret_key: ''
+    },
+    azure_openai: {
+      api_key: '',
+      endpoint: '',
+      api_version: '2024-02-01'
+    },
+    cloudflare: {
+      api_key: '',
+      account_id: ''
+    },
+    vertexai: {
+      project_id: '',
+      location: 'us-central1',
+      credentials_path: ''
+    },
+    groq: {
+      api_key: ''
     }
   },
   features: {
-    enableEmoji: true,
-    enableBody: true,
-    enableLayeredCommit: false,
-    useRecentCommits: true,
-    enableStreaming: true
+    enable_emoji: true,
+    enable_body: true,
+    enable_layered_commit: false,
+    use_recent_commits: true,
+    enable_streaming: true
   },
   advanced: {
     temperature: 0.7,
-    maxTokens: 2048,
+    max_tokens: 2048,
     timeout: 60,
-    retryCount: 3
+    retry_count: 3
   }
 }
 
@@ -469,28 +555,31 @@ const canTestConnection = () => {
   const provider = settings.value.base.provider
   switch (provider) {
     case 'OpenAI':
-      return settings.value.providers.openai.apiKey.trim() !== ''
+      return settings.value.providers.openai.api_key.trim() !== ''
     case 'Ollama':
-      return settings.value.providers.ollama.baseUrl.trim() !== ''
+      return settings.value.providers.ollama.base_url.trim() !== ''
     case 'Zhipu':
-      return settings.value.providers.zhipu.apiKey.trim() !== ''
+      return settings.value.providers.zhipu.api_key.trim() !== ''
     case 'Anthropic':
-      return settings.value.providers.anthropic.apiKey.trim() !== ''
+      return settings.value.providers.anthropic.api_key.trim() !== ''
     default:
       return false
   }
 }
 
 // 方法
-const loadSettings = () => {
+const loadSettings = async () => {
   try {
-    const savedSettings = localStorage.getItem('ai-settings')
-    if (savedSettings) {
-      const parsed = JSON.parse(savedSettings)
-      settings.value = { ...defaultSettings, ...parsed }
-    }
+    console.log('加载AI设置...')
+
+    const config = await invoke('get_ai_config') as AISettings
+    settings.value = config
+
+    console.log('AI设置加载成功')
   } catch (error) {
-    console.error('加载设置失败:', error)
+    console.error('加载AI设置失败:', error)
+    // 使用默认设置
+    settings.value = { ...defaultSettings }
   }
 }
 
@@ -498,16 +587,13 @@ const saveSettings = async () => {
   try {
     saving.value = true
 
-    // TODO: 保存到后端或本地存储
-    localStorage.setItem('ai-settings', JSON.stringify(settings.value))
+    console.log('保存AI设置...', settings.value)
 
-    // 模拟保存延迟
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    await invoke('update_ai_config', { config: settings.value })
 
-    alert('设置保存成功！')
+    console.log('设置保存成功！')
   } catch (error) {
     console.error('保存设置失败:', error)
-    alert('保存设置失败: ' + error)
   } finally {
     saving.value = false
   }
@@ -517,17 +603,28 @@ const testConnection = async () => {
   try {
     testing.value = true
 
-    // TODO: 实现实际的连接测试
     const provider = settings.value.base.provider
     console.log(`测试 ${provider} 连接...`)
 
-    // 模拟连接测试
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    const result = await invoke('test_provider_connection', {
+      request: { provider_id: provider }
+    }) as ConnectionTestResult
 
-    alert(`${getCurrentProviderName()} 连接测试成功！`)
+    if (result.success) {
+      let message = `连接测试成功！`
+      if (result.latency_ms) {
+        message += `\n延迟: ${result.latency_ms}ms`
+      }
+      if (result.model_count) {
+        message += `\n可用模型: ${result.model_count}个`
+      }
+      console.log(message)
+    } else {
+      throw new Error(result.message)
+    }
   } catch (error) {
     console.error('连接测试失败:', error)
-    alert('连接测试失败: ' + error)
+    console.error('连接测试失败详情:', error)
   } finally {
     testing.value = false
   }
@@ -537,43 +634,20 @@ const refreshModels = async () => {
   try {
     refreshingModels.value = true
 
-    // TODO: 根据当前提供商获取可用模型列表
+    // 调用后端API获取模型列表
     const provider = settings.value.base.provider
     console.log(`刷新 ${provider} 模型列表...`)
 
-    // 模拟获取模型列表
-    await new Promise(resolve => setTimeout(resolve, 1500))
+    const models = await invoke('get_models_for_provider', {
+      request: { provider_id: provider }
+    }) as AIModel[]
 
-    // 根据提供商返回不同的模型列表
-    switch (provider) {
-      case 'OpenAI':
-        availableModels.value = [
-          { id: 'gpt-3.5-turbo', name: 'GPT-3.5 Turbo', maxTokens: 4096 },
-          { id: 'gpt-4', name: 'GPT-4', maxTokens: 8192 },
-          { id: 'gpt-4-turbo', name: 'GPT-4 Turbo', maxTokens: 128000 }
-        ]
-        break
-      case 'Anthropic':
-        availableModels.value = [
-          { id: 'claude-3-haiku', name: 'Claude 3 Haiku', maxTokens: 200000 },
-          { id: 'claude-3-sonnet', name: 'Claude 3 Sonnet', maxTokens: 200000 },
-          { id: 'claude-3-opus', name: 'Claude 3 Opus', maxTokens: 200000 }
-        ]
-        break
-      case 'Zhipu':
-        availableModels.value = [
-          { id: 'glm-4', name: 'GLM-4', maxTokens: 128000 },
-          { id: 'glm-3-turbo', name: 'GLM-3 Turbo', maxTokens: 128000 }
-        ]
-        break
-      default:
-        availableModels.value = []
-    }
+    availableModels.value = models
 
     console.log(`获取到 ${availableModels.value.length} 个模型`)
   } catch (error) {
     console.error('刷新模型列表失败:', error)
-    alert('刷新模型列表失败: ' + error)
+    console.error('刷新模型列表失败详情:', error)
   } finally {
     refreshingModels.value = false
   }
@@ -591,12 +665,12 @@ const onProviderChange = () => {
 }
 
 // 生命周期
-onMounted(() => {
-  loadSettings()
+onMounted(async () => {
+  await loadSettings()
 
   // 如果已配置提供商，自动加载模型列表
   if (canTestConnection()) {
-    refreshModels()
+    await refreshModels()
   }
 })
 </script>

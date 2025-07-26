@@ -73,10 +73,18 @@
           <textarea v-model="commitMessage" placeholder="输入提交消息..." rows="3" class="commit-textarea"
             :disabled="!gitStatus.staged_files.length"></textarea>
           <div class="commit-actions">
-            <button @click="generateCommitMessage" class="generate-btn"
-              :disabled="loading || !gitStatus.staged_files.length">
-              🤖 AI生成
-            </button>
+            <div class="ai-generate-section">
+              <select v-model="selectedTemplate" class="template-select">
+                <option value="standard">标准提交</option>
+                <option value="chinese">中文提交</option>
+                <option value="detailed">详细提交</option>
+                <option value="conventional">约定式提交</option>
+              </select>
+              <button @click="generateCommitMessage" class="generate-btn"
+                :disabled="loading || !gitStatus.staged_files.length">
+                🤖 AI生成
+              </button>
+            </div>
             <button @click="commitChanges" class="commit-btn"
               :disabled="!commitMessage.trim() || loading || !gitStatus.staged_files.length">
               ✅ 提交
@@ -175,6 +183,7 @@ const commitMessage = ref('')
 const commitHistory = ref<any[]>([])
 const loading = ref(false)
 const tauriReady = ref(false)
+const selectedTemplate = ref('standard')
 
 // 最近仓库相关状态
 const recentRepos = ref<RecentRepo[]>([])
@@ -305,16 +314,24 @@ const generateCommitMessage = async () => {
   try {
     loading.value = true
     const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
-    const result = await invoke('generate_commit_message', {
-      request: {
-        selected_files: filePaths,
-        additional_context: null
-      }
-    }) as { message: string }
-    commitMessage.value = result.message
+
+    // 获取当前分支的diff信息
+    const diffResult = await invoke('get_file_diff', {
+      request: { file_path: '', staged: true }
+    }) as string
+
+    // 使用模板生成提交消息
+    const result = await invoke('generate_commit_with_template', {
+      template_id: selectedTemplate.value,
+      diff: diffResult,
+      staged_files: filePaths,
+      branch_name: gitStatus.value.branch
+    }) as string
+
+    commitMessage.value = result
   } catch (error) {
     console.error('Failed to generate commit message:', error)
-    alert('生成提交消息失败: ' + error)
+    console.log('生成提交消息失败: ' + error)
   } finally {
     loading.value = false
   }
@@ -862,6 +879,27 @@ onMounted(async () => {
 .commit-actions {
   display: flex;
   gap: 8px;
+  align-items: center;
+}
+
+.ai-generate-section {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.template-select {
+  padding: 6px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  font-size: 12px;
+  min-width: 100px;
+}
+
+.template-select:focus {
+  outline: none;
+  border-color: #007acc;
 }
 
 .generate-btn {

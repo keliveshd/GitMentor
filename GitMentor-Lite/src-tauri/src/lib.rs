@@ -2,8 +2,9 @@ mod commands;
 mod core;
 mod types;
 
-use commands::git_commands;
+use commands::{ai_commands, git_commands};
 use core::{
+    ai_manager::AIManager,
     git_engine::GitEngine,
     llm_client::{LLMClient, LLMConfig},
 };
@@ -22,11 +23,18 @@ pub fn run() {
     let llm_config = LLMConfig::default();
     let llm_client = LLMClient::new(llm_config);
 
+    // Initialize AI Manager
+    let config_dir = std::env::current_dir().unwrap().join(".config");
+    let ai_config_path = config_dir.join("ai_config.json");
+    let ai_manager =
+        Mutex::new(AIManager::new(ai_config_path).expect("Failed to initialize AI Manager"));
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .manage(git_engine)
         .manage(llm_client)
+        .manage(ai_manager)
         .invoke_handler(tauri::generate_handler![
             greet,
             git_commands::select_repository,
@@ -42,6 +50,17 @@ pub fn run() {
             git_commands::unstage_all_changes,
             git_commands::open_folder_dialog,
             git_commands::get_file_diff,
+            // AI commands
+            ai_commands::get_ai_config,
+            ai_commands::update_ai_config,
+            ai_commands::get_providers_info,
+            ai_commands::get_models_for_provider,
+            ai_commands::test_provider_connection,
+            ai_commands::refresh_provider_models,
+            ai_commands::generate_commit_message_ai,
+            ai_commands::generate_commit_with_template,
+            ai_commands::get_prompt_templates,
+            ai_commands::add_prompt_template,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
