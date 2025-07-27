@@ -562,6 +562,14 @@ const canTestConnection = () => {
       return settings.value.providers.zhipu.api_key.trim() !== ''
     case 'Anthropic':
       return settings.value.providers.anthropic.api_key.trim() !== ''
+    case 'DashScope':
+      return settings.value.providers.dashscope.api_key.trim() !== ''
+    case 'Doubao':
+      return settings.value.providers.doubao.api_key.trim() !== ''
+    case 'Gemini':
+      return settings.value.providers.gemini.api_key.trim() !== ''
+    case 'Deepseek':
+      return settings.value.providers.deepseek.api_key.trim() !== ''
     default:
       return false
   }
@@ -606,8 +614,9 @@ const testConnection = async () => {
     const provider = settings.value.base.provider
     console.log(`测试 ${provider} 连接...`)
 
-    const result = await invoke('test_provider_connection', {
-      request: { provider_id: provider }
+    const result = await invoke('test_connection_with_temp_config', {
+      providerId: provider,
+      tempConfig: settings.value
     }) as ConnectionTestResult
 
     if (result.success) {
@@ -634,12 +643,13 @@ const refreshModels = async () => {
   try {
     refreshingModels.value = true
 
-    // 调用后端API获取模型列表
+    // 调用后端API获取模型列表，使用当前页面的临时配置
     const provider = settings.value.base.provider
     console.log(`刷新 ${provider} 模型列表...`)
 
-    const models = await invoke('get_models_for_provider', {
-      request: { provider_id: provider }
+    const models = await invoke('get_models_with_temp_config', {
+      providerId: provider,
+      tempConfig: settings.value
     }) as AIModel[]
 
     availableModels.value = models

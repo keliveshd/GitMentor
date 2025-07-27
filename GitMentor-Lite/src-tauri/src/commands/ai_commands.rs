@@ -101,6 +101,22 @@ pub async fn get_models_for_provider(
         .map_err(|e| format!("Failed to get models: {}", e))
 }
 
+/// 使用临时配置获取指定提供商的模型列表
+#[tauri::command(rename_all = "camelCase")]
+pub async fn get_models_with_temp_config(
+    provider_id: String,
+    temp_config: AIConfig,
+) -> Result<Vec<AIModel>, String> {
+    use crate::core::providers;
+
+    // 使用临时配置创建提供商工厂
+    let factory = providers::create_provider_factory(&temp_config);
+
+    // 获取模型列表
+    factory.get_models(&provider_id).await
+        .map_err(|e| format!("Failed to get models: {}", e))
+}
+
 /// 测试提供商连接
 #[tauri::command]
 pub async fn test_provider_connection(
@@ -109,6 +125,22 @@ pub async fn test_provider_connection(
 ) -> Result<ConnectionTestResult, String> {
     let manager = ai_manager.lock().await;
     manager.test_provider_connection(&request.provider_id).await
+        .map_err(|e| format!("Failed to test connection: {}", e))
+}
+
+/// 使用临时配置测试提供商连接
+#[tauri::command(rename_all = "camelCase")]
+pub async fn test_connection_with_temp_config(
+    provider_id: String,
+    temp_config: AIConfig,
+) -> Result<ConnectionTestResult, String> {
+    use crate::core::providers;
+
+    // 使用临时配置创建提供商工厂
+    let factory = providers::create_provider_factory(&temp_config);
+
+    // 测试连接
+    factory.test_connection(&provider_id).await
         .map_err(|e| format!("Failed to test connection: {}", e))
 }
 

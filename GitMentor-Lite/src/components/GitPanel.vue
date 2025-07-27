@@ -74,24 +74,28 @@
             :disabled="!gitStatus.staged_files.length"></textarea>
           <div class="commit-actions">
             <div class="ai-generate-section">
-              <select v-model="selectedTemplate" class="template-select">
-                <option value="standard">标准提交</option>
-                <option value="chinese">中文提交</option>
-                <option value="detailed">详细提交</option>
-                <option value="conventional">约定式提交</option>
+              <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
+                <option value="standard" title="生成符合常规规范的英文提交消息">标准提交</option>
+                <option value="chinese" title="生成简洁明了的中文提交消息">中文提交</option>
+                <option value="detailed" title="生成包含详细描述的提交消息">详细提交</option>
+                <option value="conventional" title="生成符合约定式提交规范的消息">约定式提交</option>
               </select>
               <button @click="generateCommitMessage" class="generate-btn"
-                :disabled="loading || !gitStatus.staged_files.length">
-                🤖 AI生成
+                :disabled="loading || !gitStatus.staged_files.length" title="快捷键: Ctrl+G">
+                <span v-if="!isGenerating">🤖 AI生成</span>
+                <span v-else>⏳ 生成中...</span>
               </button>
             </div>
             <button @click="commitChanges" class="commit-btn"
-              :disabled="!commitMessage.trim() || loading || !gitStatus.staged_files.length">
+              :disabled="!commitMessage.trim() || loading || !gitStatus.staged_files.length" title="快捷键: Ctrl+Enter">
               ✅ 提交
             </button>
           </div>
           <div v-if="!gitStatus.staged_files.length" class="commit-hint">
             <p>💡 请先暂存一些文件以启用提交功能</p>
+          </div>
+          <div v-if="generationProgress" class="generation-progress">
+            <p>{{ generationProgress }}</p>
           </div>
         </div>
       </div>
@@ -170,7 +174,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import FileItem from './FileItem.vue'
 import WindowManager from '../utils/WindowManager'
@@ -184,6 +188,9 @@ const commitHistory = ref<any[]>([])
 const loading = ref(false)
 const tauriReady = ref(false)
 const selectedTemplate = ref('standard')
+const isGenerating = ref(false)
+const generationProgress = ref('')
+const lastGeneratedMessage = ref('')
 
 // 最近仓库相关状态
 const recentRepos = ref<RecentRepo[]>([])
@@ -308,33 +315,61 @@ const stageAllUntracked = async () => {
   }
 }
 
+// 防抖生成函数
+let generateTimeout: number | null = null
+
 const generateCommitMessage = async () => {
   if (!gitStatus.value?.staged_files.length) return
 
-  try {
-    loading.value = true
-    const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
-
-    // 获取当前分支的diff信息
-    const diffResult = await invoke('get_file_diff', {
-      request: { file_path: '', staged: true }
-    }) as string
-
-    // 使用模板生成提交消息
-    const result = await invoke('generate_commit_with_template', {
-      template_id: selectedTemplate.value,
-      diff: diffResult,
-      staged_files: filePaths,
-      branch_name: gitStatus.value.branch
-    }) as string
-
-    commitMessage.value = result
-  } catch (error) {
-    console.error('Failed to generate commit message:', error)
-    console.log('生成提交消息失败: ' + error)
-  } finally {
-    loading.value = false
+  // 防抖处理
+  if (generateTimeout) {
+    clearTimeout(generateTimeout)
   }
+
+  generateTimeout = setTimeout(async () => {
+    try {
+      isGenerating.value = true
+      loading.value = true
+      generationProgress.value = '正在分析代码变更...'
+
+      const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
+
+      // 获取当前分支的diff信息
+      generationProgress.value = '正在获取差异信息...'
+      const diffResult = await invoke('get_file_diff', {
+        request: { file_path: '', staged: true }
+      }) as string
+
+      // 使用模板生成提交消息
+      generationProgress.value = '正在生成提交消息...'
+      const result = await invoke('generate_commit_with_template', {
+        template_id: selectedTemplate.value,
+        diff: diffResult,
+        staged_files: filePaths,
+        branch_name: gitStatus.value.branch
+      }) as string
+
+      commitMessage.value = result
+      lastGeneratedMessage.value = result
+      generationProgress.value = '生成完成！'
+
+      // 短暂显示完成状态
+      setTimeout(() => {
+        generationProgress.value = ''
+      }, 1000)
+
+    } catch (error) {
+      console.error('Failed to generate commit message:', error)
+      console.log('生成提交消息失败: ' + error)
+      generationProgress.value = '生成失败，请重试'
+      setTimeout(() => {
+        generationProgress.value = ''
+      }, 2000)
+    } finally {
+      isGenerating.value = false
+      loading.value = false
+    }
+  }, 300) // 300ms防抖
 }
 
 const commitChanges = async () => {
@@ -508,6 +543,31 @@ const openDiffViewer = async (filePath: string, isStaged?: boolean) => {
   }
 }
 
+// 快捷键处理
+const handleKeydown = (event: KeyboardEvent) => {
+  if (event.ctrlKey && event.key === 'g') {
+    event.preventDefault()
+    generateCommitMessage()
+  } else if (event.ctrlKey && event.key === 'Enter') {
+    event.preventDefault()
+    if (commitMessage.value.trim() && gitStatus.value?.staged_files.length) {
+      commitChanges()
+    }
+  } else if (event.key === 'Escape' && isGenerating.value) {
+    // 取消生成
+    if (generateTimeout) {
+      clearTimeout(generateTimeout)
+      generateTimeout = null
+      isGenerating.value = false
+      loading.value = false
+      generationProgress.value = '已取消生成'
+      setTimeout(() => {
+        generationProgress.value = ''
+      }, 1000)
+    }
+  }
+}
+
 // 生命周期
 onMounted(async () => {
   // 等待 Tauri 初始化
@@ -528,6 +588,17 @@ onMounted(async () => {
     }
   } catch (error) {
     console.error('Tauri 初始化失败:', error)
+  }
+
+  // 添加快捷键监听
+  document.addEventListener('keydown', handleKeydown)
+})
+
+// 清理
+onUnmounted(() => {
+  document.removeEventListener('keydown', handleKeydown)
+  if (generateTimeout) {
+    clearTimeout(generateTimeout)
   }
 })
 </script>
@@ -900,6 +971,31 @@ onMounted(async () => {
 .template-select:focus {
   outline: none;
   border-color: #007acc;
+}
+
+.generation-progress {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #e3f2fd;
+  border: 1px solid #2196f3;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #1976d2;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.7;
+  }
+
+  100% {
+    opacity: 1;
+  }
 }
 
 .generate-btn {

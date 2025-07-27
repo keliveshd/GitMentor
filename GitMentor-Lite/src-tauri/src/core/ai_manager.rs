@@ -2,7 +2,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use anyhow::Result;
 
-use crate::core::ai_provider::{AIProviderFactory, AIRequest, AIResponse, AIModel, ConnectionTestResult, ChatMessage};
+use crate::core::ai_provider::{AIProviderFactory, AIRequest, AIResponse, AIModel, ConnectionTestResult};
 use crate::core::ai_config::{AIConfig, AIConfigManager};
 use crate::core::prompt_manager::{PromptManager, PromptTemplate, CommitContext};
 use crate::core::providers::create_provider_factory;

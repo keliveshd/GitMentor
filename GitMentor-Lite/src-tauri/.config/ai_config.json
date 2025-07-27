@@ -2,7 +2,7 @@
   "base": {
     "language": "Simplified Chinese",
     "provider": "Ollama",
-    "model": ""
+    "model": "qwen2.5:32b"
   },
   "providers": {
     "openai": {
@@ -10,7 +10,7 @@
       "base_url": "https://api.openai.com/v1"
     },
     "ollama": {
-      "base_url": "http://localhost:11434"
+      "base_url": "http://47.108.25.218:11434"
     },
     "zhipu": {
       "api_key": ""
