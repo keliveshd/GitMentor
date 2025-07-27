@@ -50,6 +50,7 @@ pub fn run() {
             git_commands::unstage_all_changes,
             git_commands::open_folder_dialog,
             git_commands::get_file_diff,
+            git_commands::get_staged_diff_summary,
             // AI commands
             ai_commands::get_ai_config,
             ai_commands::update_ai_config,

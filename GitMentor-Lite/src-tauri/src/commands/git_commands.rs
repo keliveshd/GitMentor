@@ -205,3 +205,31 @@ pub async fn get_file_diff(
     engine.get_file_diff(&request)
         .map_err(|e| format!("Failed to get file diff: {}", e))
 }
+
+/// 获取暂存文件的差异摘要（用于AI生成）
+/// 作者：Evilek
+/// 编写日期：2025-07-27
+#[tauri::command]
+pub async fn get_staged_diff_summary(
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<String, String> {
+    let engine = git_engine.lock().await;
+
+    // 获取Git状态
+    let git_status = engine.get_status()
+        .map_err(|e| format!("Failed to get git status: {}", e))?;
+
+    // 获取暂存文件列表
+    let staged_files: Vec<String> = git_status.staged_files
+        .iter()
+        .map(|f| f.path.clone())
+        .collect();
+
+    if staged_files.is_empty() {
+        return Ok("No staged files found.".to_string());
+    }
+
+    // 获取差异摘要
+    engine.get_diff_summary(&staged_files)
+        .map_err(|e| format!("Failed to get diff summary: {}", e))
+}

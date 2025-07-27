@@ -334,19 +334,17 @@ const generateCommitMessage = async () => {
 
       const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
 
-      // 获取当前分支的diff信息
+      // 获取暂存文件的差异摘要
       generationProgress.value = '正在获取差异信息...'
-      const diffResult = await invoke('get_file_diff', {
-        request: { file_path: '', staged: true }
-      }) as string
+      const diffContent = await invoke('get_staged_diff_summary') as string
 
       // 使用模板生成提交消息
       generationProgress.value = '正在生成提交消息...'
       const result = await invoke('generate_commit_with_template', {
-        template_id: selectedTemplate.value,
-        diff: diffResult,
-        staged_files: filePaths,
-        branch_name: gitStatus.value.branch
+        templateId: selectedTemplate.value,
+        diff: diffContent,
+        stagedFiles: filePaths,
+        branchName: gitStatus.value.branch
       }) as string
 
       commitMessage.value = result
