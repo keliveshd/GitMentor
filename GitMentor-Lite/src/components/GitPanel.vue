@@ -71,7 +71,7 @@
       <div class="commit-section" v-if="gitStatus">
         <div class="commit-input">
           <textarea v-model="commitMessage" placeholder="输入提交消息..." rows="3" class="commit-textarea"
-            :disabled="!gitStatus.staged_files.length"></textarea>
+            :disabled="!hasCommittableFiles"></textarea>
           <div class="commit-actions">
             <div class="ai-generate-section">
               <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
@@ -80,19 +80,22 @@
                 <option value="detailed" title="生成包含详细描述的提交消息">详细提交</option>
                 <option value="conventional" title="生成符合约定式提交规范的消息">约定式提交</option>
               </select>
-              <button @click="generateCommitMessage" class="generate-btn"
-                :disabled="loading || !gitStatus.staged_files.length" title="快捷键: Ctrl+G">
+              <button @click="generateCommitMessage" class="generate-btn" :disabled="loading || !hasCommittableFiles"
+                title="快捷键: Ctrl+G">
                 <span v-if="!isGenerating">🤖 AI生成</span>
                 <span v-else>⏳ 生成中...</span>
               </button>
             </div>
             <button @click="commitChanges" class="commit-btn"
-              :disabled="!commitMessage.trim() || loading || !gitStatus.staged_files.length" title="快捷键: Ctrl+Enter">
+              :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
               ✅ 提交
             </button>
           </div>
-          <div v-if="!gitStatus.staged_files.length" class="commit-hint">
-            <p>💡 请先暂存一些文件以启用提交功能</p>
+          <div v-if="!hasCommittableFiles" class="commit-hint">
+            <p>✨ 工作区干净，没有待提交的更改</p>
+          </div>
+          <div v-else-if="!gitStatus.staged_files.length" class="commit-hint">
+            <p>💡 暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
           </div>
           <div v-if="generationProgress" class="generation-progress">
             <p>{{ generationProgress }}</p>
@@ -174,7 +177,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import FileItem from './FileItem.vue'
 import WindowManager from '../utils/WindowManager'
@@ -195,6 +198,14 @@ const lastGeneratedMessage = ref('')
 // 最近仓库相关状态
 const recentRepos = ref<RecentRepo[]>([])
 const showRecentDropdown = ref(false)
+
+// 计算属性：判断是否有可提交的文件
+const hasCommittableFiles = computed(() => {
+  if (!gitStatus.value) return false
+  return gitStatus.value.staged_files.length > 0 ||
+    gitStatus.value.unstaged_files.length > 0 ||
+    gitStatus.value.untracked_files.length > 0
+})
 
 // 差异查看器已改为独立窗口，不再需要本地状态
 
@@ -319,7 +330,7 @@ const stageAllUntracked = async () => {
 let generateTimeout: number | null = null
 
 const generateCommitMessage = async () => {
-  if (!gitStatus.value?.staged_files.length) return
+  if (!hasCommittableFiles.value) return
 
   // 防抖处理
   if (generateTimeout) {
@@ -331,6 +342,30 @@ const generateCommitMessage = async () => {
       isGenerating.value = true
       loading.value = true
       generationProgress.value = '正在分析代码变更...'
+
+      // 如果暂存区为空，先暂存所有修改的文件
+      if (!gitStatus.value.staged_files.length) {
+        generationProgress.value = '暂存区为空，正在自动暂存所有修改的文件...'
+
+        // 暂存所有未暂存的文件
+        if (gitStatus.value.unstaged_files.length > 0) {
+          const unstagedPaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
+          await invoke('stage_files', {
+            request: { file_paths: unstagedPaths, stage: true }
+          })
+        }
+
+        // 暂存所有未跟踪的文件
+        if (gitStatus.value.untracked_files.length > 0) {
+          const untrackedPaths = gitStatus.value.untracked_files.map((f: any) => f.path)
+          await invoke('stage_files', {
+            request: { file_paths: untrackedPaths, stage: true }
+          })
+        }
+
+        // 刷新Git状态
+        await refreshGitStatus()
+      }
 
       const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
 
@@ -371,10 +406,33 @@ const generateCommitMessage = async () => {
 }
 
 const commitChanges = async () => {
-  if (!commitMessage.value.trim() || !gitStatus.value?.staged_files.length) return
+  if (!commitMessage.value.trim() || !hasCommittableFiles.value) return
 
   try {
     loading.value = true
+
+    // 如果暂存区为空，先暂存所有修改的文件
+    if (!gitStatus.value.staged_files.length) {
+      // 暂存所有未暂存的文件
+      if (gitStatus.value.unstaged_files.length > 0) {
+        const unstagedPaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
+        await invoke('stage_files', {
+          request: { file_paths: unstagedPaths, stage: true }
+        })
+      }
+
+      // 暂存所有未跟踪的文件
+      if (gitStatus.value.untracked_files.length > 0) {
+        const untrackedPaths = gitStatus.value.untracked_files.map((f: any) => f.path)
+        await invoke('stage_files', {
+          request: { file_paths: untrackedPaths, stage: true }
+        })
+      }
+
+      // 刷新Git状态
+      await refreshGitStatus()
+    }
+
     await invoke('commit_changes', {
       request: {
         message: commitMessage.value,
@@ -548,7 +606,7 @@ const handleKeydown = (event: KeyboardEvent) => {
     generateCommitMessage()
   } else if (event.ctrlKey && event.key === 'Enter') {
     event.preventDefault()
-    if (commitMessage.value.trim() && gitStatus.value?.staged_files.length) {
+    if (commitMessage.value.trim() && hasCommittableFiles.value) {
       commitChanges()
     }
   } else if (event.key === 'Escape' && isGenerating.value) {
