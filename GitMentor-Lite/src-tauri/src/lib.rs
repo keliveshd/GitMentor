@@ -64,6 +64,11 @@ pub fn run() {
             ai_commands::generate_commit_with_template,
             ai_commands::get_prompt_templates,
             ai_commands::add_prompt_template,
+            ai_commands::create_custom_template,
+            ai_commands::update_template,
+            ai_commands::delete_template,
+            ai_commands::get_custom_templates,
+            ai_commands::get_default_templates,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

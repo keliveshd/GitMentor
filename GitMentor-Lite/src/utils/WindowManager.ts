@@ -225,6 +225,75 @@ export class WindowManager {
   }
 
   /**
+   * 打开模板配置窗口
+   * 作者：Evilek
+   * 编写日期：2025-01-29
+   */
+  static async openTemplateConfig() {
+    try {
+      console.log(`🚀 [WindowManager] 开始创建模板配置窗口`);
+
+      const windowLabel = "template-config";
+
+      // 检查窗口是否已经存在
+      if (this.openWindows.has(windowLabel)) {
+        const existingWindow = this.openWindows.get(windowLabel);
+        if (existingWindow) {
+          console.log(`♻️ [WindowManager] 模板配置窗口已存在，聚焦到现有窗口`);
+          // 聚焦到已存在的窗口
+          await existingWindow.setFocus();
+          return existingWindow;
+        }
+      }
+
+      // 构建URL
+      const fullUrl = "/template-config";
+      console.log(`🔗 [WindowManager] 构建的URL: ${fullUrl}`);
+
+      // 创建新窗口
+      const window = new WebviewWindow(windowLabel, {
+        url: fullUrl,
+        title: "模板配置",
+        width: 1200,
+        height: 800,
+        center: true,
+        resizable: true,
+        minimizable: true,
+        maximizable: true,
+        closable: true,
+        skipTaskbar: false,
+        alwaysOnTop: false,
+      });
+
+      console.log(`🪟 [WindowManager] 模板配置窗口实例已创建`);
+
+      // 监听窗口关闭事件
+      window.once("tauri://close-requested", () => {
+        this.openWindows.delete(windowLabel);
+      });
+
+      // 监听窗口创建完成事件
+      window.once("tauri://created", () => {
+        console.log(`✅ [WindowManager] 模板配置窗口创建成功`);
+      });
+
+      // 监听窗口错误事件
+      window.once("tauri://error", (error) => {
+        console.error(`❌ [WindowManager] 模板配置窗口创建失败`, error);
+        this.openWindows.delete(windowLabel);
+      });
+
+      // 保存窗口引用
+      this.openWindows.set(windowLabel, window);
+
+      return window;
+    } catch (error) {
+      console.error("❌ [WindowManager] 创建模板配置窗口失败:", error);
+      throw error;
+    }
+  }
+
+  /**
    * 关闭AI服务设置窗口
    * 作者：Evilek
    * 编写日期：2025-07-25

@@ -332,6 +332,67 @@ pub async fn get_prompt_templates(
     Ok(manager.get_prompt_templates().await)
 }
 
+/// 创建自定义模板
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[tauri::command]
+pub async fn create_custom_template(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    template: PromptTemplate,
+) -> Result<(), String> {
+    let manager = ai_manager.lock().await;
+    manager.create_custom_template(template).await
+        .map_err(|e| format!("Failed to create template: {}", e))
+}
+
+/// 更新模板
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[tauri::command]
+pub async fn update_template(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    template: PromptTemplate,
+) -> Result<(), String> {
+    let manager = ai_manager.lock().await;
+    manager.update_template(template).await
+        .map_err(|e| format!("Failed to update template: {}", e))
+}
+
+/// 删除模板
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[tauri::command]
+pub async fn delete_template(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    template_id: String,
+) -> Result<(), String> {
+    let manager = ai_manager.lock().await;
+    manager.delete_template(&template_id).await
+        .map_err(|e| format!("Failed to delete template: {}", e))
+}
+
+/// 获取自定义模板列表
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[tauri::command]
+pub async fn get_custom_templates(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<Vec<PromptTemplate>, String> {
+    let manager = ai_manager.lock().await;
+    Ok(manager.get_custom_templates().await)
+}
+
+/// 获取默认模板列表
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[tauri::command]
+pub async fn get_default_templates(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<Vec<PromptTemplate>, String> {
+    let manager = ai_manager.lock().await;
+    Ok(manager.get_default_templates().await)
+}
+
 /// 添加自定义提示模板
 #[tauri::command]
 pub async fn add_prompt_template(

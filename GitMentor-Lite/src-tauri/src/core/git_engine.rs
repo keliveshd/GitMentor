@@ -125,16 +125,98 @@ impl GitEngine {
     /// 暂存或取消暂存文件
     /// 作者：Evilek
     /// 编写日期：2025-01-25
+    /// 更新日期：2025-01-29 (添加删除文件和大文件处理逻辑)
     pub fn stage_files(&self, request: &StageRequest) -> Result<GitOperationResult> {
         let repo = self.get_repository()?;
         let mut index = repo.index()?;
 
         if request.stage {
-            // 暂存文件
+            // 暂存文件 - 需要区分不同类型的文件状态
+            let mut staged_count = 0;
+            let mut skipped_files = Vec::new();
+
             for file_path in &request.file_paths {
-                index.add_path(Path::new(file_path))?;
+                let path = Path::new(file_path);
+
+                // 检查文件是否存在于工作目录
+                let file_exists = repo
+                    .workdir()
+                    .map(|workdir| workdir.join(path).exists())
+                    .unwrap_or(false);
+
+                // 检查文件是否在HEAD中存在
+                let file_in_head = match repo.head() {
+                    Ok(head) => match head.peel_to_commit() {
+                        Ok(commit) => match commit.tree() {
+                            Ok(tree) => tree.get_path(path).is_ok(),
+                            Err(_) => false,
+                        },
+                        Err(_) => false,
+                    },
+                    Err(_) => false,
+                };
+
+                // 检查文件大小（如果文件存在）
+                if file_exists {
+                    if let Some(workdir) = repo.workdir() {
+                        let full_path = workdir.join(path);
+                        if let Ok(metadata) = std::fs::metadata(&full_path) {
+                            let file_size = metadata.len();
+                            // 如果文件大于5MB，跳过并记录
+                            if file_size > 5 * 1024 * 1024 {
+                                skipped_files.push(format!(
+                                    "{} (文件过大: {:.1}MB)",
+                                    file_path,
+                                    file_size as f64 / (1024.0 * 1024.0)
+                                ));
+                                continue;
+                            }
+                        }
+                    }
+                }
+
+                // 根据文件状态选择合适的暂存方法
+                match (file_exists, file_in_head) {
+                    (false, true) => {
+                        // 文件被删除：从工作目录删除但在HEAD中存在
+                        println!("暂存删除的文件: {}", file_path);
+                        index.remove_path(path)?;
+                        staged_count += 1;
+                    }
+                    (true, _) => {
+                        // 文件存在：新增或修改的文件
+                        println!("暂存存在的文件: {}", file_path);
+                        match index.add_path(path) {
+                            Ok(_) => staged_count += 1,
+                            Err(e) => {
+                                skipped_files.push(format!("{} (暂存失败: {})", file_path, e));
+                            }
+                        }
+                    }
+                    (false, false) => {
+                        // 文件既不存在于工作目录也不存在于HEAD中，跳过
+                        println!("跳过不存在的文件: {}", file_path);
+                        skipped_files.push(format!("{} (文件不存在)", file_path));
+                    }
+                }
             }
+
             index.write()?;
+
+            let mut message = format!("Successfully staged {} file(s)", staged_count);
+            if !skipped_files.is_empty() {
+                message.push_str(&format!(", skipped {} file(s)", skipped_files.len()));
+            }
+
+            Ok(GitOperationResult {
+                success: true,
+                message,
+                details: if skipped_files.is_empty() {
+                    None
+                } else {
+                    Some(format!("跳过的文件:\n{}", skipped_files.join("\n")))
+                },
+            })
         } else {
             // 取消暂存文件 - 使用正确的reset方法
             let head = repo.head()?;
@@ -142,17 +224,13 @@ impl GitEngine {
 
             // 将指定文件从暂存区重置到HEAD状态
             repo.reset_default(Some(head_commit.as_object()), request.file_paths.iter())?;
-        }
 
-        Ok(GitOperationResult {
-            success: true,
-            message: format!(
-                "Successfully {} {} file(s)",
-                if request.stage { "staged" } else { "unstaged" },
-                request.file_paths.len()
-            ),
-            details: None,
-        })
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Successfully unstaged {} file(s)", request.file_paths.len()),
+                details: None,
+            })
+        }
     }
 
     /// 提交更改

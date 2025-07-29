@@ -140,4 +140,44 @@ impl AIManager {
         let mut prompt_manager = self.prompt_manager.write().await;
         prompt_manager.add_template(template);
     }
+
+    /// 创建自定义模板
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub async fn create_custom_template(&self, template: PromptTemplate) -> Result<()> {
+        let mut prompt_manager = self.prompt_manager.write().await;
+        prompt_manager.create_custom_template(template)
+    }
+
+    /// 更新模板
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub async fn update_template(&self, template: PromptTemplate) -> Result<()> {
+        let mut prompt_manager = self.prompt_manager.write().await;
+        prompt_manager.update_template(template)
+    }
+
+    /// 删除模板
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub async fn delete_template(&self, template_id: &str) -> Result<()> {
+        let mut prompt_manager = self.prompt_manager.write().await;
+        prompt_manager.delete_template(template_id)
+    }
+
+    /// 获取自定义模板列表
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub async fn get_custom_templates(&self) -> Vec<PromptTemplate> {
+        let prompt_manager = self.prompt_manager.read().await;
+        prompt_manager.get_custom_templates().into_iter().cloned().collect()
+    }
+
+    /// 获取默认模板列表
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub async fn get_default_templates(&self) -> Vec<PromptTemplate> {
+        let prompt_manager = self.prompt_manager.read().await;
+        prompt_manager.get_default_templates().into_iter().cloned().collect()
+    }
 }

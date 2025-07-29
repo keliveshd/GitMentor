@@ -14,6 +14,9 @@
             <button @click="openAISettings" class="menu-item" :disabled="loading || !tauriReady">
               🤖 AI服务设置
             </button>
+            <button @click="openTemplateConfig" class="menu-item" :disabled="loading || !tauriReady">
+              📝 模板配置
+            </button>
             <button @click="openAbout" class="menu-item">
               ℹ️ 关于
             </button>
@@ -513,12 +516,19 @@ const scheduleRefresh = () => {
 
 const toggleStage = async (filePath: string, shouldStage: boolean) => {
   try {
-    await invoke('stage_files', {
+    const result = await invoke('stage_files', {
       request: {
         file_paths: [filePath],
         stage: shouldStage
       }
-    })
+    }) as any
+
+    // 显示操作结果信息
+    if (result.details) {
+      toast.warning(result.details, result.message)
+    } else {
+      toast.success(result.message, '操作成功')
+    }
 
     // 添加到待处理操作集合，延迟刷新
     pendingOperations.add(filePath)
@@ -534,9 +544,16 @@ const stageAll = async () => {
 
   try {
     const filePaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
-    await invoke('stage_files', {
+    const result = await invoke('stage_files', {
       request: { file_paths: filePaths, stage: true }
-    })
+    }) as any
+
+    // 显示操作结果信息
+    if (result.details) {
+      toast.warning(result.details, result.message)
+    } else {
+      toast.success(result.message, '操作成功')
+    }
 
     // 批量操作直接刷新，不使用防抖
     await refreshGitStatus(true)
@@ -568,9 +585,16 @@ const stageAllUntracked = async () => {
 
   try {
     const filePaths = gitStatus.value.untracked_files.map((f: any) => f.path)
-    await invoke('stage_files', {
+    const result = await invoke('stage_files', {
       request: { file_paths: filePaths, stage: true }
-    })
+    }) as any
+
+    // 显示操作结果信息
+    if (result.details) {
+      toast.warning(result.details, result.message)
+    } else {
+      toast.success(result.message, '操作成功')
+    }
 
     // 批量操作直接刷新，不使用防抖
     await refreshGitStatus(true)
@@ -611,17 +635,27 @@ const generateCommitMessage = async () => {
         // 暂存所有未暂存的文件
         if (gitStatus.value.unstaged_files.length > 0) {
           const unstagedPaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
-          await invoke('stage_files', {
+          const result = await invoke('stage_files', {
             request: { file_paths: unstagedPaths, stage: true }
-          })
+          }) as any
+
+          // 如果有跳过的文件，记录但不中断流程
+          if (result.details) {
+            console.warn('暂存时跳过了一些文件:', result.details)
+          }
         }
 
         // 暂存所有未跟踪的文件
         if (gitStatus.value.untracked_files.length > 0) {
           const untrackedPaths = gitStatus.value.untracked_files.map((f: any) => f.path)
-          await invoke('stage_files', {
+          const result = await invoke('stage_files', {
             request: { file_paths: untrackedPaths, stage: true }
-          })
+          }) as any
+
+          // 如果有跳过的文件，记录但不中断流程
+          if (result.details) {
+            console.warn('暂存时跳过了一些文件:', result.details)
+          }
         }
 
         // 刷新Git状态（强制刷新，因为这是重要操作）
@@ -729,16 +763,23 @@ const batchStageFiles = async () => {
 
   try {
     setLoading(true, '正在批量暂存文件...')
-    await invoke('stage_files', {
+    const result = await invoke('stage_files', {
       request: { file_paths: selectedPaths, stage: true }
-    })
+    }) as any
 
     setLoading(true, '正在刷新状态...')
     await refreshGitStatus(true)
 
     selectedFiles.value.clear()
     setLoading(true, '批量暂存完成')
-    toast.success(`成功暂存 ${selectedPaths.length} 个文件`, '操作完成')
+
+    // 显示详细的操作结果
+    if (result.details) {
+      toast.warning(result.details, result.message)
+    } else {
+      toast.success(result.message, '操作完成')
+    }
+
     setTimeout(() => setLoading(false), 1000)
   } catch (error) {
     console.error('Failed to batch stage files:', error)
@@ -846,17 +887,27 @@ const commitChanges = async () => {
       // 暂存所有未暂存的文件
       if (gitStatus.value.unstaged_files.length > 0) {
         const unstagedPaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
-        await invoke('stage_files', {
+        const result = await invoke('stage_files', {
           request: { file_paths: unstagedPaths, stage: true }
-        })
+        }) as any
+
+        // 如果有跳过的文件，记录但不中断流程
+        if (result.details) {
+          console.warn('提交前暂存时跳过了一些文件:', result.details)
+        }
       }
 
       // 暂存所有未跟踪的文件
       if (gitStatus.value.untracked_files.length > 0) {
         const untrackedPaths = gitStatus.value.untracked_files.map((f: any) => f.path)
-        await invoke('stage_files', {
+        const result = await invoke('stage_files', {
           request: { file_paths: untrackedPaths, stage: true }
-        })
+        }) as any
+
+        // 如果有跳过的文件，记录但不中断流程
+        if (result.details) {
+          console.warn('提交前暂存时跳过了一些文件:', result.details)
+        }
       }
 
       setLoading(true, '正在刷新状态...')
@@ -1032,6 +1083,22 @@ const openAISettings = async () => {
   } catch (error) {
     console.error('❌ [GitPanel] 打开AI服务设置窗口失败:', error)
     alert(`打开AI服务设置失败: ${error instanceof Error ? error.message : '未知错误'}`)
+  }
+}
+
+// 打开模板配置窗口
+// 作者：Evilek
+// 编写日期：2025-01-29
+const openTemplateConfig = async () => {
+  try {
+    console.log('📝 [GitPanel] 打开模板配置窗口')
+
+    // 使用WindowManager打开模板配置窗口
+    await WindowManager.openTemplateConfig()
+    console.log('✅ [GitPanel] 已打开模板配置窗口')
+  } catch (error) {
+    console.error('❌ [GitPanel] 打开模板配置窗口失败:', error)
+    alert(`打开模板配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
   }
 }
 
