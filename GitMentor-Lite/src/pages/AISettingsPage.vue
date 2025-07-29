@@ -69,7 +69,7 @@
               <div v-if="settings.base.provider === 'OpenAI'" class="provider-config">
                 <div class="setting-item">
                   <label for="openai-api-key">API Key</label>
-1
+                  1
                   <input id="openai-api-key" type="password" v-model="settings.providers.openai.api_key"
                     placeholder="sk-..." class="setting-input" />
                 </div>
@@ -363,15 +363,15 @@ interface AISettings {
   }
 }
 
-interface ProviderInfo {
-  id: string
-  name: string
-  available: boolean
-}
+// interface ProviderInfo {
+//   id: string
+//   name: string
+//   available: boolean
+// }
 
-interface ProvidersInfoResponse {
-  providers: ProviderInfo[]
-}
+// interface ProvidersInfoResponse {
+//   providers: ProviderInfo[]
+// }
 
 interface ConnectionTestResult {
   success: boolean

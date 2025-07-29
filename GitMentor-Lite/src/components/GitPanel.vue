@@ -1,5 +1,27 @@
 <template>
   <div class="git-panel">
+    <!-- 菜单栏 -->
+    <div class="menu-bar">
+      <div class="menu-left">
+        <span class="app-title">GitMentor</span>
+      </div>
+      <div class="menu-right">
+        <div class="menu-dropdown">
+          <button @click="toggleMenu" class="menu-btn" title="菜单">
+            ☰
+          </button>
+          <div v-if="showMenu" class="menu-dropdown-content">
+            <button @click="openAISettings" class="menu-item" :disabled="loading || !tauriReady">
+              🤖 AI服务设置
+            </button>
+            <button @click="openAbout" class="menu-item">
+              ℹ️ 关于
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- 仓库信息 -->
     <div class="repo-header">
       <div class="repo-info" v-if="currentRepoPath">
@@ -11,234 +33,226 @@
           <span v-if="isRefreshing" class="refresh-indicator" title="正在刷新Git状态">🔄</span>
         </span>
       </div>
-      <!-- 功能按钮组 -->
-      <div class="function-buttons">
-        <!-- 全局加载指示器 -->
-        <div v-if="loading" class="global-loading">
-          <div class="loading-spinner"></div>
-          <span class="loading-text">{{ loadingText || '加载中...' }}</span>
-          <div class="loading-progress-bar">
-            <div class="loading-progress-fill" :style="{ width: loadingProgress + '%' }"></div>
-          </div>
-        </div>
 
-        <!-- AI服务设置按钮 -->
-        <button @click="openAISettings" class="ai-settings-btn" :disabled="loading || !tauriReady" title="AI服务设置">
-          🤖 AI设置
+      <div class="repo-actions">
+        <button @click="openRepository" class="select-repo-btn" :disabled="loading || !tauriReady">
+          {{ loading ? '加载中...' : !tauriReady ? '初始化中...' : '选择仓库' }}
         </button>
 
-        <!-- 选择仓库按钮组 -->
-        <div class="repo-selector">
-          <button @click="openRepository" class="select-repo-btn" :disabled="loading || !tauriReady">
-            {{ loading ? '加载中...' : !tauriReady ? '初始化中...' : '选择仓库' }}
+        <!-- 最近仓库按钮 -->
+        <div class="recent-repos-dropdown" v-if="recentRepos.length > 0">
+          <button @click="toggleRecentDropdown" class="recent-dropdown-btn" :disabled="loading || !tauriReady"
+            title="最近打开的仓库">
+            📋
           </button>
-
-          <!-- 最近仓库下拉菜单 -->
-          <div class="recent-repos-dropdown" v-if="recentRepos.length > 0">
-            <button @click="toggleRecentDropdown" class="recent-dropdown-btn" :disabled="loading || !tauriReady"
-              title="最近打开的仓库">
-              📋
-            </button>
-            <div v-if="showRecentDropdown" class="recent-dropdown-menu">
-              <div class="recent-dropdown-header">
-                <span>最近打开的仓库</span>
-                <button @click="clearRecentRepos" class="clear-recent-btn" title="清空历史">🗑️</button>
-              </div>
-              <div class="recent-repo-item" v-for="repo in recentRepos" :key="repo.path"
-                @click="openRecentRepo(repo.path)" :class="{ active: repo.path === currentRepoPath }">
-                <div class="repo-item-info">
-                  <div class="repo-item-name">📂 {{ repo.name }}</div>
-                  <div class="repo-item-path">{{ repo.path }}</div>
-                  <div class="repo-item-time">{{ getRepoDisplayTime(repo) }}</div>
-                </div>
-                <button @click.stop="removeRecentRepo(repo.path)" class="remove-repo-btn" title="从历史中移除">×</button>
-              </div>
+          <div v-if="showRecentDropdown" class="recent-dropdown-menu">
+            <div class="recent-dropdown-header">
+              <span>最近打开的仓库</span>
+              <button @click="clearRecentRepos" class="clear-recent-btn" title="清空历史">🗑️</button>
             </div>
+            <div class="recent-repo-item" v-for="repo in recentRepos" :key="repo.path"
+              @click="openRecentRepo(repo.path)" :class="{ active: repo.path === currentRepoPath }">
+              <div class="repo-item-info">
+                <div class="repo-item-name">📂 {{ repo.name }}</div>
+                <div class="repo-item-path">{{ repo.path }}</div>
+                <div class="repo-item-time">{{ getRepoDisplayTime(repo) }}</div>
+              </div>
+              <button @click.stop="removeRecentRepo(repo.path)" class="remove-repo-btn" title="从历史中移除">×</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- 加载状态 -->
+    <div v-if="loading" class="loading-status">
+      <div class="loading-info">
+        <div class="loading-spinner"></div>
+        <span class="loading-text">{{ loadingText || '加载中...' }}</span>
+      </div>
+      <div class="loading-progress-bar">
+        <div class="loading-progress-fill" :style="{ width: loadingProgress + '%' }"></div>
+      </div>
+    </div>
+    <!-- 暂存区 -->
+    <div class="staged-files" v-if="gitStatus && gitStatus.staged_files.length > 0">
+      <div class="section-title">
+        <h4>📋 暂存的更改 ({{ gitStatus?.staged_files?.length || 0 }})</h4>
+        <div class="section-actions">
+          <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
+            {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
+          </button>
+          <button @click="unstageAll" class="action-btn" title="取消暂存所有">
+            ↩️
+          </button>
+        </div>
+      </div>
+
+      <!-- 批量操作工具栏 -->
+      <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
+        <div class="batch-info">
+          <span>已选择 {{ selectedFilesCount }} 个文件</span>
+        </div>
+        <div class="batch-actions">
+          <button v-if="canBatchUnstage" @click="batchUnstageFiles" class="batch-btn unstage-btn" :disabled="loading"
+            title="批量取消暂存选中文件">
+            ➖ 取消暂存
+          </button>
+          <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
+            ↩️ 回滚选中
+          </button>
+          <button @click="selectAllStaged" class="batch-btn select-all-btn" title="全选暂存区文件">
+            📋 全选
+          </button>
+          <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
+            🗑️ 清空
+          </button>
+        </div>
+      </div>
+
+      <div class="file-list">
+        <FileItem v-for="file in gitStatus?.staged_files || []" :key="file.path" :file="file" :is-staged="true"
+          :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+          @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+      </div>
+    </div>
+
+    <!-- 提交区域 -->
+    <div class="commit-area" v-if="gitStatus">
+      <textarea v-model="commitMessage" placeholder="输入提交消息..." rows="3" class="commit-input"
+        :disabled="!hasCommittableFiles"></textarea>
+
+      <div class="commit-controls">
+        <!-- AI生成功能 -->
+        <div class="ai-generate-section">
+          <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
+            <option value="standard" title="生成符合常规规范的英文提交消息">标准提交</option>
+            <option value="chinese" title="生成简洁明了的中文提交消息">中文提交</option>
+            <option value="detailed" title="生成包含详细描述的提交消息">详细提交</option>
+            <option value="conventional" title="生成符合约定式提交规范的消息">约定式提交</option>
+          </select>
+          <button @click="generateCommitMessage" class="generate-btn" :disabled="loading || !hasCommittableFiles"
+            title="快捷键: Ctrl+G">
+            <span v-if="!isGenerating">🤖 AI生成</span>
+            <span v-else>⏳ 生成中...</span>
+          </button>
+          <button v-if="lastGeneratedMessage && commitMessage === lastGeneratedMessage" @click="regenerateCommitMessage"
+            class="regenerate-btn" :disabled="loading || !hasCommittableFiles" title="重新生成提交消息">
+            🔄 重新生成
+          </button>
+        </div>
+
+        <!-- 提交按钮 -->
+        <button @click="commitChanges" class="commit-btn"
+          :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
+          ✅ 提交更改
+        </button>
+      </div>
+      <div v-if="!hasCommittableFiles" class="commit-hint">
+        <p>✨ 工作区干净，没有待提交的更改</p>
+      </div>
+      <div v-else-if="gitStatus && !gitStatus.staged_files.length" class="commit-hint">
+        <p>💡 暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
+      </div>
+      <div v-if="generationProgress" class="generation-progress">
+        <div class="progress-content">
+          <div class="progress-text">{{ generationProgress }}</div>
+          <div v-if="isGenerating" class="progress-bar">
+            <div class="progress-fill"></div>
+          </div>
+        </div>
+      </div>
+      <!-- 提交消息预览 -->
+      <div v-if="commitMessage && lastGeneratedMessage === commitMessage" class="message-preview">
+        <div class="preview-header">
+          <span class="preview-label">🤖 AI生成的提交消息</span>
+          <div class="preview-actions">
+            <button @click="regenerateCommitMessage" class="preview-action-btn" :disabled="loading" title="重新生成">
+              🔄
+            </button>
+            <button @click="clearCommitMessage" class="preview-action-btn" title="清空消息">
+              🗑️
+            </button>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <!-- Git状态面板 -->
-    <div v-if="gitStatus" class="git-status-panel">
-      <!-- 暂存区 -->
-      <div class="file-section" v-if="gitStatus.staged_files.length > 0">
-        <div class="section-header">
-          <h4>📋 暂存的更改 ({{ gitStatus.staged_files.length }})</h4>
-          <div class="section-actions">
-            <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
-              {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
-            </button>
-            <button @click="unstageAll" class="action-btn" title="取消暂存所有">
-              ↩️
-            </button>
-          </div>
-        </div>
-
-        <!-- 批量操作工具栏 -->
-        <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
-          <div class="batch-info">
-            <span>已选择 {{ selectedFilesCount }} 个文件</span>
-          </div>
-          <div class="batch-actions">
-            <button v-if="canBatchUnstage" @click="batchUnstageFiles" class="batch-btn unstage-btn" :disabled="loading"
-              title="批量取消暂存选中文件">
-              ➖ 取消暂存
-            </button>
-            <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
-              ↩️ 回滚选中
-            </button>
-            <button @click="selectAllStaged" class="batch-btn select-all-btn" title="全选暂存区文件">
-              📋 全选
-            </button>
-            <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
-              🗑️ 清空
-            </button>
-          </div>
-        </div>
-
-        <div class="file-list">
-          <FileItem v-for="file in gitStatus.staged_files" :key="file.path" :file="file" :is-staged="true"
-            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
-        </div>
+  <!-- 工作区更改 -->
+  <div class="unstaged-files" v-if="gitStatus && gitStatus.unstaged_files.length > 0">
+    <div class="section-title">
+      <h4>📝 更改 ({{ gitStatus?.unstaged_files?.length || 0 }})</h4>
+      <div class="section-actions">
+        <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
+          {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
+        </button>
+        <button @click="stageAll" class="action-btn" title="暂存所有">
+          ➕
+        </button>
       </div>
+    </div>
 
-      <!-- 提交区域 -->
-      <div class="commit-section" v-if="gitStatus">
-        <div class="commit-input">
-          <textarea v-model="commitMessage" placeholder="输入提交消息..." rows="3" class="commit-textarea"
-            :disabled="!hasCommittableFiles"></textarea>
-          <div class="commit-actions">
-            <div class="ai-generate-section">
-              <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
-                <option value="standard" title="生成符合常规规范的英文提交消息">标准提交</option>
-                <option value="chinese" title="生成简洁明了的中文提交消息">中文提交</option>
-                <option value="detailed" title="生成包含详细描述的提交消息">详细提交</option>
-                <option value="conventional" title="生成符合约定式提交规范的消息">约定式提交</option>
-              </select>
-              <button @click="generateCommitMessage" class="generate-btn" :disabled="loading || !hasCommittableFiles"
-                title="快捷键: Ctrl+G">
-                <span v-if="!isGenerating">🤖 AI生成</span>
-                <span v-else>⏳ 生成中...</span>
-              </button>
-              <button v-if="lastGeneratedMessage && commitMessage === lastGeneratedMessage"
-                @click="regenerateCommitMessage" class="regenerate-btn" :disabled="loading || !hasCommittableFiles"
-                title="重新生成提交消息">
-                🔄 重新生成
-              </button>
-            </div>
-            <button @click="commitChanges" class="commit-btn"
-              :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
-              ✅ 提交
-            </button>
-          </div>
-          <div v-if="!hasCommittableFiles" class="commit-hint">
-            <p>✨ 工作区干净，没有待提交的更改</p>
-          </div>
-          <div v-else-if="!gitStatus.staged_files.length" class="commit-hint">
-            <p>💡 暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
-          </div>
-          <div v-if="generationProgress" class="generation-progress">
-            <div class="progress-content">
-              <div class="progress-text">{{ generationProgress }}</div>
-              <div v-if="isGenerating" class="progress-bar">
-                <div class="progress-fill"></div>
-              </div>
-            </div>
-          </div>
-          <!-- 提交消息预览 -->
-          <div v-if="commitMessage && lastGeneratedMessage === commitMessage" class="message-preview">
-            <div class="preview-header">
-              <span class="preview-label">🤖 AI生成的提交消息</span>
-              <div class="preview-actions">
-                <button @click="regenerateCommitMessage" class="preview-action-btn" :disabled="loading" title="重新生成">
-                  🔄
-                </button>
-                <button @click="clearCommitMessage" class="preview-action-btn" title="清空消息">
-                  🗑️
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+    <!-- 批量操作工具栏 -->
+    <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
+      <div class="batch-info">
+        <span>已选择 {{ selectedFilesCount }} 个文件</span>
       </div>
-
-      <!-- 工作区更改 -->
-      <div class="file-section" v-if="gitStatus.unstaged_files.length > 0">
-        <div class="section-header">
-          <h4>📝 更改 ({{ gitStatus.unstaged_files.length }})</h4>
-          <div class="section-actions">
-            <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
-              {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
-            </button>
-            <button @click="stageAll" class="action-btn" title="暂存所有">
-              ➕
-            </button>
-          </div>
-        </div>
-
-        <!-- 批量操作工具栏 -->
-        <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
-          <div class="batch-info">
-            <span>已选择 {{ selectedFilesCount }} 个文件</span>
-          </div>
-          <div class="batch-actions">
-            <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
-              title="批量暂存选中文件">
-              ➕ 暂存选中
-            </button>
-            <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
-              ↩️ 回滚选中
-            </button>
-            <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
-              📋 全选
-            </button>
-            <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
-              🗑️ 清空
-            </button>
-          </div>
-        </div>
-
-        <div class="file-list">
-          <FileItem v-for="file in gitStatus.unstaged_files" :key="file.path" :file="file" :is-staged="false"
-            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
-        </div>
+      <div class="batch-actions">
+        <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
+          title="批量暂存选中文件">
+          ➕ 暂存选中
+        </button>
+        <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
+          ↩️ 回滚选中
+        </button>
+        <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
+          📋 全选
+        </button>
+        <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
+          🗑️ 清空
+        </button>
       </div>
+    </div>
 
-      <!-- 未跟踪文件 -->
-      <div class="file-section" v-if="gitStatus.untracked_files.length > 0">
-        <div class="section-header">
-          <h4>❓ 未跟踪的文件 ({{ gitStatus.untracked_files.length }})</h4>
-          <div class="section-actions">
-            <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
-              ➕
-            </button>
-          </div>
-        </div>
-        <div class="file-list">
-          <FileItem v-for="file in gitStatus.untracked_files" :key="file.path" :file="file" :is-staged="false"
-            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
-        </div>
-      </div>
+    <div class="file-list">
+      <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
+        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+    </div>
+  </div>
 
-      <!-- 冲突文件 -->
-      <div class="file-section" v-if="gitStatus.conflicted_files.length > 0">
-        <div class="section-header">
-          <h4>⚠️ 合并冲突 ({{ gitStatus.conflicted_files.length }})</h4>
-        </div>
-        <div class="file-list">
-          <FileItem v-for="file in gitStatus.conflicted_files" :key="file.path" :file="file" :is-staged="false"
-            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
-        </div>
+  <!-- 未跟踪文件 -->
+  <div class="file-section" v-if="gitStatus && gitStatus.untracked_files.length > 0">
+    <div class="section-header">
+      <h4>❓ 未跟踪的文件 ({{ gitStatus?.untracked_files?.length || 0 }})</h4>
+      <div class="section-actions">
+        <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
+          ➕
+        </button>
       </div>
+    </div>
+    <div class="file-list">
+      <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file" :is-staged="false"
+        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+    </div>
+  </div>
 
-      <!-- 无更改状态 -->
-      <div v-if="!gitStatus.has_changes" class="no-changes">
-        <p>✨ 工作区干净，没有待提交的更改</p>
-      </div>
+  <!-- 冲突文件 -->
+  <div class="file-section" v-if="gitStatus && gitStatus.conflicted_files.length > 0">
+    <div class="section-header">
+      <h4>⚠️ 合并冲突 ({{ gitStatus?.conflicted_files?.length || 0 }})</h4>
+    </div>
+    <div class="file-list">
+      <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file" :is-staged="false"
+        @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+    </div>
+
+    <!-- 无更改状态 -->
+    <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
+      <p>✨ 工作区干净，没有待提交的更改</p>
     </div>
 
     <!-- 提交历史 -->
@@ -260,8 +274,6 @@
         </div>
       </div>
     </div>
-
-    <!-- 差异查看器已改为独立窗口，此处不再需要模态框 -->
 
     <!-- Toast通知组件 -->
     <Toast ref="toastRef" />
@@ -306,6 +318,9 @@ const refreshCount = ref(0)
 // 最近仓库相关状态
 const recentRepos = ref<RecentRepo[]>([])
 const showRecentDropdown = ref(false)
+
+// 菜单状态
+const showMenu = ref(false)
 
 // Toast通知系统
 const toast = useToast()
@@ -967,6 +982,18 @@ const getRepoDisplayTime = (repo: RecentRepo) => {
   return RecentReposManager.getDisplayText(repo)
 }
 
+// 菜单功能切换
+const toggleMenu = () => {
+  showMenu.value = !showMenu.value
+}
+
+// 关于功能
+const openAbout = () => {
+  // TODO: 实现关于对话框
+  console.log('打开关于对话框')
+  showMenu.value = false
+}
+
 // 自动加载上次打开的仓库
 const autoLoadLastRepo = async () => {
   const lastRepoPath = RecentReposManager.getLastOpenedRepo()
@@ -1129,45 +1156,123 @@ onUnmounted(() => {
   overflow-y: auto;
 }
 
+/* 菜单栏样式 */
+.menu-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 16px;
+  background: #667eea;
+  color: white;
+  margin-bottom: 16px;
+}
+
+.menu-left .app-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.menu-dropdown {
+  position: relative;
+}
+
+.menu-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  transition: background-color 0.2s ease;
+}
+
+.menu-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.menu-dropdown-content {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  min-width: 150px;
+  z-index: 1000;
+}
+
+.menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  text-align: left;
+  cursor: pointer;
+  font-size: 14px;
+  color: #374151;
+  transition: background-color 0.2s ease;
+}
+
+.menu-item:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.menu-item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* 仓库头部 */
 .repo-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 12px;
+  padding: 16px;
   background: #f8fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  min-height: 40px;
+  border-radius: 8px;
+  margin-bottom: 16px;
 }
 
-/* 功能按钮组样式 */
-.function-buttons {
+.repo-info {
   display: flex;
-  gap: 12px;
   align-items: center;
-  flex-wrap: wrap;
+  gap: 16px;
+  flex: 1;
 }
 
-/* 全局加载指示器 */
-.global-loading {
+.repo-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* 加载状态 */
+.loading-status {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+
+.loading-info {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 8px 12px;
-  background: linear-gradient(135deg, #e3f2fd 0%, #f0f9ff 100%);
-  border: 1px solid #2196f3;
-  border-radius: 6px;
-  font-size: 12px;
-  color: #1976d2;
-  min-width: 200px;
 }
 
 .loading-spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid #bbdefb;
-  border-top: 2px solid #2196f3;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #e2e8f0;
+  border-top: 2px solid #667eea;
   border-radius: 50%;
   animation: spin 1s linear infinite;
 }
@@ -1183,75 +1288,57 @@ onUnmounted(() => {
 }
 
 .loading-text {
+  font-size: 12px;
+  color: #6b7280;
   font-weight: 500;
-  white-space: nowrap;
 }
 
 .loading-progress-bar {
-  flex: 1;
-  height: 4px;
-  background: #bbdefb;
+  width: 100%;
+  height: 3px;
+  background: #e2e8f0;
   border-radius: 2px;
   overflow: hidden;
 }
 
 .loading-progress-fill {
   height: 100%;
-  background: linear-gradient(90deg, #2196f3, #1976d2);
+  background: linear-gradient(90deg, #667eea, #764ba2);
   border-radius: 2px;
   transition: width 0.3s ease;
 }
 
-/* AI设置按钮样式 */
-.ai-settings-btn {
-  padding: 8px 16px;
-  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a24 100%);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 14px;
-  font-weight: 600;
-  transition: all 0.3s ease;
-  white-space: nowrap;
-}
-
-.ai-settings-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(255, 107, 107, 0.4);
-}
-
-.ai-settings-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* 仓库选择器样式 */
-.repo-selector {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
+/* 按钮基础样式 */
 .select-repo-btn {
   padding: 8px 16px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
   border: none;
   border-radius: 6px;
   cursor: pointer;
   font-size: 14px;
-  transition: all 0.3s ease;
+  font-weight: 500;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  background: #667eea;
+  color: white;
 }
 
 .select-repo-btn:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+  background: #5a67d8;
 }
 
 .select-repo-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* 仓库名称样式 */
+.repo-name {
+  color: #1a202c;
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* 最近仓库下拉菜单样式 */
@@ -1383,21 +1470,65 @@ onUnmounted(() => {
   color: #ff4444;
 }
 
-.repo-info {
+/* 提交操作区域样式 */
+.commit-actions-row {
+  margin-top: 12px;
   display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 12px;
-  flex: 1;
-  min-width: 0;
 }
 
-.repo-name {
-  color: #1a202c;
-  font-size: 14px;
-  font-weight: 600;
+.ai-generate-section {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+}
+
+.template-select {
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  font-size: 13px;
+  background: white;
+  min-width: 120px;
+}
+
+.generate-btn,
+.regenerate-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+}
+
+.generate-btn {
+  background: #10b981;
+  color: white;
+}
+
+.generate-btn:hover:not(:disabled) {
+  background: #059669;
+}
+
+.regenerate-btn {
+  background: #f59e0b;
+  color: white;
+}
+
+.regenerate-btn:hover:not(:disabled) {
+  background: #d97706;
+}
+
+.generate-btn:disabled,
+.regenerate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .branch-info {
@@ -1440,12 +1571,17 @@ onUnmounted(() => {
   gap: 10px;
 }
 
+/* 文件区域样式 */
+.staged-files,
+.unstaged-files,
 .file-section {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   overflow: hidden;
+  margin-bottom: 16px;
 }
 
+.section-title,
 .section-header {
   display: flex;
   justify-content: space-between;
@@ -1455,6 +1591,7 @@ onUnmounted(() => {
   border-bottom: 1px solid #e2e8f0;
 }
 
+.section-title h4,
 .section-header h4 {
   margin: 0;
   font-size: 14px;
@@ -1488,16 +1625,30 @@ onUnmounted(() => {
 }
 
 /* 提交区域 */
-.commit-section {
-  padding: 12px;
+.commit-area {
+  padding: 16px;
   background: #f7fafc;
   border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  border-radius: 8px;
+  margin-bottom: 16px;
 }
 
 .commit-input {
+  width: 100%;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  margin-bottom: 12px;
+}
+
+.commit-controls {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
   gap: 12px;
 }
 

@@ -123,10 +123,6 @@ const canViewDiff = () => {
 }
 
 // 方法
-const toggleSelection = () => {
-  // 可以在这里处理文件选择逻辑
-}
-
 const handleToggleStage = () => {
   emit('toggleStage', props.file.path, !props.isStaged)
 }

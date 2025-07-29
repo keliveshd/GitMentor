@@ -42,16 +42,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-
-export interface ConfirmOptions {
-  type?: 'danger' | 'warning' | 'info' | 'question'
-  title: string
-  message: string
-  details?: string
-  confirmText?: string
-  cancelText?: string
-  allowOutsideClick?: boolean
-}
+import type { ConfirmOptions } from '@/types/confirm'
 
 interface Props {
   visible: boolean
