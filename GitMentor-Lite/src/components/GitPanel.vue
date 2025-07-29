@@ -75,16 +75,126 @@
         <div class="loading-progress-fill" :style="{ width: loadingProgress + '%' }"></div>
       </div>
     </div>
-    <!-- 暂存区 -->
-    <div class="staged-files" v-if="gitStatus && gitStatus.staged_files.length > 0">
+
+    <!-- 主要内容区域 -->
+    <div class="main-content">
+      <!-- 暂存区 -->
+      <div class="staged-files" v-if="gitStatus && gitStatus.staged_files.length > 0">
+        <div class="section-title">
+          <h4>📋 暂存的更改 ({{ gitStatus?.staged_files?.length || 0 }})</h4>
+          <div class="section-actions">
+            <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
+              {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
+            </button>
+            <button @click="unstageAll" class="action-btn" title="取消暂存所有">
+              ↩️
+            </button>
+          </div>
+        </div>
+
+        <!-- 批量操作工具栏 -->
+        <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
+          <div class="batch-info">
+            <span>已选择 {{ selectedFilesCount }} 个文件</span>
+          </div>
+          <div class="batch-actions">
+            <button v-if="canBatchUnstage" @click="batchUnstageFiles" class="batch-btn unstage-btn" :disabled="loading"
+              title="批量取消暂存选中文件">
+              ➖ 取消暂存
+            </button>
+            <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
+              ↩️ 回滚选中
+            </button>
+            <button @click="selectAllStaged" class="batch-btn select-all-btn" title="全选暂存区文件">
+              📋 全选
+            </button>
+            <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
+              🗑️ 清空
+            </button>
+          </div>
+        </div>
+
+        <div class="file-list">
+          <FileItem v-for="file in gitStatus?.staged_files || []" :key="file.path" :file="file" :is-staged="true"
+            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+        </div>
+      </div>
+
+      <!-- 提交区域 -->
+      <div class="commit-area" v-if="gitStatus">
+        <textarea v-model="commitMessage" placeholder="输入提交消息..." class="commit-input" :disabled="!hasCommittableFiles"
+          :style="{ height: commitTextareaHeight + 'px' }" @input="adjustTextareaHeight"
+          ref="commitTextarea"></textarea>
+
+        <div class="commit-controls">
+          <!-- AI生成功能 -->
+          <div class="ai-generate-section">
+            <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
+              <option value="standard" title="生成符合常规规范的英文提交消息">标准提交</option>
+              <option value="chinese" title="生成简洁明了的中文提交消息">中文提交</option>
+              <option value="detailed" title="生成包含详细描述的提交消息">详细提交</option>
+              <option value="conventional" title="生成符合约定式提交规范的消息">约定式提交</option>
+            </select>
+            <button @click="generateCommitMessage" class="generate-btn" :disabled="loading || !hasCommittableFiles"
+              title="快捷键: Ctrl+G">
+              <span v-if="!isGenerating">🤖 AI生成</span>
+              <span v-else>⏳ 生成中...</span>
+            </button>
+            <button v-if="lastGeneratedMessage && commitMessage === lastGeneratedMessage"
+              @click="regenerateCommitMessage" class="regenerate-btn" :disabled="loading || !hasCommittableFiles"
+              title="重新生成提交消息">
+              🔄 重新生成
+            </button>
+          </div>
+
+          <!-- 提交按钮 -->
+          <button @click="commitChanges" class="commit-btn"
+            :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
+            ✅ 提交更改
+          </button>
+        </div>
+        <div v-if="!hasCommittableFiles" class="commit-hint">
+          <p>✨ 工作区干净，没有待提交的更改</p>
+        </div>
+        <div v-else-if="gitStatus && !gitStatus.staged_files.length" class="commit-hint">
+          <p>💡 暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
+        </div>
+        <div v-if="generationProgress" class="generation-progress">
+          <div class="progress-content">
+            <div class="progress-text">{{ generationProgress }}</div>
+            <div v-if="isGenerating" class="progress-bar">
+              <div class="progress-fill"></div>
+            </div>
+          </div>
+        </div>
+        <!-- 提交消息预览 -->
+        <div v-if="commitMessage && lastGeneratedMessage === commitMessage" class="message-preview">
+          <div class="preview-header">
+            <span class="preview-label">🤖 AI生成的提交消息</span>
+            <div class="preview-actions">
+              <button @click="regenerateCommitMessage" class="preview-action-btn" :disabled="loading" title="重新生成">
+                🔄
+              </button>
+              <button @click="clearCommitMessage" class="preview-action-btn" title="清空消息">
+                🗑️
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 工作区更改 -->
+    <div class="unstaged-files" v-if="gitStatus && gitStatus.unstaged_files.length > 0">
       <div class="section-title">
-        <h4>📋 暂存的更改 ({{ gitStatus?.staged_files?.length || 0 }})</h4>
+        <h4>📝 更改 ({{ gitStatus?.unstaged_files?.length || 0 }})</h4>
         <div class="section-actions">
           <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
             {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
           </button>
-          <button @click="unstageAll" class="action-btn" title="取消暂存所有">
-            ↩️
+          <button @click="stageAll" class="action-btn" title="暂存所有">
+            ➕
           </button>
         </div>
       </div>
@@ -95,14 +205,14 @@
           <span>已选择 {{ selectedFilesCount }} 个文件</span>
         </div>
         <div class="batch-actions">
-          <button v-if="canBatchUnstage" @click="batchUnstageFiles" class="batch-btn unstage-btn" :disabled="loading"
-            title="批量取消暂存选中文件">
-            ➖ 取消暂存
+          <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
+            title="批量暂存选中文件">
+            ➕ 暂存选中
           </button>
           <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
             ↩️ 回滚选中
           </button>
-          <button @click="selectAllStaged" class="batch-btn select-all-btn" title="全选暂存区文件">
+          <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
             📋 全选
           </button>
           <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
@@ -112,163 +222,59 @@
       </div>
 
       <div class="file-list">
-        <FileItem v-for="file in gitStatus?.staged_files || []" :key="file.path" :file="file" :is-staged="true"
+        <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
           :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
           @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
       </div>
     </div>
 
-    <!-- 提交区域 -->
-    <div class="commit-area" v-if="gitStatus">
-      <textarea v-model="commitMessage" placeholder="输入提交消息..." rows="3" class="commit-input"
-        :disabled="!hasCommittableFiles"></textarea>
-
-      <div class="commit-controls">
-        <!-- AI生成功能 -->
-        <div class="ai-generate-section">
-          <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
-            <option value="standard" title="生成符合常规规范的英文提交消息">标准提交</option>
-            <option value="chinese" title="生成简洁明了的中文提交消息">中文提交</option>
-            <option value="detailed" title="生成包含详细描述的提交消息">详细提交</option>
-            <option value="conventional" title="生成符合约定式提交规范的消息">约定式提交</option>
-          </select>
-          <button @click="generateCommitMessage" class="generate-btn" :disabled="loading || !hasCommittableFiles"
-            title="快捷键: Ctrl+G">
-            <span v-if="!isGenerating">🤖 AI生成</span>
-            <span v-else>⏳ 生成中...</span>
-          </button>
-          <button v-if="lastGeneratedMessage && commitMessage === lastGeneratedMessage" @click="regenerateCommitMessage"
-            class="regenerate-btn" :disabled="loading || !hasCommittableFiles" title="重新生成提交消息">
-            🔄 重新生成
+    <!-- 未跟踪文件 -->
+    <div class="file-section" v-if="gitStatus && gitStatus.untracked_files.length > 0">
+      <div class="section-header">
+        <h4>❓ 未跟踪的文件 ({{ gitStatus?.untracked_files?.length || 0 }})</h4>
+        <div class="section-actions">
+          <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
+            ➕
           </button>
         </div>
-
-        <!-- 提交按钮 -->
-        <button @click="commitChanges" class="commit-btn"
-          :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
-          ✅ 提交更改
-        </button>
       </div>
-      <div v-if="!hasCommittableFiles" class="commit-hint">
+      <div class="file-list">
+        <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file" :is-staged="false"
+          :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+          @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+      </div>
+    </div>
+
+    <!-- 冲突文件 -->
+    <div class="file-section" v-if="gitStatus && gitStatus.conflicted_files.length > 0">
+      <div class="section-header">
+        <h4>⚠️ 合并冲突 ({{ gitStatus?.conflicted_files?.length || 0 }})</h4>
+      </div>
+      <div class="file-list">
+        <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file" :is-staged="false"
+          @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+      </div>
+
+      <!-- 无更改状态 -->
+      <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
         <p>✨ 工作区干净，没有待提交的更改</p>
       </div>
-      <div v-else-if="gitStatus && !gitStatus.staged_files.length" class="commit-hint">
-        <p>💡 暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
-      </div>
-      <div v-if="generationProgress" class="generation-progress">
-        <div class="progress-content">
-          <div class="progress-text">{{ generationProgress }}</div>
-          <div v-if="isGenerating" class="progress-bar">
-            <div class="progress-fill"></div>
-          </div>
+
+      <!-- 提交历史 -->
+      <div class="commit-history" v-if="commitHistory.length > 0">
+        <div class="section-header">
+          <h4>📜 提交历史</h4>
+          <button @click="refreshHistory" class="action-btn">🔄</button>
         </div>
-      </div>
-      <!-- 提交消息预览 -->
-      <div v-if="commitMessage && lastGeneratedMessage === commitMessage" class="message-preview">
-        <div class="preview-header">
-          <span class="preview-label">🤖 AI生成的提交消息</span>
-          <div class="preview-actions">
-            <button @click="regenerateCommitMessage" class="preview-action-btn" :disabled="loading" title="重新生成">
-              🔄
-            </button>
-            <button @click="clearCommitMessage" class="preview-action-btn" title="清空消息">
-              🗑️
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- 工作区更改 -->
-  <div class="unstaged-files" v-if="gitStatus && gitStatus.unstaged_files.length > 0">
-    <div class="section-title">
-      <h4>📝 更改 ({{ gitStatus?.unstaged_files?.length || 0 }})</h4>
-      <div class="section-actions">
-        <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
-          {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
-        </button>
-        <button @click="stageAll" class="action-btn" title="暂存所有">
-          ➕
-        </button>
-      </div>
-    </div>
-
-    <!-- 批量操作工具栏 -->
-    <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
-      <div class="batch-info">
-        <span>已选择 {{ selectedFilesCount }} 个文件</span>
-      </div>
-      <div class="batch-actions">
-        <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
-          title="批量暂存选中文件">
-          ➕ 暂存选中
-        </button>
-        <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
-          ↩️ 回滚选中
-        </button>
-        <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
-          📋 全选
-        </button>
-        <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
-          🗑️ 清空
-        </button>
-      </div>
-    </div>
-
-    <div class="file-list">
-      <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
-        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
-    </div>
-  </div>
-
-  <!-- 未跟踪文件 -->
-  <div class="file-section" v-if="gitStatus && gitStatus.untracked_files.length > 0">
-    <div class="section-header">
-      <h4>❓ 未跟踪的文件 ({{ gitStatus?.untracked_files?.length || 0 }})</h4>
-      <div class="section-actions">
-        <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
-          ➕
-        </button>
-      </div>
-    </div>
-    <div class="file-list">
-      <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file" :is-staged="false"
-        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
-    </div>
-  </div>
-
-  <!-- 冲突文件 -->
-  <div class="file-section" v-if="gitStatus && gitStatus.conflicted_files.length > 0">
-    <div class="section-header">
-      <h4>⚠️ 合并冲突 ({{ gitStatus?.conflicted_files?.length || 0 }})</h4>
-    </div>
-    <div class="file-list">
-      <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file" :is-staged="false"
-        @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
-    </div>
-
-    <!-- 无更改状态 -->
-    <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
-      <p>✨ 工作区干净，没有待提交的更改</p>
-    </div>
-
-    <!-- 提交历史 -->
-    <div class="commit-history" v-if="commitHistory.length > 0">
-      <div class="section-header">
-        <h4>📜 提交历史</h4>
-        <button @click="refreshHistory" class="action-btn">🔄</button>
-      </div>
-      <div class="history-list">
-        <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
-          <div class="commit-info">
-            <div class="commit-message">{{ commit.message }}</div>
-            <div class="commit-meta">
-              <span class="commit-author">{{ commit.author }}</span>
-              <span class="commit-hash">{{ commit.short_hash }}</span>
-              <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
+        <div class="history-list">
+          <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
+            <div class="commit-info">
+              <div class="commit-message">{{ commit.message }}</div>
+              <div class="commit-meta">
+                <span class="commit-author">{{ commit.author }}</span>
+                <span class="commit-hash">{{ commit.short_hash }}</span>
+                <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -321,6 +327,10 @@ const showRecentDropdown = ref(false)
 
 // 菜单状态
 const showMenu = ref(false)
+
+// 提交区域高度自适应相关状态
+const commitTextareaHeight = ref(60) // 默认高度约3行
+const commitTextarea = ref<HTMLTextAreaElement | null>(null)
 
 // Toast通知系统
 const toast = useToast()
@@ -1076,6 +1086,39 @@ const openDiffViewer = async (filePath: string, isStaged?: boolean) => {
   }
 }
 
+/**
+ * 调整提交消息输入框高度
+ * Author: Evilek
+ * Date: 2025-01-29
+ * 根据内容行数自适应高度，最大10行，超过则显示滚动条
+ */
+const adjustTextareaHeight = () => {
+  if (!commitTextarea.value) return
+
+  const textarea = commitTextarea.value
+  const lineHeight = 20 // 每行高度
+  const padding = 24 // 上下padding总和
+  const minHeight = lineHeight * 3 + padding // 最小3行
+  const maxHeight = lineHeight * 10 + padding // 最大10行
+
+  // 重置高度以获取正确的scrollHeight
+  textarea.style.height = 'auto'
+
+  // 计算内容高度
+  const contentHeight = textarea.scrollHeight
+
+  // 设置高度：在最小和最大高度之间
+  const newHeight = Math.max(minHeight, Math.min(contentHeight, maxHeight))
+  commitTextareaHeight.value = newHeight
+
+  // 如果内容超过最大高度，启用滚动
+  if (contentHeight > maxHeight) {
+    textarea.style.overflowY = 'auto'
+  } else {
+    textarea.style.overflowY = 'hidden'
+  }
+}
+
 // 快捷键处理
 const handleKeydown = (event: KeyboardEvent) => {
   if (event.ctrlKey && event.key === 'g') {
@@ -1152,8 +1195,8 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: 90vh;
-  overflow-y: auto;
+  height: 100vh;
+  overflow: hidden;
 }
 
 /* 菜单栏样式 */
@@ -1569,6 +1612,17 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* 主要内容区域 - 用于高度分配 */
+.main-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  gap: 12px;
+  overflow: hidden;
 }
 
 /* 文件区域样式 */
@@ -1579,6 +1633,26 @@ onUnmounted(() => {
   border-radius: 8px;
   overflow: hidden;
   margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 暂存区 - 占用25%的可用空间 */
+.staged-files {
+  flex: 0 0 25%;
+  min-height: 200px;
+}
+
+/* 工作区 - 占用35%的可用空间 */
+.unstaged-files {
+  flex: 0 0 35%;
+  min-height: 250px;
+}
+
+/* 未跟踪文件和冲突文件 - 占用15%的可用空间 */
+.file-section {
+  flex: 0 0 15%;
+  min-height: 150px;
 }
 
 .section-title,
@@ -1622,15 +1696,22 @@ onUnmounted(() => {
 .file-list {
   padding: 4px;
   background: white;
+  flex: 1;
+  overflow-y: auto;
+  min-height: 0;
 }
 
-/* 提交区域 */
+/* 提交区域 - 占用25%的可用空间 */
 .commit-area {
   padding: 16px;
   background: #f7fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   margin-bottom: 16px;
+  flex: 0 0 25%;
+  min-height: 200px;
+  display: flex;
+  flex-direction: column;
 }
 
 .commit-input {
@@ -1660,8 +1741,11 @@ onUnmounted(() => {
   font-family: inherit;
   font-size: 14px;
   resize: vertical;
-  min-height: 80px;
+  min-height: 120px;
+  max-height: 300px;
+  flex: 1;
   transition: border-color 0.2s ease;
+  overflow-y: auto;
 }
 
 .commit-textarea:focus {
@@ -2152,5 +2236,46 @@ onUnmounted(() => {
   border-radius: 8px;
   overflow: hidden;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+}
+
+/* 响应式设计 */
+@media (max-height: 800px) {
+
+  /* 在较小屏幕上调整区域比例 */
+  .staged-files {
+    flex: 0 0 20%;
+    min-height: 150px;
+  }
+
+  .unstaged-files {
+    flex: 0 0 30%;
+    min-height: 180px;
+  }
+
+  .commit-area {
+    flex: 0 0 30%;
+    min-height: 180px;
+  }
+
+  .file-section {
+    flex: 0 0 20%;
+    min-height: 120px;
+  }
+}
+
+@media (max-height: 600px) {
+
+  /* 在很小的屏幕上进一步压缩 */
+  .staged-files,
+  .unstaged-files,
+  .commit-area,
+  .file-section {
+    min-height: 100px;
+  }
+
+  .commit-textarea {
+    min-height: 80px;
+    max-height: 150px;
+  }
 }
 </style>
