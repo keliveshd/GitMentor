@@ -69,6 +69,7 @@
               <div v-if="settings.base.provider === 'OpenAI'" class="provider-config">
                 <div class="setting-item">
                   <label for="openai-api-key">API Key</label>
+1
                   <input id="openai-api-key" type="password" v-model="settings.providers.openai.api_key"
                     placeholder="sk-..." class="setting-input" />
                 </div>

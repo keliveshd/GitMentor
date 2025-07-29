@@ -281,6 +281,8 @@ fn create_commit_system_prompt(config: &AIConfig) -> String {
 }
 
 /// 使用提示模板生成提交消息
+/// 作者：Evilek
+/// 编写日期：2025-07-28
 #[tauri::command]
 pub async fn generate_commit_with_template(
     ai_manager: State<'_, Mutex<AIManager>>,
@@ -291,13 +293,28 @@ pub async fn generate_commit_with_template(
 ) -> Result<String, String> {
     let manager = ai_manager.lock().await;
 
+    // 从AI配置中获取语言设置
+    let config = manager.get_config().await;
+    let language = match config.base.language.as_str() {
+        "Simplified Chinese" => "zh-CN",
+        "Traditional Chinese" => "zh-TW",
+        "English" => "en",
+        "Japanese" => "ja",
+        "Korean" => "ko",
+        "French" => "fr",
+        "German" => "de",
+        "Spanish" => "es",
+        "Russian" => "ru",
+        _ => "en", // 默认英文
+    };
+
     let context = CommitContext {
         diff,
         staged_files,
         branch_name,
         commit_type: None,
         max_length: None,
-        language: "en".to_string(),
+        language: language.to_string(), // 使用配置中的语言设置
     };
 
     match manager.generate_commit_with_template(&template_id, context).await {
