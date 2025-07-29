@@ -71,9 +71,6 @@
         <div class="loading-spinner"></div>
         <span class="loading-text">{{ loadingText || '加载中...' }}</span>
       </div>
-      <div class="loading-progress-bar">
-        <div class="loading-progress-fill" :style="{ width: loadingProgress + '%' }"></div>
-      </div>
     </div>
 
     <!-- 主要内容区域 -->
@@ -291,7 +288,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import FileItem from './FileItem.vue'
 import Toast from './Toast.vue'
@@ -308,7 +305,6 @@ const commitMessage = ref('')
 const commitHistory = ref<any[]>([])
 const loading = ref(false)
 const loadingText = ref('')
-const loadingProgress = ref(0)
 // 批量操作相关状态
 const batchMode = ref(false)
 const selectedFiles = ref<Set<string>>(new Set())
@@ -373,10 +369,9 @@ const canBatchUnstage = computed(() => {
 // 差异查看器已改为独立窗口，不再需要本地状态
 
 // 加载状态管理
-const setLoading = (isLoading: boolean, text = '', progress = 0) => {
+const setLoading = (isLoading: boolean, text = '') => {
   loading.value = isLoading
   loadingText.value = text
-  loadingProgress.value = progress
 }
 
 // 方法
@@ -387,11 +382,11 @@ const openRepository = async () => {
   }
 
   try {
-    setLoading(true, '正在打开文件夹选择器...', 10)
+    setLoading(true, '正在打开文件夹选择器...')
 
     const selectedPath = await invoke('open_folder_dialog') as string | null
     if (selectedPath) {
-      setLoading(true, '正在加载仓库信息...', 50)
+      setLoading(true, '正在加载仓库信息...')
       await openRepoByPath(selectedPath)
     }
     // 如果 selectedPath 为 null，说明用户取消了选择或选择的不是有效的Git仓库
@@ -406,19 +401,19 @@ const openRepository = async () => {
 
 // 通过路径打开仓库的通用方法
 const openRepoByPath = async (path: string) => {
-  setLoading(true, '正在选择仓库...', 20)
+  setLoading(true, '正在选择仓库...')
   currentRepoPath.value = path
 
-  setLoading(true, '正在初始化仓库...', 40)
+  setLoading(true, '正在初始化仓库...')
   await invoke('select_repository', { path })
 
-  setLoading(true, '正在获取Git状态...', 60)
+  setLoading(true, '正在获取Git状态...')
   await refreshGitStatus(true)
 
-  setLoading(true, '正在加载提交历史...', 80)
+  setLoading(true, '正在加载提交历史...')
   await refreshHistory()
 
-  setLoading(true, '正在保存配置...', 90)
+  setLoading(true, '正在保存配置...')
   // 保存到最近仓库列表
   RecentReposManager.addRecentRepo(path)
   loadRecentRepos()
@@ -426,7 +421,7 @@ const openRepoByPath = async (path: string) => {
   // 关闭下拉菜单
   showRecentDropdown.value = false
 
-  setLoading(true, '完成', 100)
+  setLoading(true, '完成')
   setTimeout(() => setLoading(false), 500)
 }
 
@@ -733,16 +728,16 @@ const batchStageFiles = async () => {
   if (!confirmed) return
 
   try {
-    setLoading(true, '正在批量暂存文件...', 50)
+    setLoading(true, '正在批量暂存文件...')
     await invoke('stage_files', {
       request: { file_paths: selectedPaths, stage: true }
     })
 
-    setLoading(true, '正在刷新状态...', 80)
+    setLoading(true, '正在刷新状态...')
     await refreshGitStatus(true)
 
     selectedFiles.value.clear()
-    setLoading(true, '批量暂存完成', 100)
+    setLoading(true, '批量暂存完成')
     toast.success(`成功暂存 ${selectedPaths.length} 个文件`, '操作完成')
     setTimeout(() => setLoading(false), 1000)
   } catch (error) {
@@ -763,7 +758,7 @@ const batchRevertFiles = async () => {
   if (!confirmed) return
 
   try {
-    setLoading(true, '正在批量回滚文件...', 50)
+    setLoading(true, '正在批量回滚文件...')
 
     // 分别处理暂存区和工作区的文件
     const stagedFiles = selectedPaths.filter(path => {
@@ -794,11 +789,11 @@ const batchRevertFiles = async () => {
       })
     }
 
-    setLoading(true, '正在刷新状态...', 80)
+    setLoading(true, '正在刷新状态...')
     await refreshGitStatus(true)
 
     selectedFiles.value.clear()
-    setLoading(true, '批量回滚完成', 100)
+    setLoading(true, '批量回滚完成')
     toast.success(`成功回滚 ${selectedPaths.length} 个文件`, '操作完成')
     setTimeout(() => setLoading(false), 1000)
   } catch (error) {
@@ -819,16 +814,16 @@ const batchUnstageFiles = async () => {
   if (!confirmed) return
 
   try {
-    setLoading(true, '正在批量取消暂存文件...', 50)
+    setLoading(true, '正在批量取消暂存文件...')
     await invoke('stage_files', {
       request: { file_paths: selectedPaths, stage: false }
     })
 
-    setLoading(true, '正在刷新状态...', 80)
+    setLoading(true, '正在刷新状态...')
     await refreshGitStatus(true)
 
     selectedFiles.value.clear()
-    setLoading(true, '批量取消暂存完成', 100)
+    setLoading(true, '批量取消暂存完成')
     toast.success(`成功取消暂存 ${selectedPaths.length} 个文件`, '操作完成')
     setTimeout(() => setLoading(false), 1000)
   } catch (error) {
@@ -842,11 +837,11 @@ const commitChanges = async () => {
   if (!commitMessage.value.trim() || !hasCommittableFiles.value) return
 
   try {
-    setLoading(true, '准备提交...', 10)
+    setLoading(true, '准备提交...')
 
     // 如果暂存区为空，先暂存所有修改的文件
     if (!gitStatus.value.staged_files.length) {
-      setLoading(true, '正在暂存文件...', 30)
+      setLoading(true, '正在暂存文件...')
 
       // 暂存所有未暂存的文件
       if (gitStatus.value.unstaged_files.length > 0) {
@@ -864,12 +859,12 @@ const commitChanges = async () => {
         })
       }
 
-      setLoading(true, '正在刷新状态...', 50)
+      setLoading(true, '正在刷新状态...')
       // 刷新Git状态（强制刷新，因为这是重要操作）
       await refreshGitStatus(true)
     }
 
-    setLoading(true, '正在提交更改...', 70)
+    setLoading(true, '正在提交更改...')
     await invoke('commit_changes', {
       request: {
         message: commitMessage.value,
@@ -879,12 +874,12 @@ const commitChanges = async () => {
       }
     })
 
-    setLoading(true, '正在更新状态...', 90)
+    setLoading(true, '正在更新状态...')
     commitMessage.value = ''
     await refreshGitStatus(true)
     await refreshHistory()
 
-    setLoading(true, '提交完成！', 100)
+    setLoading(true, '提交完成！')
     toast.success('提交成功！', '操作完成')
     setTimeout(() => setLoading(false), 1000)
   } catch (error) {
@@ -907,7 +902,7 @@ const revertFile = async (filePath: string, isStaged: boolean) => {
   if (!confirmed) return
 
   try {
-    setLoading(true, `正在回滚${revertType}文件...`, 50)
+    setLoading(true, `正在回滚${revertType}文件...`)
     await invoke('revert_files', {
       request: {
         file_paths: [filePath],
@@ -915,10 +910,10 @@ const revertFile = async (filePath: string, isStaged: boolean) => {
       }
     })
 
-    setLoading(true, '正在刷新状态...', 80)
+    setLoading(true, '正在刷新状态...')
     await refreshGitStatus(true)
 
-    setLoading(true, '回滚完成', 100)
+    setLoading(true, '回滚完成')
     toast.success(`${revertType}文件 ${fileName} 已回滚`, '操作完成')
     setTimeout(() => setLoading(false), 1000)
   } catch (error) {
@@ -1117,6 +1112,11 @@ const adjustTextareaHeight = () => {
   } else {
     textarea.style.overflowY = 'hidden'
   }
+
+  // 强制重新布局，确保父容器能够感知高度变化
+  nextTick(() => {
+    textarea.style.height = newHeight + 'px'
+  })
 }
 
 // 快捷键处理
@@ -1143,6 +1143,13 @@ const handleKeydown = (event: KeyboardEvent) => {
     }
   }
 }
+
+// 监听提交消息变化，自动调整高度
+watch(commitMessage, () => {
+  nextTick(() => {
+    adjustTextareaHeight()
+  })
+})
 
 // 生命周期
 onMounted(async () => {
@@ -1173,6 +1180,11 @@ onMounted(async () => {
 
   // 添加快捷键监听
   document.addEventListener('keydown', handleKeydown)
+
+  // 初始化提交输入框高度
+  nextTick(() => {
+    adjustTextareaHeight()
+  })
 })
 
 // 清理
@@ -1192,6 +1204,8 @@ onUnmounted(() => {
 
 <style scoped>
 .git-panel {
+  position: relative;
+  /* 为绝对定位的加载状态提供定位上下文 */
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1295,6 +1309,11 @@ onUnmounted(() => {
 
 /* 加载状态 */
 .loading-status {
+  position: absolute;
+  top: 120px;
+  /* 位于仓库信息下方 */
+  left: 16px;
+  right: 16px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1302,7 +1321,8 @@ onUnmounted(() => {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  margin-bottom: 16px;
+  z-index: 15;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .loading-info {
@@ -1336,20 +1356,7 @@ onUnmounted(() => {
   font-weight: 500;
 }
 
-.loading-progress-bar {
-  width: 100%;
-  height: 3px;
-  background: #e2e8f0;
-  border-radius: 2px;
-  overflow: hidden;
-}
 
-.loading-progress-fill {
-  height: 100%;
-  background: linear-gradient(90deg, #667eea, #764ba2);
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
 
 /* 按钮基础样式 */
 .select-repo-btn {
@@ -1621,8 +1628,13 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   flex: 1;
-  gap: 12px;
-  overflow: hidden;
+  gap: 16px;
+  overflow-y: auto;
+  /* 允许整体滚动 */
+  padding-right: 4px;
+  /* 为滚动条留出空间 */
+  padding-bottom: 60px;
+  /* 为绝对定位的提示信息留出空间 */
 }
 
 /* 文件区域样式 */
@@ -1632,27 +1644,28 @@ onUnmounted(() => {
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   overflow: hidden;
-  margin-bottom: 16px;
   display: flex;
   flex-direction: column;
 }
 
-/* 暂存区 - 占用25%的可用空间 */
+/* 暂存区 - 可收缩，最小高度保证基本显示 */
 .staged-files {
-  flex: 0 0 25%;
+  flex: 0 1 auto;
+  min-height: 120px;
+  max-height: 300px;
+}
+
+/* 工作区 - 占用主要空间，可伸缩 */
+.unstaged-files {
+  flex: 1 1 auto;
   min-height: 200px;
 }
 
-/* 工作区 - 占用35%的可用空间 */
-.unstaged-files {
-  flex: 0 0 35%;
-  min-height: 250px;
-}
-
-/* 未跟踪文件和冲突文件 - 占用15%的可用空间 */
+/* 未跟踪文件和冲突文件 - 较小的固定空间 */
 .file-section {
-  flex: 0 0 15%;
-  min-height: 150px;
+  flex: 0 1 auto;
+  min-height: 100px;
+  max-height: 250px;
 }
 
 .section-title,
@@ -1701,15 +1714,17 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-/* 提交区域 - 占用25%的可用空间 */
+/* 提交区域 - 根据内容自适应高度 */
 .commit-area {
+  position: relative;
+  /* 为绝对定位的进度条提供定位上下文 */
   padding: 16px;
   background: #f7fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
-  margin-bottom: 16px;
-  flex: 0 0 25%;
-  min-height: 200px;
+  flex: 0 0 auto;
+  /* 不参与flex空间分配，根据内容自适应 */
+  min-height: 180px;
   display: flex;
   flex-direction: column;
 }
@@ -1721,9 +1736,19 @@ onUnmounted(() => {
   border-radius: 6px;
   font-family: inherit;
   font-size: 14px;
-  line-height: 1.5;
-  resize: vertical;
+  line-height: 20px;
+  /* 固定行高，便于计算 */
+  resize: none;
+  /* 禁用手动调整大小，使用自动调整 */
   margin-bottom: 12px;
+  transition: height 0.2s ease;
+  /* 高度变化动画 */
+  overflow-y: hidden;
+  /* 默认隐藏滚动条 */
+  min-height: 60px;
+  /* 最小高度约3行 */
+  max-height: 224px;
+  /* 最大高度约10行 */
 }
 
 .commit-controls {
@@ -1780,13 +1805,19 @@ onUnmounted(() => {
 }
 
 .generation-progress {
-  margin-top: 8px;
-  padding: 12px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
+  padding: 8px 12px;
   background: #e3f2fd;
   border: 1px solid #2196f3;
   border-radius: 6px;
   font-size: 12px;
   color: #1976d2;
+  z-index: 10;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .progress-content {
@@ -1829,12 +1860,18 @@ onUnmounted(() => {
 
 /* 提交消息预览样式 */
 .message-preview {
-  margin-top: 8px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
   padding: 8px 12px;
   background: #f0f9ff;
   border: 1px solid #0ea5e9;
   border-radius: 6px;
   font-size: 12px;
+  z-index: 9;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .preview-header {
@@ -1952,7 +1989,11 @@ onUnmounted(() => {
 }
 
 .commit-hint {
-  margin-top: 8px;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 4px;
   padding: 8px 12px;
   background: #fff3cd;
   border: 1px solid #ffeaa7;
@@ -1960,6 +2001,8 @@ onUnmounted(() => {
   color: #856404;
   font-size: 12px;
   text-align: center;
+  z-index: 8;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .commit-hint p {
@@ -2241,41 +2284,50 @@ onUnmounted(() => {
 /* 响应式设计 */
 @media (max-height: 800px) {
 
-  /* 在较小屏幕上调整区域比例 */
+  /* 在较小屏幕上调整区域设置 */
   .staged-files {
-    flex: 0 0 20%;
-    min-height: 150px;
+    min-height: 100px;
+    max-height: 200px;
   }
 
   .unstaged-files {
-    flex: 0 0 30%;
-    min-height: 180px;
+    min-height: 150px;
   }
 
   .commit-area {
-    flex: 0 0 30%;
-    min-height: 180px;
+    min-height: 140px;
   }
 
   .file-section {
-    flex: 0 0 20%;
-    min-height: 120px;
+    min-height: 80px;
+    max-height: 180px;
   }
 }
 
 @media (max-height: 600px) {
 
   /* 在很小的屏幕上进一步压缩 */
-  .staged-files,
-  .unstaged-files,
-  .commit-area,
+  .staged-files {
+    min-height: 80px;
+    max-height: 150px;
+  }
+
+  .unstaged-files {
+    min-height: 120px;
+  }
+
   .file-section {
+    min-height: 60px;
+    max-height: 120px;
+  }
+
+  .commit-area {
     min-height: 100px;
   }
 
-  .commit-textarea {
-    min-height: 80px;
-    max-height: 150px;
+  .commit-input {
+    min-height: 45px;
+    max-height: 100px;
   }
 }
 </style>
