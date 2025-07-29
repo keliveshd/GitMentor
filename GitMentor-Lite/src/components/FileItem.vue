@@ -11,8 +11,9 @@
       </div>
       <div class="file-details">
         <div class="file-path">
-          <span class="path-text">{{ file.path }}</span>
-          <span class="file-status-text">{{ getStatusText() }}</span>
+          <span class="file-name" :class="{ 'deleted': isDeleted() }">{{ getFileName() }}</span>
+          <span class="relative-path" :class="{ 'deleted': isDeleted() }">{{ getRelativePath() }}</span>
+          <span class="file-status-text" :class="{ 'deleted': isDeleted() }">{{ getStatusText() }}</span>
         </div>
       </div>
     </div>
@@ -65,27 +66,45 @@ const emit = defineEmits<{
   toggleSelect: [filePath: string]
 }>()
 
+// 获取文件类型图标
+const getFileTypeIcon = (filePath: string) => {
+  const ext = filePath.split('.').pop()?.toLowerCase()
+
+  switch (ext) {
+    case 'js': case 'jsx': return '🟨'
+    case 'ts': case 'tsx': return '🔷'
+    case 'vue': return '💚'
+    case 'html': case 'htm': return '🌐'
+    case 'css': case 'scss': case 'sass': case 'less': return '🎨'
+    case 'json': return '📋'
+    case 'md': case 'markdown': return '📝'
+    case 'py': return '🐍'
+    case 'java': return '☕'
+    case 'cpp': case 'c': case 'h': return '⚙️'
+    case 'rs': return '🦀'
+    case 'go': return '🐹'
+    case 'php': return '🐘'
+    case 'rb': return '💎'
+    case 'swift': return '🦉'
+    case 'kt': return '🟣'
+    case 'dart': return '🎯'
+    case 'xml': return '📄'
+    case 'yml': case 'yaml': return '⚙️'
+    case 'toml': return '⚙️'
+    case 'sql': return '🗃️'
+    case 'sh': case 'bash': return '🐚'
+    case 'dockerfile': return '🐳'
+    case 'png': case 'jpg': case 'jpeg': case 'gif': case 'svg': case 'webp': return '🖼️'
+    case 'pdf': return '📕'
+    case 'txt': return '📄'
+    case 'lock': return '🔒'
+    default: return '📄'
+  }
+}
+
 // 计算属性
 const getStatusIcon = () => {
-  if (props.isStaged) {
-    switch (props.file.index_status) {
-      case 'Modified': return '📝'
-      case 'Added': return '➕'
-      case 'Deleted': return '🗑️'
-      case 'Renamed': return '📛'
-      case 'Copied': return '📋'
-      default: return '📄'
-    }
-  } else {
-    switch (props.file.working_tree_status) {
-      case 'Modified': return '📝'
-      case 'Added': return '➕'
-      case 'Deleted': return '🗑️'
-      case 'Untracked': return '❓'
-      case 'Conflicted': return '⚠️'
-      default: return '📄'
-    }
-  }
+  return getFileTypeIcon(props.file.path)
 }
 
 const getStatusText = () => {
@@ -122,6 +141,24 @@ const canViewDiff = () => {
     props.file.index_status !== 'Deleted'
 }
 
+// 获取文件名
+const getFileName = () => {
+  const parts = props.file.path.split('/')
+  return parts[parts.length - 1]
+}
+
+// 获取相对路径（不包含文件名，使用反斜杠）
+const getRelativePath = () => {
+  const parts = props.file.path.split('/')
+  if (parts.length <= 1) return ''
+  return parts.slice(0, -1).join('\\')
+}
+
+// 判断文件是否被删除
+const isDeleted = () => {
+  return props.file.working_tree_status === 'Deleted' || props.file.index_status === 'Deleted'
+}
+
 // 方法
 const handleToggleStage = () => {
   emit('toggleStage', props.file.path, !props.isStaged)
@@ -148,14 +185,14 @@ const toggleSelection = () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px;
+  padding: 2px 6px;
   margin: 1px 0;
   border: 1px solid #e1e4e8;
   border-radius: 4px;
   background-color: #ffffff;
   transition: all 0.2s ease;
   cursor: pointer;
-  min-height: 28px;
+  min-height: 22px;
 }
 
 .file-item.selected {
@@ -193,8 +230,8 @@ const toggleSelection = () => {
 }
 
 .file-status-icon {
-  font-size: 14px;
-  margin-right: 6px;
+  font-size: 12px;
+  margin-right: 4px;
   flex-shrink: 0;
 }
 
@@ -206,29 +243,52 @@ const toggleSelection = () => {
 .file-path {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.path-text {
+.file-name {
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 500;
   color: #24292f;
+  flex-shrink: 0;
+}
+
+.file-name.deleted {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.relative-path {
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  color: #656d76;
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.relative-path.deleted {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
 .file-status-text {
-  font-size: 10px;
+  font-size: 9px;
   color: #656d76;
   background: #f6f8fa;
-  padding: 1px 4px;
-  border-radius: 3px;
+  padding: 1px 3px;
+  border-radius: 2px;
   flex-shrink: 0;
+}
+
+.file-status-text.deleted {
+  text-decoration: line-through;
+  opacity: 0.7;
 }
 
 .file-actions {
@@ -286,13 +346,29 @@ const toggleSelection = () => {
     border-color: #1f6feb;
   }
 
-  .path-text {
+  .file-name {
     color: #e6edf3;
+  }
+
+  .file-name.deleted {
+    color: #8b949e;
+  }
+
+  .relative-path {
+    color: #8b949e;
+  }
+
+  .relative-path.deleted {
+    color: #6e7681;
   }
 
   .file-status-text {
     color: #8b949e;
     background: #30363d;
+  }
+
+  .file-status-text.deleted {
+    color: #6e7681;
   }
 
   .action-btn:hover {

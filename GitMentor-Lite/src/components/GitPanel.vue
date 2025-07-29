@@ -1,4 +1,4 @@
-<template>
+<!--  --><template>
   <div class="git-panel">
     <!-- 菜单栏 -->
     <div class="menu-bar">
@@ -1655,10 +1655,11 @@ onUnmounted(() => {
   max-height: 300px;
 }
 
-/* 工作区 - 占用主要空间，可伸缩 */
+/* 工作区 - 减小高度占比，可伸缩 */
 .unstaged-files {
-  flex: 1 1 auto;
-  min-height: 200px;
+  flex: 0 1 auto;
+  min-height: 150px;
+  max-height: 250px;
 }
 
 /* 未跟踪文件和冲突文件 - 较小的固定空间 */
@@ -2291,7 +2292,8 @@ onUnmounted(() => {
   }
 
   .unstaged-files {
-    min-height: 150px;
+    min-height: 120px;
+    max-height: 200px;
   }
 
   .commit-area {
@@ -2313,7 +2315,8 @@ onUnmounted(() => {
   }
 
   .unstaged-files {
-    min-height: 120px;
+    min-height: 100px;
+    max-height: 150px;
   }
 
   .file-section {
