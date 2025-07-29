@@ -8,6 +8,7 @@
           <span class="branch-name">🌿 {{ gitStatus.branch }}</span>
           <span v-if="gitStatus.ahead > 0" class="ahead">↑{{ gitStatus.ahead }}</span>
           <span v-if="gitStatus.behind > 0" class="behind">↓{{ gitStatus.behind }}</span>
+          <span v-if="isRefreshing" class="refresh-indicator" title="正在刷新Git状态">🔄</span>
         </span>
       </div>
       <!-- 功能按钮组 -->
@@ -65,14 +66,41 @@
         <div class="section-header">
           <h4>📋 暂存的更改 ({{ gitStatus.staged_files.length }})</h4>
           <div class="section-actions">
+            <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
+              {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
+            </button>
             <button @click="unstageAll" class="action-btn" title="取消暂存所有">
               ↩️
             </button>
           </div>
         </div>
+
+        <!-- 批量操作工具栏 -->
+        <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
+          <div class="batch-info">
+            <span>已选择 {{ selectedFilesCount }} 个文件</span>
+          </div>
+          <div class="batch-actions">
+            <button v-if="canBatchUnstage" @click="batchUnstageFiles" class="batch-btn unstage-btn" :disabled="loading"
+              title="批量取消暂存选中文件">
+              ➖ 取消暂存
+            </button>
+            <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
+              ↩️ 回滚选中
+            </button>
+            <button @click="selectAllStaged" class="batch-btn select-all-btn" title="全选暂存区文件">
+              📋 全选
+            </button>
+            <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
+              🗑️ 清空
+            </button>
+          </div>
+        </div>
+
         <div class="file-list">
           <FileItem v-for="file in gitStatus.staged_files" :key="file.path" :file="file" :is-staged="true"
-            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
         </div>
       </div>
 
@@ -141,14 +169,41 @@
         <div class="section-header">
           <h4>📝 更改 ({{ gitStatus.unstaged_files.length }})</h4>
           <div class="section-actions">
+            <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
+              {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
+            </button>
             <button @click="stageAll" class="action-btn" title="暂存所有">
               ➕
             </button>
           </div>
         </div>
+
+        <!-- 批量操作工具栏 -->
+        <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
+          <div class="batch-info">
+            <span>已选择 {{ selectedFilesCount }} 个文件</span>
+          </div>
+          <div class="batch-actions">
+            <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
+              title="批量暂存选中文件">
+              ➕ 暂存选中
+            </button>
+            <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
+              ↩️ 回滚选中
+            </button>
+            <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
+              📋 全选
+            </button>
+            <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
+              🗑️ 清空
+            </button>
+          </div>
+        </div>
+
         <div class="file-list">
           <FileItem v-for="file in gitStatus.unstaged_files" :key="file.path" :file="file" :is-staged="false"
-            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
         </div>
       </div>
 
@@ -164,7 +219,8 @@
         </div>
         <div class="file-list">
           <FileItem v-for="file in gitStatus.untracked_files" :key="file.path" :file="file" :is-staged="false"
-            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
         </div>
       </div>
 
@@ -235,11 +291,17 @@ const commitHistory = ref<any[]>([])
 const loading = ref(false)
 const loadingText = ref('')
 const loadingProgress = ref(0)
+// 批量操作相关状态
+const batchMode = ref(false)
+const selectedFiles = ref<Set<string>>(new Set())
 const tauriReady = ref(false)
 const selectedTemplate = ref('standard')
 const isGenerating = ref(false)
 const generationProgress = ref('')
 const lastGeneratedMessage = ref('')
+// 刷新状态指示
+const isRefreshing = ref(false)
+const refreshCount = ref(0)
 
 // 最近仓库相关状态
 const recentRepos = ref<RecentRepo[]>([])
@@ -255,6 +317,32 @@ const hasCommittableFiles = computed(() => {
   return gitStatus.value.staged_files.length > 0 ||
     gitStatus.value.unstaged_files.length > 0 ||
     gitStatus.value.untracked_files.length > 0
+})
+
+// 批量操作相关计算属性
+const allFiles = computed(() => {
+  if (!gitStatus.value) return []
+  return [
+    ...gitStatus.value.staged_files.map((f: any) => ({ ...f, isStaged: true })),
+    ...gitStatus.value.unstaged_files.map((f: any) => ({ ...f, isStaged: false })),
+    ...gitStatus.value.untracked_files.map((f: any) => ({ ...f, isStaged: false }))
+  ]
+})
+
+const selectedFilesCount = computed(() => selectedFiles.value.size)
+
+const canBatchStage = computed(() => {
+  return Array.from(selectedFiles.value).some(filePath => {
+    const file = allFiles.value.find(f => f.path === filePath)
+    return file && !file.isStaged
+  })
+})
+
+const canBatchUnstage = computed(() => {
+  return Array.from(selectedFiles.value).some(filePath => {
+    const file = allFiles.value.find(f => f.path === filePath)
+    return file && file.isStaged
+  })
 })
 
 // 差异查看器已改为独立窗口，不再需要本地状态
@@ -300,7 +388,7 @@ const openRepoByPath = async (path: string) => {
   await invoke('select_repository', { path })
 
   setLoading(true, '正在获取Git状态...', 60)
-  await refreshGitStatus()
+  await refreshGitStatus(true)
 
   setLoading(true, '正在加载提交历史...', 80)
   await refreshHistory()
@@ -317,22 +405,90 @@ const openRepoByPath = async (path: string) => {
   setTimeout(() => setLoading(false), 500)
 }
 
-const refreshGitStatus = async () => {
-  try {
-    const status = await invoke('get_git_status')
-    gitStatus.value = status
-  } catch (error) {
-    console.error('Failed to get git status:', error)
+// 智能防抖刷新Git状态
+const refreshGitStatus = async (force = false) => {
+  const now = Date.now()
+
+  // 如果有正在进行的刷新请求，直接返回该Promise
+  if (refreshPromise && !force) {
+    return refreshPromise
   }
+
+  // 检查最小刷新间隔
+  if (!force && now - lastRefreshTime < MIN_REFRESH_INTERVAL) {
+    // 如果距离上次刷新时间太短，使用防抖
+    if (refreshTimeout) {
+      clearTimeout(refreshTimeout)
+    }
+
+    return new Promise<void>((resolve) => {
+      refreshTimeout = setTimeout(async () => {
+        await refreshGitStatus(true)
+        resolve()
+      }, REFRESH_DEBOUNCE_DELAY)
+    })
+  }
+
+  // 执行实际的刷新操作
+  refreshPromise = (async () => {
+    try {
+      isRefreshing.value = true
+      refreshCount.value++
+      const status = await invoke('get_git_status')
+      gitStatus.value = status
+      lastRefreshTime = Date.now()
+    } catch (error) {
+      console.error('Failed to get git status:', error)
+      throw error
+    } finally {
+      isRefreshing.value = false
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
 }
 
+// 历史记录刷新（较少频率，不需要防抖）
+let historyRefreshPromise: Promise<void> | null = null
+
 const refreshHistory = async () => {
-  try {
-    const history = await invoke('get_commit_history', { limit: 10 }) as any[]
-    commitHistory.value = history
-  } catch (error) {
-    console.error('Failed to get commit history:', error)
+  // 如果有正在进行的历史刷新请求，直接返回该Promise
+  if (historyRefreshPromise) {
+    return historyRefreshPromise
   }
+
+  historyRefreshPromise = (async () => {
+    try {
+      const history = await invoke('get_commit_history', { limit: 10 }) as any[]
+      commitHistory.value = history
+    } catch (error) {
+      console.error('Failed to get commit history:', error)
+      throw error
+    } finally {
+      historyRefreshPromise = null
+    }
+  })()
+
+  return historyRefreshPromise
+}
+
+// 批量操作优化：收集多个操作后一次性刷新
+let pendingOperations = new Set<string>()
+let operationTimeout: number | null = null
+const OPERATION_BATCH_DELAY = 200 // 200ms内的操作会被批量处理
+
+const scheduleRefresh = () => {
+  if (operationTimeout) {
+    clearTimeout(operationTimeout)
+  }
+
+  operationTimeout = setTimeout(async () => {
+    if (pendingOperations.size > 0) {
+      pendingOperations.clear()
+      await refreshGitStatus()
+    }
+  }, OPERATION_BATCH_DELAY)
 }
 
 const toggleStage = async (filePath: string, shouldStage: boolean) => {
@@ -343,7 +499,10 @@ const toggleStage = async (filePath: string, shouldStage: boolean) => {
         stage: shouldStage
       }
     })
-    await refreshGitStatus()
+
+    // 添加到待处理操作集合，延迟刷新
+    pendingOperations.add(filePath)
+    scheduleRefresh()
   } catch (error) {
     console.error('Failed to toggle stage:', error)
     toast.error('暂存操作失败: ' + error, '操作失败')
@@ -358,7 +517,9 @@ const stageAll = async () => {
     await invoke('stage_files', {
       request: { file_paths: filePaths, stage: true }
     })
-    await refreshGitStatus()
+
+    // 批量操作直接刷新，不使用防抖
+    await refreshGitStatus(true)
   } catch (error) {
     console.error('Failed to stage all:', error)
     toast.error('暂存所有文件失败: ' + error, '操作失败')
@@ -373,7 +534,9 @@ const unstageAll = async () => {
     await invoke('stage_files', {
       request: { file_paths: filePaths, stage: false }
     })
-    await refreshGitStatus()
+
+    // 批量操作直接刷新，不使用防抖
+    await refreshGitStatus(true)
   } catch (error) {
     console.error('Failed to unstage all:', error)
     toast.error('取消暂存所有文件失败: ' + error, '操作失败')
@@ -388,7 +551,9 @@ const stageAllUntracked = async () => {
     await invoke('stage_files', {
       request: { file_paths: filePaths, stage: true }
     })
-    await refreshGitStatus()
+
+    // 批量操作直接刷新，不使用防抖
+    await refreshGitStatus(true)
   } catch (error) {
     console.error('Failed to stage untracked files:', error)
     toast.error('暂存未跟踪文件失败: ' + error, '操作失败')
@@ -397,6 +562,13 @@ const stageAllUntracked = async () => {
 
 // 防抖生成函数
 let generateTimeout: number | null = null
+
+// 刷新防抖和缓存机制
+let refreshTimeout: number | null = null
+let lastRefreshTime = 0
+const REFRESH_DEBOUNCE_DELAY = 500 // 500ms防抖延迟
+const MIN_REFRESH_INTERVAL = 1000 // 最小刷新间隔1秒
+let refreshPromise: Promise<void> | null = null
 
 const generateCommitMessage = async () => {
   if (!hasCommittableFiles.value) return
@@ -432,8 +604,8 @@ const generateCommitMessage = async () => {
           })
         }
 
-        // 刷新Git状态
-        await refreshGitStatus()
+        // 刷新Git状态（强制刷新，因为这是重要操作）
+        await refreshGitStatus(true)
       }
 
       const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
@@ -488,6 +660,159 @@ const clearCommitMessage = () => {
   lastGeneratedMessage.value = ''
 }
 
+// 批量操作相关方法
+const toggleBatchMode = () => {
+  batchMode.value = !batchMode.value
+  if (!batchMode.value) {
+    selectedFiles.value.clear()
+  }
+}
+
+const toggleFileSelection = (filePath: string) => {
+  if (selectedFiles.value.has(filePath)) {
+    selectedFiles.value.delete(filePath)
+  } else {
+    selectedFiles.value.add(filePath)
+  }
+}
+
+const selectAllUnstaged = () => {
+  if (!gitStatus.value) return
+  gitStatus.value.unstaged_files.forEach((file: any) => {
+    selectedFiles.value.add(file.path)
+  })
+  gitStatus.value.untracked_files.forEach((file: any) => {
+    selectedFiles.value.add(file.path)
+  })
+}
+
+const selectAllStaged = () => {
+  if (!gitStatus.value) return
+  gitStatus.value.staged_files.forEach((file: any) => {
+    selectedFiles.value.add(file.path)
+  })
+}
+
+const clearSelection = () => {
+  selectedFiles.value.clear()
+}
+
+const batchStageFiles = async () => {
+  const selectedPaths = Array.from(selectedFiles.value)
+  const confirmed = await confirm.info(
+    '批量暂存文件',
+    `确定要暂存选中的 ${selectedPaths.length} 个文件吗？`,
+    selectedPaths.join('\n')
+  )
+
+  if (!confirmed) return
+
+  try {
+    setLoading(true, '正在批量暂存文件...', 50)
+    await invoke('stage_files', {
+      request: { file_paths: selectedPaths, stage: true }
+    })
+
+    setLoading(true, '正在刷新状态...', 80)
+    await refreshGitStatus(true)
+
+    selectedFiles.value.clear()
+    setLoading(true, '批量暂存完成', 100)
+    toast.success(`成功暂存 ${selectedPaths.length} 个文件`, '操作完成')
+    setTimeout(() => setLoading(false), 1000)
+  } catch (error) {
+    console.error('Failed to batch stage files:', error)
+    toast.error('批量暂存失败: ' + error, '操作失败')
+    setLoading(false)
+  }
+}
+
+const batchRevertFiles = async () => {
+  const selectedPaths = Array.from(selectedFiles.value)
+  const confirmed = await confirm.danger(
+    '批量回滚文件',
+    `确定要回滚选中的 ${selectedPaths.length} 个文件吗？`,
+    '此操作将丢失这些文件的所有未提交更改，且无法撤销。\n\n文件列表：\n' + selectedPaths.join('\n')
+  )
+
+  if (!confirmed) return
+
+  try {
+    setLoading(true, '正在批量回滚文件...', 50)
+
+    // 分别处理暂存区和工作区的文件
+    const stagedFiles = selectedPaths.filter(path => {
+      const file = allFiles.value.find(f => f.path === path)
+      return file && file.isStaged
+    })
+
+    const unstagedFiles = selectedPaths.filter(path => {
+      const file = allFiles.value.find(f => f.path === path)
+      return file && !file.isStaged
+    })
+
+    if (stagedFiles.length > 0) {
+      await invoke('revert_files', {
+        request: {
+          file_paths: stagedFiles,
+          revert_type: 'Staged'
+        }
+      })
+    }
+
+    if (unstagedFiles.length > 0) {
+      await invoke('revert_files', {
+        request: {
+          file_paths: unstagedFiles,
+          revert_type: 'WorkingTree'
+        }
+      })
+    }
+
+    setLoading(true, '正在刷新状态...', 80)
+    await refreshGitStatus(true)
+
+    selectedFiles.value.clear()
+    setLoading(true, '批量回滚完成', 100)
+    toast.success(`成功回滚 ${selectedPaths.length} 个文件`, '操作完成')
+    setTimeout(() => setLoading(false), 1000)
+  } catch (error) {
+    console.error('Failed to batch revert files:', error)
+    toast.error('批量回滚失败: ' + error, '操作失败')
+    setLoading(false)
+  }
+}
+
+const batchUnstageFiles = async () => {
+  const selectedPaths = Array.from(selectedFiles.value)
+  const confirmed = await confirm.info(
+    '批量取消暂存文件',
+    `确定要取消暂存选中的 ${selectedPaths.length} 个文件吗？`,
+    selectedPaths.join('\n')
+  )
+
+  if (!confirmed) return
+
+  try {
+    setLoading(true, '正在批量取消暂存文件...', 50)
+    await invoke('stage_files', {
+      request: { file_paths: selectedPaths, stage: false }
+    })
+
+    setLoading(true, '正在刷新状态...', 80)
+    await refreshGitStatus(true)
+
+    selectedFiles.value.clear()
+    setLoading(true, '批量取消暂存完成', 100)
+    toast.success(`成功取消暂存 ${selectedPaths.length} 个文件`, '操作完成')
+    setTimeout(() => setLoading(false), 1000)
+  } catch (error) {
+    console.error('Failed to batch unstage files:', error)
+    toast.error('批量取消暂存失败: ' + error, '操作失败')
+    setLoading(false)
+  }
+}
+
 const commitChanges = async () => {
   if (!commitMessage.value.trim() || !hasCommittableFiles.value) return
 
@@ -515,8 +840,8 @@ const commitChanges = async () => {
       }
 
       setLoading(true, '正在刷新状态...', 50)
-      // 刷新Git状态
-      await refreshGitStatus()
+      // 刷新Git状态（强制刷新，因为这是重要操作）
+      await refreshGitStatus(true)
     }
 
     setLoading(true, '正在提交更改...', 70)
@@ -531,7 +856,7 @@ const commitChanges = async () => {
 
     setLoading(true, '正在更新状态...', 90)
     commitMessage.value = ''
-    await refreshGitStatus()
+    await refreshGitStatus(true)
     await refreshHistory()
 
     setLoading(true, '提交完成！', 100)
@@ -566,7 +891,7 @@ const revertFile = async (filePath: string, isStaged: boolean) => {
     })
 
     setLoading(true, '正在刷新状态...', 80)
-    await refreshGitStatus()
+    await refreshGitStatus(true)
 
     setLoading(true, '回滚完成', 100)
     toast.success(`${revertType}文件 ${fileName} 已回滚`, '操作完成')
@@ -650,7 +975,7 @@ const autoLoadLastRepo = async () => {
       // 验证路径是否仍然有效
       await invoke('select_repository', { path: lastRepoPath })
       currentRepoPath.value = lastRepoPath
-      await refreshGitStatus()
+      await refreshGitStatus(true)
       await refreshHistory()
       console.log('自动加载上次仓库:', lastRepoPath)
     } catch (error) {
@@ -785,6 +1110,12 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   if (generateTimeout) {
     clearTimeout(generateTimeout)
+  }
+  if (refreshTimeout) {
+    clearTimeout(refreshTimeout)
+  }
+  if (operationTimeout) {
+    clearTimeout(operationTimeout)
   }
 })
 </script>
@@ -1468,6 +1799,118 @@ onUnmounted(() => {
   background: #edf2f7;
   padding: 2px 4px;
   border-radius: 3px;
+}
+
+/* 批量操作样式 */
+.batch-mode-btn {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: #f8f9fa;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.batch-mode-btn:hover {
+  background: #e9ecef;
+}
+
+.batch-mode-btn.active {
+  background: #007bff;
+  color: white;
+  border-color: #007bff;
+}
+
+.batch-toolbar {
+  background: #f8f9fa;
+  border: 1px solid #dee2e6;
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.batch-info {
+  font-size: 14px;
+  color: #495057;
+  font-weight: 500;
+}
+
+.batch-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.batch-btn {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  color: #333;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s ease;
+}
+
+.batch-btn:hover:not(:disabled) {
+  background: #e9ecef;
+}
+
+.batch-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.batch-btn.stage-btn:hover:not(:disabled) {
+  background: #d4edda;
+  border-color: #28a745;
+  color: #155724;
+}
+
+.batch-btn.unstage-btn:hover:not(:disabled) {
+  background: #fff3cd;
+  border-color: #ffc107;
+  color: #856404;
+}
+
+.batch-btn.revert-btn:hover:not(:disabled) {
+  background: #f8d7da;
+  border-color: #dc3545;
+  color: #721c24;
+}
+
+.batch-btn.select-all-btn:hover:not(:disabled) {
+  background: #d1ecf1;
+  border-color: #17a2b8;
+  color: #0c5460;
+}
+
+.batch-btn.clear-btn:hover:not(:disabled) {
+  background: #e2e3e5;
+  border-color: #6c757d;
+  color: #383d41;
+}
+
+/* 刷新状态指示器 */
+.refresh-indicator {
+  display: inline-block;
+  animation: spin 1s linear infinite;
+  margin-left: 4px;
+  font-size: 12px;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 深色主题支持 */

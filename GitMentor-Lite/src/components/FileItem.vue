@@ -1,6 +1,11 @@
 <template>
-  <div class="file-item" :class="{ 'staged': isStaged }">
-    <div class="file-info" @click="toggleSelection">
+  <div class="file-item" :class="{ 'staged': isStaged, 'selected': selected }">
+    <!-- 批量选择复选框 -->
+    <div v-if="batchMode" class="file-checkbox" @click.stop="toggleSelection">
+      <input type="checkbox" :checked="selected" @change="toggleSelection" />
+    </div>
+
+    <div class="file-info" @click="batchMode ? toggleSelection : undefined">
       <div class="file-status-icon">
         {{ getStatusIcon() }}
       </div>
@@ -11,34 +16,21 @@
         </div>
       </div>
     </div>
-    
+
     <div class="file-actions">
       <!-- 暂存/取消暂存按钮 -->
-      <button
-        @click="handleToggleStage"
-        class="action-btn stage-btn"
-        :title="isStaged ? '取消暂存' : '暂存'"
-      >
+      <button @click="handleToggleStage" class="action-btn stage-btn" :title="isStaged ? '取消暂存' : '暂存'">
         {{ isStaged ? '➖' : '➕' }}
       </button>
-      
+
       <!-- 回滚按钮 -->
-      <button
-        @click="handleRevert"
-        class="action-btn revert-btn"
-        :title="isStaged ? '回滚暂存区更改' : '回滚工作区更改'"
-        v-if="canRevert()"
-      >
+      <button @click="handleRevert" class="action-btn revert-btn" :title="isStaged ? '回滚暂存区更改' : '回滚工作区更改'"
+        v-if="canRevert()">
         ↩️
       </button>
-      
+
       <!-- 查看差异按钮 -->
-      <button
-        @click="viewDiff"
-        class="action-btn diff-btn"
-        title="查看差异"
-        v-if="canViewDiff()"
-      >
+      <button @click="viewDiff" class="action-btn diff-btn" title="查看差异" v-if="canViewDiff()">
         👁️
       </button>
     </div>
@@ -59,6 +51,8 @@ interface FileStatus {
 interface Props {
   file: FileStatus
   isStaged: boolean
+  batchMode?: boolean
+  selected?: boolean
 }
 
 const props = defineProps<Props>()
@@ -68,6 +62,7 @@ const emit = defineEmits<{
   toggleStage: [filePath: string, shouldStage: boolean]
   revert: [filePath: string, isStaged: boolean]
   viewDiff: [filePath: string, isStaged: boolean]
+  toggleSelect: [filePath: string]
 }>()
 
 // 计算属性
@@ -122,9 +117,9 @@ const canRevert = () => {
 
 const canViewDiff = () => {
   // 未跟踪文件和已删除文件不能查看差异
-  return props.file.working_tree_status !== 'Untracked' && 
-         props.file.working_tree_status !== 'Deleted' &&
-         props.file.index_status !== 'Deleted'
+  return props.file.working_tree_status !== 'Untracked' &&
+    props.file.working_tree_status !== 'Deleted' &&
+    props.file.index_status !== 'Deleted'
 }
 
 // 方法
@@ -145,6 +140,11 @@ const handleRevert = () => {
 const viewDiff = () => {
   emit('viewDiff', props.file.path, props.isStaged)
 }
+
+// 批量选择相关方法
+const toggleSelection = () => {
+  emit('toggleSelect', props.file.path)
+}
 </script>
 
 <style scoped>
@@ -160,6 +160,23 @@ const viewDiff = () => {
   transition: all 0.2s ease;
   cursor: pointer;
   min-height: 28px;
+}
+
+.file-item.selected {
+  background-color: #e3f2fd;
+  border-color: #2196f3;
+}
+
+.file-checkbox {
+  margin-right: 8px;
+  display: flex;
+  align-items: center;
+}
+
+.file-checkbox input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
 }
 
 .file-item:hover {
