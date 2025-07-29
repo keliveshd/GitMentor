@@ -12,6 +12,15 @@
       </div>
       <!-- 功能按钮组 -->
       <div class="function-buttons">
+        <!-- 全局加载指示器 -->
+        <div v-if="loading" class="global-loading">
+          <div class="loading-spinner"></div>
+          <span class="loading-text">{{ loadingText || '加载中...' }}</span>
+          <div class="loading-progress-bar">
+            <div class="loading-progress-fill" :style="{ width: loadingProgress + '%' }"></div>
+          </div>
+        </div>
+
         <!-- AI服务设置按钮 -->
         <button @click="openAISettings" class="ai-settings-btn" :disabled="loading || !tauriReady" title="AI服务设置">
           🤖 AI设置
@@ -85,6 +94,11 @@
                 <span v-if="!isGenerating">🤖 AI生成</span>
                 <span v-else>⏳ 生成中...</span>
               </button>
+              <button v-if="lastGeneratedMessage && commitMessage === lastGeneratedMessage"
+                @click="regenerateCommitMessage" class="regenerate-btn" :disabled="loading || !hasCommittableFiles"
+                title="重新生成提交消息">
+                🔄 重新生成
+              </button>
             </div>
             <button @click="commitChanges" class="commit-btn"
               :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
@@ -98,7 +112,26 @@
             <p>💡 暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
           </div>
           <div v-if="generationProgress" class="generation-progress">
-            <p>{{ generationProgress }}</p>
+            <div class="progress-content">
+              <div class="progress-text">{{ generationProgress }}</div>
+              <div v-if="isGenerating" class="progress-bar">
+                <div class="progress-fill"></div>
+              </div>
+            </div>
+          </div>
+          <!-- 提交消息预览 -->
+          <div v-if="commitMessage && lastGeneratedMessage === commitMessage" class="message-preview">
+            <div class="preview-header">
+              <span class="preview-label">🤖 AI生成的提交消息</span>
+              <div class="preview-actions">
+                <button @click="regenerateCommitMessage" class="preview-action-btn" :disabled="loading" title="重新生成">
+                  🔄
+                </button>
+                <button @click="clearCommitMessage" class="preview-action-btn" title="清空消息">
+                  🗑️
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -173,6 +206,13 @@
     </div>
 
     <!-- 差异查看器已改为独立窗口，此处不再需要模态框 -->
+
+    <!-- Toast通知组件 -->
+    <Toast ref="toastRef" />
+
+    <!-- 确认对话框组件 -->
+    <ConfirmDialog :visible="globalConfirm.visible.value" :options="globalConfirm.options.value"
+      @confirm="globalConfirm.confirm" @cancel="globalConfirm.cancel" @close="globalConfirm.close" />
   </div>
 </template>
 
@@ -180,8 +220,12 @@
 import { ref, onMounted, onUnmounted, computed } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import FileItem from './FileItem.vue'
+import Toast from './Toast.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
+import { useToast, setToastInstance } from '../composables/useToast'
+import { confirm, globalConfirm } from '../composables/useConfirm'
 
 // 响应式数据
 const currentRepoPath = ref<string>('')
@@ -189,6 +233,8 @@ const gitStatus = ref<any>(null)
 const commitMessage = ref('')
 const commitHistory = ref<any[]>([])
 const loading = ref(false)
+const loadingText = ref('')
+const loadingProgress = ref(0)
 const tauriReady = ref(false)
 const selectedTemplate = ref('standard')
 const isGenerating = ref(false)
@@ -198,6 +244,10 @@ const lastGeneratedMessage = ref('')
 // 最近仓库相关状态
 const recentRepos = ref<RecentRepo[]>([])
 const showRecentDropdown = ref(false)
+
+// Toast通知系统
+const toast = useToast()
+const toastRef = ref<InstanceType<typeof Toast> | null>(null)
 
 // 计算属性：判断是否有可提交的文件
 const hasCommittableFiles = computed(() => {
@@ -209,43 +259,62 @@ const hasCommittableFiles = computed(() => {
 
 // 差异查看器已改为独立窗口，不再需要本地状态
 
+// 加载状态管理
+const setLoading = (isLoading: boolean, text = '', progress = 0) => {
+  loading.value = isLoading
+  loadingText.value = text
+  loadingProgress.value = progress
+}
+
 // 方法
 const openRepository = async () => {
   if (!tauriReady.value) {
-    alert('应用正在初始化，请稍后再试')
+    toast.warning('应用正在初始化，请稍后再试', '请稍候')
     return
   }
 
   try {
-    loading.value = true
+    setLoading(true, '正在打开文件夹选择器...', 10)
 
     const selectedPath = await invoke('open_folder_dialog') as string | null
     if (selectedPath) {
+      setLoading(true, '正在加载仓库信息...', 50)
       await openRepoByPath(selectedPath)
     }
     // 如果 selectedPath 为 null，说明用户取消了选择或选择的不是有效的Git仓库
     // 这种情况下不需要显示错误消息，因为后端已经处理了
   } catch (error) {
     console.error('Failed to open repository:', error)
-    alert('打开仓库失败: ' + error)
+    toast.error('打开仓库失败: ' + error, '操作失败')
   } finally {
-    loading.value = false
+    setLoading(false)
   }
 }
 
 // 通过路径打开仓库的通用方法
 const openRepoByPath = async (path: string) => {
+  setLoading(true, '正在选择仓库...', 20)
   currentRepoPath.value = path
+
+  setLoading(true, '正在初始化仓库...', 40)
   await invoke('select_repository', { path })
+
+  setLoading(true, '正在获取Git状态...', 60)
   await refreshGitStatus()
+
+  setLoading(true, '正在加载提交历史...', 80)
   await refreshHistory()
 
+  setLoading(true, '正在保存配置...', 90)
   // 保存到最近仓库列表
   RecentReposManager.addRecentRepo(path)
   loadRecentRepos()
 
   // 关闭下拉菜单
   showRecentDropdown.value = false
+
+  setLoading(true, '完成', 100)
+  setTimeout(() => setLoading(false), 500)
 }
 
 const refreshGitStatus = async () => {
@@ -277,7 +346,7 @@ const toggleStage = async (filePath: string, shouldStage: boolean) => {
     await refreshGitStatus()
   } catch (error) {
     console.error('Failed to toggle stage:', error)
-    alert('暂存操作失败: ' + error)
+    toast.error('暂存操作失败: ' + error, '操作失败')
   }
 }
 
@@ -292,7 +361,7 @@ const stageAll = async () => {
     await refreshGitStatus()
   } catch (error) {
     console.error('Failed to stage all:', error)
-    alert('暂存所有文件失败: ' + error)
+    toast.error('暂存所有文件失败: ' + error, '操作失败')
   }
 }
 
@@ -307,7 +376,7 @@ const unstageAll = async () => {
     await refreshGitStatus()
   } catch (error) {
     console.error('Failed to unstage all:', error)
-    alert('取消暂存所有文件失败: ' + error)
+    toast.error('取消暂存所有文件失败: ' + error, '操作失败')
   }
 }
 
@@ -322,7 +391,7 @@ const stageAllUntracked = async () => {
     await refreshGitStatus()
   } catch (error) {
     console.error('Failed to stage untracked files:', error)
-    alert('暂存未跟踪文件失败: ' + error)
+    toast.error('暂存未跟踪文件失败: ' + error, '操作失败')
   }
 }
 
@@ -405,14 +474,30 @@ const generateCommitMessage = async () => {
   }, 300) // 300ms防抖
 }
 
+// 重新生成提交消息
+const regenerateCommitMessage = async () => {
+  // 清空当前消息，然后重新生成
+  commitMessage.value = ''
+  lastGeneratedMessage.value = ''
+  await generateCommitMessage()
+}
+
+// 清空提交消息
+const clearCommitMessage = () => {
+  commitMessage.value = ''
+  lastGeneratedMessage.value = ''
+}
+
 const commitChanges = async () => {
   if (!commitMessage.value.trim() || !hasCommittableFiles.value) return
 
   try {
-    loading.value = true
+    setLoading(true, '准备提交...', 10)
 
     // 如果暂存区为空，先暂存所有修改的文件
     if (!gitStatus.value.staged_files.length) {
+      setLoading(true, '正在暂存文件...', 30)
+
       // 暂存所有未暂存的文件
       if (gitStatus.value.unstaged_files.length > 0) {
         const unstagedPaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
@@ -429,10 +514,12 @@ const commitChanges = async () => {
         })
       }
 
+      setLoading(true, '正在刷新状态...', 50)
       // 刷新Git状态
       await refreshGitStatus()
     }
 
+    setLoading(true, '正在提交更改...', 70)
     await invoke('commit_changes', {
       request: {
         message: commitMessage.value,
@@ -441,30 +528,53 @@ const commitChanges = async () => {
         amend: false
       }
     })
+
+    setLoading(true, '正在更新状态...', 90)
     commitMessage.value = ''
     await refreshGitStatus()
     await refreshHistory()
-    alert('提交成功！')
+
+    setLoading(true, '提交完成！', 100)
+    toast.success('提交成功！', '操作完成')
+    setTimeout(() => setLoading(false), 1000)
   } catch (error) {
     console.error('Failed to commit:', error)
-    alert('提交失败: ' + error)
-  } finally {
-    loading.value = false
+    toast.error('提交失败: ' + error, '操作失败')
+    setLoading(false)
   }
 }
 
 const revertFile = async (filePath: string, isStaged: boolean) => {
+  const fileName = filePath.split(/[/\\]/).pop() || filePath
+  const revertType = isStaged ? '暂存区' : '工作区'
+
+  const confirmed = await confirm.danger(
+    '回滚文件',
+    `确定要回滚${revertType}中的文件 "${fileName}" 吗？`,
+    '此操作将丢失该文件的所有未提交更改，且无法撤销。'
+  )
+
+  if (!confirmed) return
+
   try {
+    setLoading(true, `正在回滚${revertType}文件...`, 50)
     await invoke('revert_files', {
       request: {
         file_paths: [filePath],
         revert_type: isStaged ? 'Staged' : 'WorkingTree'
       }
     })
+
+    setLoading(true, '正在刷新状态...', 80)
     await refreshGitStatus()
+
+    setLoading(true, '回滚完成', 100)
+    toast.success(`${revertType}文件 ${fileName} 已回滚`, '操作完成')
+    setTimeout(() => setLoading(false), 1000)
   } catch (error) {
     console.error('Failed to revert file:', error)
-    alert('回滚文件失败: ' + error)
+    toast.error('回滚文件失败: ' + error, '操作失败')
+    setLoading(false)
   }
 }
 
@@ -500,16 +610,31 @@ const openRecentRepo = async (path: string) => {
   }
 }
 
-const removeRecentRepo = (path: string) => {
-  RecentReposManager.removeRecentRepo(path)
-  loadRecentRepos()
+const removeRecentRepo = async (path: string) => {
+  const repoName = path.split(/[/\\]/).pop() || path
+  const confirmed = await confirm.warning(
+    '移除仓库记录',
+    `确定要从历史记录中移除 "${repoName}" 吗？`
+  )
+
+  if (confirmed) {
+    RecentReposManager.removeRecentRepo(path)
+    loadRecentRepos()
+    toast.success('已从历史记录中移除', '操作完成')
+  }
 }
 
-const clearRecentRepos = () => {
-  if (confirm('确定要清空所有最近打开的仓库记录吗？')) {
+const clearRecentRepos = async () => {
+  const confirmed = await confirm.warning(
+    '清空历史记录',
+    '确定要清空所有最近打开的仓库记录吗？此操作无法撤销。'
+  )
+
+  if (confirmed) {
     RecentReposManager.clearRecentRepos()
     loadRecentRepos()
     showRecentDropdown.value = false
+    toast.success('历史记录已清空', '操作完成')
   }
 }
 
@@ -595,7 +720,7 @@ const openDiffViewer = async (filePath: string, isStaged?: boolean) => {
   } catch (error) {
     console.error('❌ [GitPanel] 打开差异查看器失败:', error)
     // 可以在这里添加用户友好的错误提示
-    alert(`打开差异查看器失败: ${error instanceof Error ? error.message : '未知错误'}`)
+    toast.error(`打开差异查看器失败: ${error instanceof Error ? error.message : '未知错误'}`, '操作失败')
   }
 }
 
@@ -626,6 +751,11 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 // 生命周期
 onMounted(async () => {
+  // 初始化Toast实例
+  if (toastRef.value) {
+    setToastInstance(toastRef.value)
+  }
+
   // 等待 Tauri 初始化
   try {
     // 测试 invoke 函数是否可用
@@ -685,6 +815,60 @@ onUnmounted(() => {
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-wrap: wrap;
+}
+
+/* 全局加载指示器 */
+.global-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: linear-gradient(135deg, #e3f2fd 0%, #f0f9ff 100%);
+  border: 1px solid #2196f3;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #1976d2;
+  min-width: 200px;
+}
+
+.loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #bbdefb;
+  border-top: 2px solid #2196f3;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
+}
+
+.loading-text {
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.loading-progress-bar {
+  flex: 1;
+  height: 4px;
+  background: #bbdefb;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.loading-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2196f3, #1976d2);
+  border-radius: 2px;
+  transition: width 0.3s ease;
 }
 
 /* AI设置按钮样式 */
@@ -1031,13 +1215,120 @@ onUnmounted(() => {
 
 .generation-progress {
   margin-top: 8px;
-  padding: 8px 12px;
+  padding: 12px;
   background: #e3f2fd;
   border: 1px solid #2196f3;
-  border-radius: 4px;
+  border-radius: 6px;
   font-size: 12px;
   color: #1976d2;
-  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.progress-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.progress-text {
+  font-weight: 500;
+}
+
+.progress-bar {
+  height: 4px;
+  background: #bbdefb;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2196f3, #1976d2);
+  border-radius: 2px;
+  animation: progress-fill 2s ease-in-out infinite;
+}
+
+@keyframes progress-fill {
+  0% {
+    width: 0%;
+  }
+
+  50% {
+    width: 70%;
+  }
+
+  100% {
+    width: 100%;
+  }
+}
+
+/* 提交消息预览样式 */
+.message-preview {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f0f9ff;
+  border: 1px solid #0ea5e9;
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.preview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.preview-label {
+  color: #0369a1;
+  font-weight: 500;
+}
+
+.preview-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.preview-action-btn {
+  background: none;
+  border: none;
+  padding: 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  color: #0369a1;
+  transition: background-color 0.2s ease;
+}
+
+.preview-action-btn:hover:not(:disabled) {
+  background: rgba(3, 105, 161, 0.1);
+}
+
+.preview-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 重新生成按钮样式 */
+.regenerate-btn {
+  padding: 6px 12px;
+  background: #f59e0b;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.regenerate-btn:hover:not(:disabled) {
+  background: #d97706;
+  transform: translateY(-1px);
+}
+
+.regenerate-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 @keyframes pulse {
