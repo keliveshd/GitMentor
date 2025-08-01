@@ -42,6 +42,7 @@ struct DashScopeParameters {
 struct DashScopeResponse {
     output: DashScopeOutput,
     usage: Option<DashScopeUsage>,
+    #[allow(dead_code)]
     request_id: String,
 }
 
@@ -55,6 +56,7 @@ struct DashScopeOutput {
 #[derive(Debug, Deserialize)]
 struct DashScopeChoice {
     message: DashScopeResponseMessage,
+    #[allow(dead_code)]
     finish_reason: Option<String>,
 }
 

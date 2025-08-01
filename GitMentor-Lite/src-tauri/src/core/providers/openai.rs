@@ -61,7 +61,9 @@ struct OpenAIModelsResponse {
 #[derive(Debug, Deserialize)]
 struct OpenAIModelInfo {
     id: String,
+    #[allow(dead_code)]
     object: String,
+    #[allow(dead_code)]
     owned_by: String,
 }
 

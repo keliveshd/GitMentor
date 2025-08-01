@@ -131,10 +131,10 @@
           <!-- AI生成功能 -->
           <div class="ai-generate-section">
             <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
-              <option value="standard" title="生成符合常规规范的英文提交消息">标准提交</option>
-              <option value="chinese" title="生成简洁明了的中文提交消息">中文提交</option>
-              <option value="detailed" title="生成包含详细描述的提交消息">详细提交</option>
-              <option value="conventional" title="生成符合约定式提交规范的消息">约定式提交</option>
+              <option v-for="template in availableTemplates" :key="template.id" :value="template.id"
+                :title="template.description">
+                {{ template.name }}
+              </option>
             </select>
             <button @click="generateCommitMessage" class="generate-btn" :disabled="loading || !hasCommittableFiles"
               title="快捷键: Ctrl+G">
@@ -316,6 +316,9 @@ const selectedTemplate = ref('standard')
 const isGenerating = ref(false)
 const generationProgress = ref('')
 const lastGeneratedMessage = ref('')
+// 模板相关状态
+const availableTemplates = ref<any[]>([])
+const templatesLoaded = ref(false)
 // 刷新状态指示
 const isRefreshing = ref(false)
 const refreshCount = ref(0)
@@ -670,6 +673,22 @@ const generateCommitMessage = async () => {
 
       // 使用模板生成提交消息
       generationProgress.value = '正在生成提交消息...'
+
+      // 调试信息：检查当前选择的模板
+      console.log('🔍 [GitPanel] 当前选择的模板ID:', selectedTemplate.value)
+      console.log('🔍 [GitPanel] 可用模板列表:', availableTemplates.value.map(t => ({ id: t.id, name: t.name })))
+
+      // 确保模板已加载且选择的模板存在
+      if (!templatesLoaded.value || availableTemplates.value.length === 0) {
+        throw new Error('模板尚未加载完成，请稍后再试')
+      }
+
+      const selectedTemplateExists = availableTemplates.value.some(t => t.id === selectedTemplate.value)
+      if (!selectedTemplateExists) {
+        console.warn('⚠️ [GitPanel] 选择的模板不存在，使用第一个可用模板')
+        selectedTemplate.value = availableTemplates.value[0].id
+      }
+
       const result = await invoke('generate_commit_with_template', {
         templateId: selectedTemplate.value,
         diff: diffContent,
@@ -1086,6 +1105,48 @@ const openAISettings = async () => {
   }
 }
 
+// 加载可用模板列表
+// 作者：Evilek
+// 编写日期：2025-01-29
+const loadAvailableTemplates = async () => {
+  try {
+    console.log('📝 [GitPanel] 加载可用模板列表')
+
+    // 获取默认模板和自定义模板
+    const [defaultTemplates, customTemplates] = await Promise.all([
+      invoke('get_default_templates') as Promise<any[]>,
+      invoke('get_custom_templates') as Promise<any[]>
+    ])
+
+    // 合并模板列表
+    availableTemplates.value = [...defaultTemplates, ...customTemplates]
+    templatesLoaded.value = true
+
+    // 如果当前选择的模板不在列表中，选择第一个可用模板
+    if (availableTemplates.value.length > 0) {
+      const currentTemplateExists = availableTemplates.value.some(t => t.id === selectedTemplate.value)
+      if (!currentTemplateExists) {
+        console.log('⚠️ [GitPanel] 当前选择的模板不存在，从', selectedTemplate.value, '切换到', availableTemplates.value[0].id)
+        selectedTemplate.value = availableTemplates.value[0].id
+      } else {
+        console.log('✅ [GitPanel] 当前选择的模板存在:', selectedTemplate.value)
+      }
+    }
+
+    console.log('✅ [GitPanel] 模板列表加载完成，共', availableTemplates.value.length, '个模板')
+  } catch (error) {
+    console.error('❌ [GitPanel] 加载模板列表失败:', error)
+    // 如果加载失败，使用默认的硬编码模板
+    availableTemplates.value = [
+      { id: 'standard', name: '标准提交', description: '生成符合常规规范的英文提交消息' },
+      { id: 'chinese', name: '中文提交', description: '生成简洁明了的中文提交消息' },
+      { id: 'detailed', name: '详细提交', description: '生成包含详细描述的提交消息' },
+      { id: 'conventional', name: '约定式提交', description: '生成符合约定式提交规范的消息' }
+    ]
+    templatesLoaded.value = true
+  }
+}
+
 // 打开模板配置窗口
 // 作者：Evilek
 // 编写日期：2025-01-29
@@ -1096,6 +1157,12 @@ const openTemplateConfig = async () => {
     // 使用WindowManager打开模板配置窗口
     await WindowManager.openTemplateConfig()
     console.log('✅ [GitPanel] 已打开模板配置窗口')
+
+    // 模板配置窗口关闭后重新加载模板列表
+    // 注意：这里可能需要监听窗口关闭事件，暂时先在这里重新加载
+    setTimeout(() => {
+      loadAvailableTemplates()
+    }, 1000)
   } catch (error) {
     console.error('❌ [GitPanel] 打开模板配置窗口失败:', error)
     alert(`打开模板配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
@@ -1235,6 +1302,9 @@ onMounted(async () => {
 
       // 加载最近仓库列表
       loadRecentRepos()
+
+      // 加载可用模板列表
+      await loadAvailableTemplates()
 
       // 自动加载上次打开的仓库
       await autoLoadLastRepo()

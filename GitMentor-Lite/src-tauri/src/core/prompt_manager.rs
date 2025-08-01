@@ -353,9 +353,21 @@ impl PromptManager {
         template_id: &str,
         context: &CommitContext,
     ) -> Result<Vec<ChatMessage>> {
+        // 调试信息：显示可用的模板
+        println!("🔍 [PromptManager] 查找模板ID: {}", template_id);
+        println!(
+            "🔍 [PromptManager] 可用模板: {:?}",
+            self.templates.keys().collect::<Vec<_>>()
+        );
+
         let template = self
             .get_template(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", template_id))?;
+
+        println!(
+            "✅ [PromptManager] 找到模板: {} ({})",
+            template.name, template.id
+        );
 
         let mut messages = Vec::new();
 

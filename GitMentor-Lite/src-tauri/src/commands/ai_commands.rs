@@ -317,9 +317,17 @@ pub async fn generate_commit_with_template(
         language: language.to_string(), // 使用配置中的语言设置
     };
 
+    println!("🔍 [AI Commands] 使用模板生成提交消息，模板ID: {}", template_id);
+
     match manager.generate_commit_with_template(&template_id, context).await {
-        Ok(response) => Ok(response.content),
-        Err(e) => Err(format!("Failed to generate commit message: {}", e)),
+        Ok(response) => {
+            println!("✅ [AI Commands] 提交消息生成成功");
+            Ok(response.content)
+        },
+        Err(e) => {
+            println!("❌ [AI Commands] 提交消息生成失败: {}", e);
+            Err(format!("Failed to generate commit message: {}", e))
+        },
     }
 }
 

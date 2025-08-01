@@ -278,6 +278,7 @@ impl AIConfigManager {
         Ok(())
     }
 
+    #[allow(dead_code)]
     pub fn get_provider_config(&self, provider_id: &str) -> Option<serde_json::Value> {
         let providers_value = serde_json::to_value(&self.config.providers).ok()?;
         providers_value.get(provider_id).cloned()

@@ -36,6 +36,7 @@ struct OllamaOptions {
 #[derive(Debug, Deserialize)]
 struct OllamaResponse {
     message: OllamaResponseMessage,
+    #[allow(dead_code)]
     done: bool,
     model: String,
 }
@@ -53,8 +54,11 @@ struct OllamaModelsResponse {
 #[derive(Debug, Deserialize)]
 struct OllamaModelInfo {
     name: String,
+    #[allow(dead_code)]
     size: u64,
+    #[allow(dead_code)]
     digest: String,
+    #[allow(dead_code)]
     modified_at: String,
 }
 

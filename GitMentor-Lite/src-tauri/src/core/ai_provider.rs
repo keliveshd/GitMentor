@@ -96,6 +96,7 @@ pub trait AIProvider: Send + Sync {
     async fn refresh_models(&self) -> Result<Vec<AIModel>>;
     
     /// 计算token数量（可选）
+    #[allow(dead_code)]
     async fn count_tokens(&self, request: &AIRequest) -> Result<u32> {
         // 默认实现：简单估算
         let total_chars: usize = request.messages.iter()
@@ -129,6 +130,7 @@ impl AIProviderFactory {
     }
     
     /// 获取所有提供商ID
+    #[allow(dead_code)]
     pub fn get_provider_ids(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }

@@ -56,6 +56,7 @@ impl AIManager {
     }
     
     /// 获取指定提供商（返回是否存在）
+    #[allow(dead_code)]
     pub async fn has_provider(&self, provider_id: &str) -> bool {
         let factory = self.provider_factory.read().await;
         factory.get_provider(provider_id).is_some()
