@@ -495,14 +495,48 @@ impl GitEngine {
         })
     }
 
+    /// 获取文件差异摘要，包含实际的差异内容
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
     pub fn get_diff_summary(&self, file_paths: &[String]) -> Result<String> {
-        let _repo = self.get_repository()?;
-
-        // 简化的差异摘要，实际项目中可以更详细
+        let repo = self.get_repository()?;
         let mut diff_output = String::new();
 
-        for file_path in file_paths {
-            diff_output.push_str(&format!("File: {}\n", file_path));
+        // 获取暂存区的差异（用于提交消息生成）
+        let mut diff_options = DiffOptions::new();
+        diff_options.context_lines(3); // 设置上下文行数
+
+        // 如果指定了文件路径，只获取这些文件的差异
+        if !file_paths.is_empty() {
+            for file_path in file_paths {
+                diff_options.pathspec(file_path);
+            }
+        }
+
+        // 生成暂存区与HEAD的差异
+        let head = repo.head()?;
+        let head_commit = head.peel_to_commit()?;
+        let head_tree = head_commit.tree()?;
+        let mut index = repo.index()?;
+        let index_tree = index.write_tree()?;
+        let index_tree = repo.find_tree(index_tree)?;
+
+        let diff = repo.diff_tree_to_tree(
+            Some(&head_tree),
+            Some(&index_tree),
+            Some(&mut diff_options),
+        )?;
+
+        // 将diff转换为文本格式
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            let content = String::from_utf8_lossy(line.content());
+            diff_output.push_str(&content);
+            true
+        })?;
+
+        // 如果没有差异内容，返回文件列表
+        if diff_output.trim().is_empty() {
+            diff_output = format!("Files to be committed:\n{}", file_paths.join("\n"));
         }
 
         Ok(diff_output)
