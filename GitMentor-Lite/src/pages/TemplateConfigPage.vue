@@ -26,6 +26,26 @@
           </div>
         </div>
 
+        <!-- 语言设置卡片 -->
+        <div class="language-settings-card">
+          <div class="section-card">
+            <h3>🌐 语言设置</h3>
+            <div class="setting-item">
+              <label for="language">提交信息语言</label>
+              <select id="language" v-model="globalLanguage" @change="saveLanguageSettings" class="setting-select">
+                <option value="Simplified Chinese">简体中文</option>
+                <option value="Traditional Chinese">繁体中文</option>
+                <option value="English">English</option>
+                <option value="Japanese">日本語</option>
+                <option value="Korean">한국어</option>
+              </select>
+            </div>
+            <div class="setting-description">
+              此设置将影响所有模板的默认语言配置，可在单个模板中覆盖
+            </div>
+          </div>
+        </div>
+
         <!-- 默认模板管理 -->
         <div v-if="selectedMenu === 'default'" class="template-section">
           <div class="template-grid">
@@ -40,7 +60,7 @@
               </div>
               <p class="template-description">{{ template.description }}</p>
               <div class="template-meta">
-                <span class="template-language">{{ template.language === 'zh' ? '中文' : '英文' }}</span>
+                <span class="template-language">{{ getLanguageDisplayName(template.language) }}</span>
                 <span class="template-config">
                   {{ template.enable_emoji ? '🎨' : '' }}
                   {{ template.enable_body ? '📄' : '' }}
@@ -73,7 +93,7 @@
               </div>
               <p class="template-description">{{ template.description }}</p>
               <div class="template-meta">
-                <span class="template-language">{{ template.language === 'zh' ? '中文' : '英文' }}</span>
+                <span class="template-language">{{ getLanguageDisplayName(template.language) }}</span>
                 <span class="template-config">
                   {{ template.enable_emoji ? '🎨' : '' }}
                   {{ template.enable_body ? '📄' : '' }}
@@ -113,8 +133,11 @@
           <div class="form-group">
             <label for="template-language">语言</label>
             <select id="template-language" v-model="editingTemplate.language" class="form-select">
-              <option value="zh">中文</option>
-              <option value="en">英文</option>
+              <option value="Simplified Chinese">简体中文</option>
+              <option value="Traditional Chinese">繁体中文</option>
+              <option value="English">English</option>
+              <option value="Japanese">日本語</option>
+              <option value="Korean">한국어</option>
             </select>
           </div>
 
@@ -213,6 +236,7 @@ const customTemplates = ref<PromptTemplate[]>([])
 const showCreateDialog = ref(false)
 const showEditDialog = ref(false)
 const saving = ref(false)
+const globalLanguage = ref('Simplified Chinese')
 
 // 编辑中的模板
 const editingTemplate = ref<PromptTemplate>({
@@ -221,7 +245,7 @@ const editingTemplate = ref<PromptTemplate>({
   description: '',
   system_prompt: '',
   user_prompt_template: '',
-  language: 'zh',
+  language: 'Simplified Chinese',
   max_tokens: 200,
   temperature: 0.3,
   enable_emoji: false,
@@ -247,6 +271,20 @@ const formatDate = (dateStr?: string) => {
   return new Date(dateStr).toLocaleDateString('zh-CN')
 }
 
+const getLanguageDisplayName = (language: string) => {
+  const languageMap: Record<string, string> = {
+    'Simplified Chinese': '简体中文',
+    'Traditional Chinese': '繁体中文',
+    'English': 'English',
+    'Japanese': '日本語',
+    'Korean': '한국어',
+    // 兼容旧版本
+    'zh': '简体中文',
+    'en': 'English'
+  }
+  return languageMap[language] || language
+}
+
 // 加载模板数据
 const loadTemplates = async () => {
   try {
@@ -259,6 +297,32 @@ const loadTemplates = async () => {
     customTemplates.value = customList
   } catch (error) {
     console.error('加载模板失败:', error)
+  }
+}
+
+// 加载语言设置
+const loadLanguageSettings = async () => {
+  try {
+    const config = await invoke('get_ai_config') as any
+    globalLanguage.value = config.base.language || 'Simplified Chinese'
+  } catch (error) {
+    console.error('加载语言设置失败:', error)
+    globalLanguage.value = 'Simplified Chinese'
+  }
+}
+
+// 保存语言设置
+const saveLanguageSettings = async () => {
+  try {
+    // 获取当前AI配置
+    const config = await invoke('get_ai_config') as any
+    // 更新语言设置
+    config.base.language = globalLanguage.value
+    // 保存配置
+    await invoke('update_ai_config', { config })
+    console.log('语言设置已保存:', globalLanguage.value)
+  } catch (error) {
+    console.error('保存语言设置失败:', error)
   }
 }
 
@@ -320,7 +384,7 @@ const closeDialogs = () => {
     description: '',
     system_prompt: '',
     user_prompt_template: '',
-    language: 'zh',
+    language: 'Simplified Chinese',
     max_tokens: 200,
     temperature: 0.3,
     enable_emoji: false,
@@ -333,6 +397,7 @@ const closeDialogs = () => {
 // 生命周期
 onMounted(() => {
   loadTemplates()
+  loadLanguageSettings()
 })
 </script>
 
@@ -437,6 +502,62 @@ onMounted(() => {
 
 .create-btn:hover {
   background: #45a049;
+}
+
+/* 语言设置卡片样式 */
+.language-settings-card {
+  margin: 20px 30px 0 30px;
+}
+
+.section-card {
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  border-left: 4px solid #2196f3;
+}
+
+.section-card h3 {
+  margin: 0 0 15px 0;
+  font-size: 16px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.setting-item {
+  margin-bottom: 10px;
+}
+
+.setting-item label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 500;
+  color: #333;
+  font-size: 14px;
+}
+
+.setting-select {
+  width: 200px;
+  padding: 8px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+  background: white;
+  transition: border-color 0.2s;
+}
+
+.setting-select:focus {
+  outline: none;
+  border-color: #2196f3;
+}
+
+.setting-description {
+  font-size: 12px;
+  color: #666;
+  margin-top: 8px;
+  line-height: 1.4;
 }
 
 /* 模板区域样式 */
