@@ -69,6 +69,8 @@ pub fn run() {
             ai_commands::delete_template,
             ai_commands::get_custom_templates,
             ai_commands::get_default_templates,
+            ai_commands::get_conversation_history,
+            ai_commands::clear_conversation_history,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

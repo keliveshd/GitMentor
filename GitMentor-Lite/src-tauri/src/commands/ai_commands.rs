@@ -6,6 +6,7 @@ use crate::core::ai_manager::AIManager;
 use crate::core::ai_provider::{AIRequest, AIModel, ConnectionTestResult, ChatMessage};
 use crate::core::ai_config::AIConfig;
 use crate::core::prompt_manager::{PromptTemplate, CommitContext};
+use crate::core::conversation_logger::ConversationRecord;
 
 /**
  * AI相关的Tauri命令
@@ -410,4 +411,27 @@ pub async fn add_prompt_template(
     let manager = ai_manager.lock().await;
     manager.add_prompt_template(template).await;
     Ok(())
+}
+
+/// 获取对话记录
+/// 作者：Evilek
+/// 编写日期：2025-01-30
+#[tauri::command]
+pub async fn get_conversation_history(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<Vec<ConversationRecord>, String> {
+    let manager = ai_manager.lock().await;
+    Ok(manager.get_conversation_history().await)
+}
+
+/// 清空对话记录
+/// 作者：Evilek
+/// 编写日期：2025-01-30
+#[tauri::command]
+pub async fn clear_conversation_history(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<(), String> {
+    let manager = ai_manager.lock().await;
+    manager.clear_conversation_history().await
+        .map_err(|e| format!("Failed to clear conversation history: {}", e))
 }

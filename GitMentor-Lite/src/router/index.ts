@@ -3,6 +3,7 @@ import GitPanel from "../components/GitPanel.vue";
 import DiffViewerPage from "../pages/DiffViewerPage.vue";
 import AISettingsPage from "../pages/AISettingsPage.vue";
 import TemplateConfigPage from "../pages/TemplateConfigPage.vue";
+import ConversationHistoryPage from "../pages/ConversationHistoryPage.vue";
 
 /**
  * 路由配置
@@ -34,6 +35,11 @@ const routes = [
     path: "/template-config",
     name: "TemplateConfig",
     component: TemplateConfigPage,
+  },
+  {
+    path: "/conversation-history",
+    name: "ConversationHistory",
+    component: ConversationHistoryPage,
   },
 ];
 

@@ -17,6 +17,9 @@
             <button @click="openTemplateConfig" class="menu-item" :disabled="loading || !tauriReady">
               📝 模板配置
             </button>
+            <button @click="openConversationHistory" class="menu-item" :disabled="loading || !tauriReady">
+              📊 对话记录
+            </button>
             <button @click="openAbout" class="menu-item">
               ℹ️ 关于
             </button>
@@ -1166,6 +1169,23 @@ const openTemplateConfig = async () => {
   } catch (error) {
     console.error('❌ [GitPanel] 打开模板配置窗口失败:', error)
     alert(`打开模板配置失败: ${error instanceof Error ? error.message : '未知错误'}`)
+  }
+}
+
+// 打开对话记录窗口
+// 作者：Evilek
+// 编写日期：2025-01-30
+const openConversationHistory = async () => {
+  try {
+    console.log('📊 [GitPanel] 打开对话记录窗口')
+    showMenu.value = false
+
+    // 使用WindowManager打开对话记录窗口
+    await WindowManager.openConversationHistory()
+    console.log('✅ [GitPanel] 已打开对话记录窗口')
+  } catch (error) {
+    console.error('❌ [GitPanel] 打开对话记录窗口失败:', error)
+    alert(`打开对话记录失败: ${error instanceof Error ? error.message : '未知错误'}`)
   }
 }
 

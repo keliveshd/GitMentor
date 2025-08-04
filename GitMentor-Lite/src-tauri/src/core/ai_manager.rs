@@ -5,6 +5,7 @@ use anyhow::Result;
 use crate::core::ai_provider::{AIProviderFactory, AIRequest, AIResponse, AIModel, ConnectionTestResult};
 use crate::core::ai_config::{AIConfig, AIConfigManager};
 use crate::core::prompt_manager::{PromptManager, PromptTemplate, CommitContext};
+use crate::core::conversation_logger::{ConversationLogger, ConversationRecord};
 use crate::core::providers::create_provider_factory;
 
 /**
@@ -17,18 +18,26 @@ pub struct AIManager {
     config_manager: Arc<RwLock<AIConfigManager>>,
     provider_factory: Arc<RwLock<AIProviderFactory>>,
     prompt_manager: Arc<RwLock<PromptManager>>,
+    conversation_logger: Arc<RwLock<ConversationLogger>>,
 }
 
 impl AIManager {
     pub fn new(config_path: std::path::PathBuf) -> Result<Self> {
-        let config_manager = AIConfigManager::new(config_path)?;
+        let config_manager = AIConfigManager::new(config_path.clone())?;
         let config = config_manager.get_config().clone();
         let provider_factory = create_provider_factory(&config);
-        
+
+        // 创建对话记录器，日志文件放在配置目录下
+        let mut log_path = config_path.clone();
+        log_path.pop(); // 移除文件名，保留目录
+        log_path.push("conversation_history.json");
+        let conversation_logger = ConversationLogger::new(log_path)?;
+
         Ok(Self {
             config_manager: Arc::new(RwLock::new(config_manager)),
             provider_factory: Arc::new(RwLock::new(provider_factory)),
             prompt_manager: Arc::new(RwLock::new(PromptManager::new())),
+            conversation_logger: Arc::new(RwLock::new(conversation_logger)),
         })
     }
     
@@ -107,6 +116,9 @@ impl AIManager {
         template_id: &str,
         context: CommitContext,
     ) -> Result<AIResponse> {
+        use std::time::Instant;
+
+        let start_time = Instant::now();
         let config = self.get_config().await;
         let provider_id = &config.base.provider;
 
@@ -127,13 +139,53 @@ impl AIManager {
         };
 
         let factory = self.provider_factory.read().await;
-        factory.generate_commit(provider_id, &request).await
+        let result = factory.generate_commit(provider_id, &request).await;
+        let processing_time = start_time.elapsed().as_millis() as u64;
+
+        // 记录对话
+        let mut logger = self.conversation_logger.write().await;
+        match &result {
+            Ok(response) => {
+                if let Err(e) = logger.log_success(
+                    template_id.to_string(),
+                    request.clone(),
+                    response.clone(),
+                    processing_time,
+                ) {
+                    eprintln!("警告: 记录成功对话失败: {}", e);
+                }
+            }
+            Err(error) => {
+                if let Err(e) = logger.log_failure(
+                    template_id.to_string(),
+                    request.clone(),
+                    error.to_string(),
+                    processing_time,
+                ) {
+                    eprintln!("警告: 记录失败对话失败: {}", e);
+                }
+            }
+        }
+
+        result
     }
 
     /// 获取所有可用的提示模板
     pub async fn get_prompt_templates(&self) -> Vec<PromptTemplate> {
         let prompt_manager = self.prompt_manager.read().await;
         prompt_manager.get_all_templates().into_iter().cloned().collect()
+    }
+
+    /// 获取对话记录
+    pub async fn get_conversation_history(&self) -> Vec<ConversationRecord> {
+        let logger = self.conversation_logger.read().await;
+        logger.get_all_records().clone()
+    }
+
+    /// 清空对话记录
+    pub async fn clear_conversation_history(&self) -> Result<()> {
+        let mut logger = self.conversation_logger.write().await;
+        logger.clear_all_records()
     }
 
     /// 添加自定义提示模板
