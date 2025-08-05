@@ -49,17 +49,17 @@
         <div class="recent-repos-dropdown" v-if="recentRepos.length > 0">
           <button @click="toggleRecentDropdown" class="recent-dropdown-btn" :disabled="loading || !tauriReady"
             title="最近打开的仓库">
-            📋
+            ⋯
           </button>
           <div v-if="showRecentDropdown" class="recent-dropdown-menu">
             <div class="recent-dropdown-header">
               <span>最近打开的仓库</span>
-              <button @click="clearRecentRepos" class="clear-recent-btn" title="清空历史">🗑️</button>
+              <button @click="clearRecentRepos" class="clear-recent-btn" title="清空历史">清空</button>
             </div>
             <div class="recent-repo-item" v-for="repo in recentRepos" :key="repo.path"
               @click="openRecentRepo(repo.path)" :class="{ active: repo.path === currentRepoPath }">
               <div class="repo-item-info">
-                <div class="repo-item-name">📂 {{ repo.name }}</div>
+                <div class="repo-item-name">{{ repo.name }}</div>
                 <div class="repo-item-path">{{ repo.path }}</div>
                 <div class="repo-item-time">{{ getRepoDisplayTime(repo) }}</div>
               </div>
@@ -103,16 +103,16 @@
           <div class="batch-actions">
             <button v-if="canBatchUnstage" @click="batchUnstageFiles" class="batch-btn unstage-btn" :disabled="loading"
               title="批量取消暂存选中文件">
-              ➖ 取消暂存
+              取消暂存
             </button>
             <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
-              ↩️ 回滚选中
+              回滚选中
             </button>
             <button @click="selectAllStaged" class="batch-btn select-all-btn" title="全选暂存区文件">
-              📋 全选
+              全选
             </button>
             <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
-              🗑️ 清空
+              清空
             </button>
           </div>
         </div>
@@ -130,38 +130,33 @@
           :style="{ height: commitTextareaHeight + 'px' }" @input="adjustTextareaHeight"
           ref="commitTextarea"></textarea>
 
-        <div class="commit-controls">
-          <!-- AI生成功能 -->
-          <div class="ai-generate-section">
+        <!-- 优化后的水平布局按钮区域 - 节省垂直空间 -->
+        <div class="commit-controls-horizontal">
+          <div class="left-controls">
             <select v-model="selectedTemplate" class="template-select" title="选择提交消息模板风格">
               <option v-for="template in availableTemplates" :key="template.id" :value="template.id"
                 :title="template.description">
                 {{ template.name }}
               </option>
             </select>
-            <button @click="generateCommitMessage" class="generate-btn" :disabled="loading || !hasCommittableFiles"
-              title="快捷键: Ctrl+G">
-              <span v-if="!isGenerating">🤖 AI生成</span>
-              <span v-else>⏳ 生成中...</span>
+          </div>
+          <div class="right-controls">
+            <button @click="generateCommitMessage" class="action-btn generate-btn"
+              :disabled="loading || !hasCommittableFiles" title="快捷键: Ctrl+G">
+              <span v-if="!isGenerating">AI生成</span>
+              <span v-else>生成中...</span>
             </button>
-            <button v-if="lastGeneratedMessage && commitMessage === lastGeneratedMessage"
-              @click="regenerateCommitMessage" class="regenerate-btn" :disabled="loading || !hasCommittableFiles"
-              title="重新生成提交消息">
-              🔄 重新生成
+            <button @click="commitChanges" class="action-btn commit-btn"
+              :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
+              提交更改
             </button>
           </div>
-
-          <!-- 提交按钮 -->
-          <button @click="commitChanges" class="commit-btn"
-            :disabled="!commitMessage.trim() || loading || !hasCommittableFiles" title="快捷键: Ctrl+Enter">
-            ✅ 提交更改
-          </button>
         </div>
         <div v-if="!hasCommittableFiles" class="commit-hint">
-          <p>✨ 工作区干净，没有待提交的更改</p>
+          <p>工作区干净，没有待提交的更改</p>
         </div>
         <div v-else-if="gitStatus && !gitStatus.staged_files.length" class="commit-hint">
-          <p>💡 暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
+          <p>暂存区为空，AI生成和提交将自动暂存所有修改的文件</p>
         </div>
         <div v-if="generationProgress" class="generation-progress">
           <div class="progress-content">
@@ -171,16 +166,13 @@
             </div>
           </div>
         </div>
-        <!-- 提交消息预览 -->
-        <div v-if="commitMessage && lastGeneratedMessage === commitMessage" class="message-preview">
+        <!-- AI生成的提交消息预览 - 简化版本 -->
+        <div v-if="commitMessage && isAIGenerated" class="message-preview">
           <div class="preview-header">
-            <span class="preview-label">🤖 AI生成的提交消息</span>
+            <span class="preview-label">AI生成的提交消息</span>
             <div class="preview-actions">
-              <button @click="regenerateCommitMessage" class="preview-action-btn" :disabled="loading" title="重新生成">
-                🔄
-              </button>
               <button @click="clearCommitMessage" class="preview-action-btn" title="清空消息">
-                🗑️
+                清空
               </button>
             </div>
           </div>
@@ -210,16 +202,16 @@
         <div class="batch-actions">
           <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
             title="批量暂存选中文件">
-            ➕ 暂存选中
+            暂存选中
           </button>
           <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
-            ↩️ 回滚选中
+            回滚选中
           </button>
           <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
-            📋 全选
+            全选
           </button>
           <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
-            🗑️ 清空
+            清空
           </button>
         </div>
       </div>
@@ -318,7 +310,7 @@ const tauriReady = ref(false)
 const selectedTemplate = ref('standard')
 const isGenerating = ref(false)
 const generationProgress = ref('')
-const lastGeneratedMessage = ref('')
+const isAIGenerated = ref(false)
 // 模板相关状态
 const availableTemplates = ref<any[]>([])
 const templatesLoaded = ref(false)
@@ -409,9 +401,14 @@ const openRepository = async () => {
 }
 
 // 通过路径打开仓库的通用方法
+// 作者：Evilek
+// 编写日期：2025-08-04
 const openRepoByPath = async (path: string) => {
   setLoading(true, '正在选择仓库...')
   currentRepoPath.value = path
+
+  // 清空之前的提示信息和状态
+  clearRepositoryState()
 
   setLoading(true, '正在初始化仓库...')
   await invoke('select_repository', { path })
@@ -700,7 +697,7 @@ const generateCommitMessage = async () => {
       }) as string
 
       commitMessage.value = result
-      lastGeneratedMessage.value = result
+      isAIGenerated.value = true
       generationProgress.value = '生成完成！'
 
       // 短暂显示完成状态
@@ -722,18 +719,37 @@ const generateCommitMessage = async () => {
   }, 300) // 300ms防抖
 }
 
-// 重新生成提交消息
-const regenerateCommitMessage = async () => {
-  // 清空当前消息，然后重新生成
-  commitMessage.value = ''
-  lastGeneratedMessage.value = ''
-  await generateCommitMessage()
-}
-
 // 清空提交消息
 const clearCommitMessage = () => {
   commitMessage.value = ''
-  lastGeneratedMessage.value = ''
+  isAIGenerated.value = false
+}
+
+/**
+ * 清空仓库状态 - 切换仓库时重置所有相关状态
+ * 作者：Evilek
+ * 编写日期：2025-08-04
+ */
+const clearRepositoryState = () => {
+  // 清空提交相关状态
+  commitMessage.value = ''
+  isAIGenerated.value = false
+  isGenerating.value = false
+  generationProgress.value = ''
+
+  // 清空Git状态
+  gitStatus.value = null
+  commitHistory.value = []
+
+  // 清空批量操作状态
+  batchMode.value = false
+  selectedFiles.value.clear()
+
+  // 重置其他状态
+  isRefreshing.value = false
+  refreshCount.value = 0
+
+  console.log('🧹 [GitPanel] 已清空仓库状态')
 }
 
 // 批量操作相关方法
@@ -1298,11 +1314,21 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// 监听提交消息变化，自动调整高度
-watch(commitMessage, () => {
+// 监听提交消息变化，自动调整高度并重置AI生成标记
+watch(commitMessage, (newValue, oldValue) => {
   nextTick(() => {
     adjustTextareaHeight()
   })
+
+  // 如果用户手动修改了消息，重置AI生成标记
+  if (newValue !== oldValue && isAIGenerated.value) {
+    // 延迟重置，避免在AI生成时误触发
+    setTimeout(() => {
+      if (!isGenerating.value) {
+        isAIGenerated.value = false
+      }
+    }, 100)
+  }
 })
 
 // 生命周期
@@ -1370,15 +1396,15 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 菜单栏样式 */
+/* 菜单栏样式 - 优化高度以节省垂直空间 */
 .menu-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 8px 16px;
+  padding: 6px 16px;
   background: #667eea;
   color: white;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .menu-left .app-title {
@@ -1515,18 +1541,20 @@ onUnmounted(() => {
 
 
 
-/* 按钮基础样式 */
+/* 选择仓库按钮 - 中等尺寸，重要操作 */
 .select-repo-btn {
-  padding: 8px 16px;
+  padding: 6px 12px;
   border: none;
-  border-radius: 6px;
+  border-radius: 5px;
   cursor: pointer;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 500;
   transition: all 0.2s ease;
   white-space: nowrap;
   background: #667eea;
   color: white;
+  height: 32px;
+  min-width: 70px;
 }
 
 .select-repo-btn:hover:not(:disabled) {
@@ -1553,14 +1581,20 @@ onUnmounted(() => {
   position: relative;
 }
 
+/* 最近仓库下拉按钮 - 紧凑尺寸，辅助功能 */
 .recent-dropdown-btn {
-  padding: 8px 12px;
+  padding: 6px 8px;
   background: rgba(255, 255, 255, 0.9);
   border: 1px solid #ddd;
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 14px;
   transition: all 0.3s ease;
+  height: 32px;
+  width: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .recent-dropdown-btn:hover:not(:disabled) {
@@ -1600,14 +1634,17 @@ onUnmounted(() => {
   color: #333;
 }
 
+/* 清空历史按钮 - 小尺寸文本按钮 */
 .clear-recent-btn {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 16px;
-  padding: 4px;
-  border-radius: 4px;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 3px;
   transition: background-color 0.2s;
+  color: #666;
+  font-weight: 500;
 }
 
 .clear-recent-btn:hover {
@@ -1702,38 +1739,39 @@ onUnmounted(() => {
   min-width: 120px;
 }
 
-.generate-btn,
-.regenerate-btn {
-  padding: 6px 12px;
+/* 统一的操作按钮样式 - 移除图标，统一尺寸 */
+.action-btn {
+  padding: 8px 16px;
   border: none;
-  border-radius: 4px;
+  border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 500;
   transition: all 0.2s ease;
   white-space: nowrap;
+  min-width: 80px;
+  height: 36px;
 }
 
-.generate-btn {
+.action-btn.generate-btn {
   background: #10b981;
   color: white;
 }
 
-.generate-btn:hover:not(:disabled) {
+.action-btn.generate-btn:hover:not(:disabled) {
   background: #059669;
 }
 
-.regenerate-btn {
-  background: #f59e0b;
+.action-btn.commit-btn {
+  background: #667eea;
   color: white;
 }
 
-.regenerate-btn:hover:not(:disabled) {
-  background: #d97706;
+.action-btn.commit-btn:hover:not(:disabled) {
+  background: #5a67d8;
 }
 
-.generate-btn:disabled,
-.regenerate-btn:disabled {
+.action-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -1805,25 +1843,25 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* 暂存区 - 可收缩，最小高度保证基本显示 */
+/* 暂存区 - 优化高度分配，提升空间利用率 */
 .staged-files {
+  flex: 0 1 auto;
+  min-height: 100px;
+  max-height: 280px;
+}
+
+/* 工作区 - 优化高度分配，提升空间利用率 */
+.unstaged-files {
   flex: 0 1 auto;
   min-height: 120px;
   max-height: 300px;
 }
 
-/* 工作区 - 减小高度占比，可伸缩 */
-.unstaged-files {
-  flex: 0 1 auto;
-  min-height: 150px;
-  max-height: 250px;
-}
-
-/* 未跟踪文件和冲突文件 - 较小的固定空间 */
+/* 未跟踪文件和冲突文件 - 优化高度分配 */
 .file-section {
   flex: 0 1 auto;
-  min-height: 100px;
-  max-height: 250px;
+  min-height: 80px;
+  max-height: 220px;
 }
 
 .section-title,
@@ -1872,17 +1910,17 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-/* 提交区域 - 根据内容自适应高度 */
+/* 提交区域 - 优化高度以节省垂直空间 */
 .commit-area {
   position: relative;
   /* 为绝对定位的进度条提供定位上下文 */
-  padding: 16px;
+  padding: 12px;
   background: #f7fafc;
   border: 1px solid #e2e8f0;
   border-radius: 8px;
   flex: 0 0 auto;
   /* 不参与flex空间分配，根据内容自适应 */
-  min-height: 180px;
+  min-height: 140px;
   display: flex;
   flex-direction: column;
 }
@@ -1909,6 +1947,28 @@ onUnmounted(() => {
   /* 最大高度约10行 */
 }
 
+/* 优化后的水平布局控制区域 - 节省垂直空间 */
+.commit-controls-horizontal {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+  gap: 12px;
+}
+
+.left-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.right-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 保留原有样式以防兼容性问题 */
 .commit-controls {
   display: flex;
   justify-content: space-between;
@@ -2106,45 +2166,7 @@ onUnmounted(() => {
   }
 }
 
-.generate-btn {
-  padding: 8px 16px;
-  background: #48bb78;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.generate-btn:hover:not(:disabled) {
-  background: #38a169;
-}
-
-.generate-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.commit-btn {
-  padding: 8px 16px;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.commit-btn:hover:not(:disabled) {
-  background: #5a67d8;
-}
-
-.commit-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+/* 重复的按钮样式已移除，使用统一的 .action-btn 样式 */
 
 .commit-hint {
   position: absolute;
@@ -2281,15 +2303,19 @@ onUnmounted(() => {
   gap: 6px;
 }
 
+/* 批量操作按钮 - 较小尺寸，次要功能 */
 .batch-btn {
-  padding: 4px 8px;
+  padding: 3px 6px;
   border: 1px solid #ddd;
-  border-radius: 4px;
+  border-radius: 3px;
   background: white;
   color: #333;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
+  font-weight: 500;
   transition: all 0.2s ease;
+  height: 24px;
+  min-width: 50px;
 }
 
 .batch-btn:hover:not(:disabled) {
@@ -2442,52 +2468,52 @@ onUnmounted(() => {
 /* 响应式设计 */
 @media (max-height: 800px) {
 
-  /* 在较小屏幕上调整区域设置 */
+  /* 在较小屏幕上进一步优化区域设置 */
   .staged-files {
+    min-height: 80px;
+    max-height: 180px;
+  }
+
+  .unstaged-files {
     min-height: 100px;
     max-height: 200px;
   }
 
-  .unstaged-files {
-    min-height: 120px;
-    max-height: 200px;
-  }
-
   .commit-area {
-    min-height: 140px;
+    min-height: 120px;
   }
 
   .file-section {
-    min-height: 80px;
-    max-height: 180px;
+    min-height: 60px;
+    max-height: 160px;
   }
 }
 
 @media (max-height: 600px) {
 
-  /* 在很小的屏幕上进一步压缩 */
+  /* 在很小的屏幕上进一步优化压缩 */
   .staged-files {
-    min-height: 80px;
-    max-height: 150px;
-  }
-
-  .unstaged-files {
-    min-height: 100px;
-    max-height: 150px;
-  }
-
-  .file-section {
     min-height: 60px;
     max-height: 120px;
   }
 
+  .unstaged-files {
+    min-height: 80px;
+    max-height: 140px;
+  }
+
+  .file-section {
+    min-height: 50px;
+    max-height: 100px;
+  }
+
   .commit-area {
-    min-height: 100px;
+    min-height: 90px;
   }
 
   .commit-input {
-    min-height: 45px;
-    max-height: 100px;
+    min-height: 40px;
+    max-height: 80px;
   }
 }
 </style>

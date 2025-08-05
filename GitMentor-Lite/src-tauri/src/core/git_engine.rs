@@ -24,6 +24,13 @@ impl GitEngine {
         Ok(())
     }
 
+    /// 获取当前仓库路径
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub fn get_repository_path(&self) -> Option<String> {
+        self.repo_path.clone()
+    }
+
     /// 获取当前仓库引用
     fn get_repository(&self) -> Result<Repository> {
         let repo_path = self
@@ -521,11 +528,8 @@ impl GitEngine {
         let index_tree = index.write_tree()?;
         let index_tree = repo.find_tree(index_tree)?;
 
-        let diff = repo.diff_tree_to_tree(
-            Some(&head_tree),
-            Some(&index_tree),
-            Some(&mut diff_options),
-        )?;
+        let diff =
+            repo.diff_tree_to_tree(Some(&head_tree), Some(&index_tree), Some(&mut diff_options))?;
 
         // 将diff转换为文本格式
         diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {

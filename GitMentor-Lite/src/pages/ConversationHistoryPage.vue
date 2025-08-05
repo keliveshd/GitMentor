@@ -1,14 +1,25 @@
 <template>
   <div class="conversation-history-page">
     <div class="page-header">
-      <h1>📊 对话记录</h1>
-      <div class="header-actions">
-        <button @click="refreshHistory" class="refresh-btn" :disabled="loading">
-          🔄 刷新
-        </button>
-        <button @click="clearHistory" class="clear-btn" :disabled="loading">
-          🗑️ 清空记录
-        </button>
+      <h1>对话记录</h1>
+      <div class="header-controls">
+        <div class="repository-filter">
+          <label for="repo-select">仓库筛选：</label>
+          <select id="repo-select" v-model="selectedRepository" @change="onRepositoryChange" :disabled="loading">
+            <option value="all">全部仓库</option>
+            <option v-for="path in repositoryPaths" :key="path" :value="path">
+              {{ getRepositoryDisplayName(path) }}
+            </option>
+          </select>
+        </div>
+        <div class="header-actions">
+          <button @click="refreshHistory" class="refresh-btn" :disabled="loading">
+            刷新
+          </button>
+          <button @click="clearHistory" class="clear-btn" :disabled="loading">
+            清空记录
+          </button>
+        </div>
       </div>
     </div>
 
@@ -47,14 +58,17 @@
         </div>
 
         <div v-else class="conversation-items">
-          <div v-for="conversation in conversationHistory" :key="conversation.id" 
-               class="conversation-item" :class="{ error: !conversation.success }">
+          <div v-for="conversation in conversationHistory" :key="conversation.id" class="conversation-item"
+            :class="{ error: !conversation.success }">
             <div class="conversation-header">
               <div class="conversation-info">
                 <span class="conversation-time">{{ formatTime(conversation.timestamp) }}</span>
                 <span class="conversation-template">模板: {{ conversation.template_id }}</span>
+                <span v-if="conversation.repository_path" class="conversation-repository">
+                  仓库: {{ getRepositoryDisplayName(conversation.repository_path) }}
+                </span>
                 <span class="conversation-status" :class="conversation.success ? 'success' : 'error'">
-                  {{ conversation.success ? '✅ 成功' : '❌ 失败' }}
+                  {{ conversation.success ? '成功' : '失败' }}
                 </span>
               </div>
               <div class="conversation-meta">
@@ -84,8 +98,8 @@
                   </div>
                 </div>
                 <div class="messages-section">
-                  <div v-for="(message, index) in conversation.request.messages" :key="index" 
-                       class="message-item" :class="message.role">
+                  <div v-for="(message, index) in conversation.request.messages" :key="index" class="message-item"
+                    :class="message.role">
                     <div class="message-role">{{ message.role === 'system' ? '🤖 系统' : '👤 用户' }}</div>
                     <div class="message-content">{{ message.content }}</div>
                   </div>
@@ -102,9 +116,9 @@
                   </div>
                   <div class="info-item" v-if="conversation.response?.usage">
                     <label>Token使用:</label>
-                    <span>{{ conversation.response.usage.total_tokens }} 
-                      (输入: {{ conversation.response.usage.prompt_tokens }}, 
-                       输出: {{ conversation.response.usage.completion_tokens }})</span>
+                    <span>{{ conversation.response.usage.total_tokens }}
+                      (输入: {{ conversation.response.usage.prompt_tokens }},
+                      输出: {{ conversation.response.usage.completion_tokens }})</span>
                   </div>
                   <div class="info-item" v-if="conversation.response?.finish_reason">
                     <label>完成原因:</label>
@@ -145,6 +159,7 @@ interface ConversationRecord {
   id: string
   timestamp: string
   template_id: string
+  repository_path?: string // 新增：仓库路径
   request: {
     messages: Array<{ role: string; content: string }>
     model: string
@@ -171,13 +186,15 @@ interface ConversationRecord {
 const conversationHistory = ref<ConversationRecord[]>([])
 const loading = ref(false)
 const expandedItems = ref<Set<string>>(new Set())
+const repositoryPaths = ref<string[]>([])
+const selectedRepository = ref<string>('all')
 
 // 计算属性
-const successCount = computed(() => 
+const successCount = computed(() =>
   conversationHistory.value.filter(c => c.success).length
 )
 
-const failureCount = computed(() => 
+const failureCount = computed(() =>
   conversationHistory.value.filter(c => !c.success).length
 )
 
@@ -206,7 +223,7 @@ const refreshHistory = async () => {
 
 const clearHistory = async () => {
   if (!confirm('确定要清空所有对话记录吗？此操作不可恢复。')) return
-  
+
   try {
     loading.value = true
     await invoke('clear_conversation_history')
@@ -222,8 +239,17 @@ const clearHistory = async () => {
 const loadConversationHistory = async () => {
   try {
     loading.value = true
-    const history = await invoke('get_conversation_history') as ConversationRecord[]
-    conversationHistory.value = history.sort((a, b) => 
+    let history: ConversationRecord[]
+
+    if (selectedRepository.value === 'all') {
+      history = await invoke('get_conversation_history') as ConversationRecord[]
+    } else {
+      history = await invoke('get_conversation_history_by_repository', {
+        repositoryPath: selectedRepository.value
+      }) as ConversationRecord[]
+    }
+
+    conversationHistory.value = history.sort((a, b) =>
       new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
     )
   } catch (error) {
@@ -234,9 +260,32 @@ const loadConversationHistory = async () => {
   }
 }
 
-// 生命周期
-onMounted(() => {
+// 加载仓库路径列表
+const loadRepositoryPaths = async () => {
+  try {
+    const paths = await invoke('get_repository_paths') as string[]
+    repositoryPaths.value = paths
+  } catch (error) {
+    console.error('加载仓库路径失败:', error)
+    repositoryPaths.value = []
+  }
+}
+
+// 获取仓库显示名称
+const getRepositoryDisplayName = (path: string) => {
+  const parts = path.split(/[/\\]/)
+  return parts[parts.length - 1] || path
+}
+
+// 仓库选择变更处理
+const onRepositoryChange = () => {
   loadConversationHistory()
+}
+
+// 生命周期
+onMounted(async () => {
+  await loadRepositoryPaths()
+  await loadConversationHistory()
 })
 </script>
 
@@ -252,9 +301,34 @@ onMounted(() => {
   background: white;
   padding: 20px 30px;
   border-bottom: 1px solid #e0e0e0;
+}
+
+.header-controls {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+}
+
+.repository-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.repository-filter label {
+  font-weight: 500;
+  color: #4a5568;
+  font-size: 14px;
+}
+
+.repository-filter select {
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: white;
+  font-size: 14px;
+  min-width: 200px;
 }
 
 .page-header h1 {
@@ -362,8 +436,13 @@ onMounted(() => {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .empty-icon {
@@ -422,6 +501,14 @@ onMounted(() => {
   font-size: 14px;
   background: #e3f2fd;
   color: #1976d2;
+  padding: 2px 8px;
+  border-radius: 12px;
+}
+
+.conversation-repository {
+  font-size: 14px;
+  background: #dbeafe;
+  color: #1e40af;
   padding: 2px 8px;
   border-radius: 12px;
 }

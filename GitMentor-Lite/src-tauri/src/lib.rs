@@ -71,6 +71,8 @@ pub fn run() {
             ai_commands::get_default_templates,
             ai_commands::get_conversation_history,
             ai_commands::clear_conversation_history,
+            ai_commands::get_conversation_history_by_repository,
+            ai_commands::get_repository_paths,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

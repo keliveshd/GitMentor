@@ -111,10 +111,13 @@ impl AIManager {
     }
 
     /// 使用提示模板生成提交消息
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
     pub async fn generate_commit_with_template(
         &self,
         template_id: &str,
         context: CommitContext,
+        repository_path: Option<String>,
     ) -> Result<AIResponse> {
         use std::time::Instant;
 
@@ -142,12 +145,13 @@ impl AIManager {
         let result = factory.generate_commit(provider_id, &request).await;
         let processing_time = start_time.elapsed().as_millis() as u64;
 
-        // 记录对话
+        // 记录对话 - 包含仓库路径信息
         let mut logger = self.conversation_logger.write().await;
         match &result {
             Ok(response) => {
                 if let Err(e) = logger.log_success(
                     template_id.to_string(),
+                    repository_path.clone(),
                     request.clone(),
                     response.clone(),
                     processing_time,
@@ -158,6 +162,7 @@ impl AIManager {
             Err(error) => {
                 if let Err(e) = logger.log_failure(
                     template_id.to_string(),
+                    repository_path.clone(),
                     request.clone(),
                     error.to_string(),
                     processing_time,
@@ -186,6 +191,23 @@ impl AIManager {
     pub async fn clear_conversation_history(&self) -> Result<()> {
         let mut logger = self.conversation_logger.write().await;
         logger.clear_all_records()
+    }
+
+    /// 根据仓库路径获取对话记录
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub async fn get_conversation_history_by_repository(&self, repository_path: Option<&str>) -> Result<Vec<ConversationRecord>> {
+        let logger = self.conversation_logger.read().await;
+        let records = logger.get_records_by_repository(repository_path);
+        Ok(records.into_iter().cloned().collect())
+    }
+
+    /// 获取所有仓库路径列表
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub async fn get_repository_paths(&self) -> Result<Vec<String>> {
+        let logger = self.conversation_logger.read().await;
+        Ok(logger.get_repository_paths())
     }
 
     /// 添加自定义提示模板

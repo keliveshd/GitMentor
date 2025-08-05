@@ -284,15 +284,23 @@ fn create_commit_system_prompt(config: &AIConfig) -> String {
 /// 使用提示模板生成提交消息
 /// 作者：Evilek
 /// 编写日期：2025-07-28
+/// 更新日期：2025-08-04
 #[tauri::command]
 pub async fn generate_commit_with_template(
     ai_manager: State<'_, Mutex<AIManager>>,
+    git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     template_id: String,
     diff: String,
     staged_files: Vec<String>,
     branch_name: Option<String>,
 ) -> Result<String, String> {
     let manager = ai_manager.lock().await;
+
+    // 获取当前仓库路径
+    let repository_path = {
+        let engine = git_engine.lock().await;
+        engine.get_repository_path()
+    };
 
     // 从AI配置中获取语言设置
     let config = manager.get_config().await;
@@ -318,9 +326,9 @@ pub async fn generate_commit_with_template(
         language: language.to_string(), // 使用配置中的语言设置
     };
 
-    println!("🔍 [AI Commands] 使用模板生成提交消息，模板ID: {}", template_id);
+    println!("🔍 [AI Commands] 使用模板生成提交消息，模板ID: {}, 仓库路径: {:?}", template_id, repository_path);
 
-    match manager.generate_commit_with_template(&template_id, context).await {
+    match manager.generate_commit_with_template(&template_id, context, repository_path).await {
         Ok(response) => {
             println!("✅ [AI Commands] 提交消息生成成功");
             Ok(response.content)
@@ -434,4 +442,29 @@ pub async fn clear_conversation_history(
     let manager = ai_manager.lock().await;
     manager.clear_conversation_history().await
         .map_err(|e| format!("Failed to clear conversation history: {}", e))
+}
+
+/// 根据仓库路径获取对话记录
+/// 作者：Evilek
+/// 编写日期：2025-08-04
+#[tauri::command]
+pub async fn get_conversation_history_by_repository(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    repository_path: Option<String>,
+) -> Result<Vec<ConversationRecord>, String> {
+    let manager = ai_manager.lock().await;
+    manager.get_conversation_history_by_repository(repository_path.as_deref()).await
+        .map_err(|e| format!("Failed to get conversation history: {}", e))
+}
+
+/// 获取所有仓库路径列表
+/// 作者：Evilek
+/// 编写日期：2025-08-04
+#[tauri::command]
+pub async fn get_repository_paths(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<Vec<String>, String> {
+    let manager = ai_manager.lock().await;
+    manager.get_repository_paths().await
+        .map_err(|e| format!("Failed to get repository paths: {}", e))
 }
