@@ -468,3 +468,65 @@ pub async fn get_repository_paths(
     manager.get_repository_paths().await
         .map_err(|e| format!("Failed to get repository paths: {}", e))
 }
+
+/// 检查是否应该使用分层提交
+/// 作者：Evilek
+/// 编写日期：2025-08-04
+#[tauri::command]
+pub async fn should_use_layered_commit(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
+    template_id: String,
+    diff: String,
+    staged_files: Vec<String>,
+) -> Result<bool, String> {
+    // 暂时返回 false，因为分层提交功能还在开发中
+    // TODO: 实现分层提交检查逻辑
+    Ok(false)
+}
+
+/// 执行分层提交
+/// 作者：Evilek
+/// 编写日期：2025-08-04
+#[tauri::command]
+pub async fn execute_layered_commit(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
+    app_handle: tauri::AppHandle,
+    template_id: String,
+    staged_files: Vec<String>,
+    branch_name: Option<String>,
+) -> Result<crate::core::layered_commit_manager::LayeredCommitResult, String> {
+    // 暂时返回错误，因为分层提交功能还在开发中
+    // TODO: 实现分层提交执行逻辑
+    Err("分层提交功能正在开发中".to_string())
+}
+
+
+
+
+
+/// 获取分层提交会话列表
+/// 作者：Evilek
+/// 编写日期：2025-08-04
+#[tauri::command]
+pub async fn get_layered_sessions(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<Vec<String>, String> {
+    let manager = ai_manager.lock().await;
+    manager.get_layered_sessions().await
+        .map_err(|e| format!("Failed to get layered sessions: {}", e))
+}
+
+/// 根据会话ID获取对话记录
+/// 作者：Evilek
+/// 编写日期：2025-08-04
+#[tauri::command]
+pub async fn get_conversation_records_by_session(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    session_id: String,
+) -> Result<Vec<ConversationRecord>, String> {
+    let manager = ai_manager.lock().await;
+    manager.get_conversation_records_by_session(&session_id).await
+        .map_err(|e| format!("Failed to get conversation records by session: {}", e))
+}

@@ -180,117 +180,131 @@
       </div>
     </div>
 
-    <!-- 工作区更改 -->
-    <div class="unstaged-files" v-if="gitStatus && gitStatus.unstaged_files.length > 0">
-      <div class="section-title">
-        <h4>📝 更改 ({{ gitStatus?.unstaged_files?.length || 0 }})</h4>
-        <div class="section-actions">
-          <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
-            {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
-          </button>
-          <button @click="stageAll" class="action-btn" title="暂存所有">
-            ➕
-          </button>
-        </div>
-      </div>
+    <!-- 分层提交进度弹窗 -->
+    <LayeredCommitProgress :visible="layeredProgress.visible" :session-id="layeredProgress.sessionId"
+      :current-step="layeredProgress.currentStep" :total-steps="layeredProgress.totalSteps"
+      :current-status="layeredProgress.currentStatus" :current-file="layeredProgress.currentFile"
+      :file-summaries="layeredProgress.fileSummaries" @cancel="cancelLayeredCommit" />
+  </div>
 
-      <!-- 批量操作工具栏 -->
-      <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
-        <div class="batch-info">
-          <span>已选择 {{ selectedFilesCount }} 个文件</span>
-        </div>
-        <div class="batch-actions">
-          <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
-            title="批量暂存选中文件">
-            暂存选中
-          </button>
-          <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
-            回滚选中
-          </button>
-          <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
-            全选
-          </button>
-          <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
-            清空
-          </button>
-        </div>
-      </div>
-
-      <div class="file-list">
-        <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
-          :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-          @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+  <!-- 工作区更改 -->
+  <div class="unstaged-files" v-if="gitStatus && gitStatus.unstaged_files.length > 0">
+    <div class="section-title">
+      <h4>📝 更改 ({{ gitStatus?.unstaged_files?.length || 0 }})</h4>
+      <div class="section-actions">
+        <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
+          {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
+        </button>
+        <button @click="stageAll" class="action-btn" title="暂存所有">
+          ➕
+        </button>
       </div>
     </div>
 
-    <!-- 未跟踪文件 -->
-    <div class="file-section" v-if="gitStatus && gitStatus.untracked_files.length > 0">
-      <div class="section-header">
-        <h4>❓ 未跟踪的文件 ({{ gitStatus?.untracked_files?.length || 0 }})</h4>
-        <div class="section-actions">
-          <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
-            ➕
-          </button>
-        </div>
+    <!-- 批量操作工具栏 -->
+    <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
+      <div class="batch-info">
+        <span>已选择 {{ selectedFilesCount }} 个文件</span>
       </div>
-      <div class="file-list">
-        <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file" :is-staged="false"
-          :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-          @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+      <div class="batch-actions">
+        <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
+          title="批量暂存选中文件">
+          暂存选中
+        </button>
+        <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
+          回滚选中
+        </button>
+        <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
+          全选
+        </button>
+        <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
+          清空
+        </button>
       </div>
     </div>
 
-    <!-- 冲突文件 -->
-    <div class="file-section" v-if="gitStatus && gitStatus.conflicted_files.length > 0">
+    <div class="file-list">
+      <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
+        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+    </div>
+  </div>
+
+  <!-- 未跟踪文件 -->
+  <div class="file-section" v-if="gitStatus && gitStatus.untracked_files.length > 0">
+    <div class="section-header">
+      <h4>❓ 未跟踪的文件 ({{ gitStatus?.untracked_files?.length || 0 }})</h4>
+      <div class="section-actions">
+        <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
+          ➕
+        </button>
+      </div>
+    </div>
+    <div class="file-list">
+      <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file" :is-staged="false"
+        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+    </div>
+  </div>
+
+  <!-- 冲突文件 -->
+  <div class="file-section" v-if="gitStatus && gitStatus.conflicted_files.length > 0">
+    <div class="section-header">
+      <h4>⚠️ 合并冲突 ({{ gitStatus?.conflicted_files?.length || 0 }})</h4>
+    </div>
+    <div class="file-list">
+      <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file" :is-staged="false"
+        @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+    </div>
+
+    <!-- 无更改状态 -->
+    <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
+      <p>✨ 工作区干净，没有待提交的更改</p>
+    </div>
+
+    <!-- 提交历史 -->
+    <div class="commit-history" v-if="commitHistory.length > 0">
       <div class="section-header">
-        <h4>⚠️ 合并冲突 ({{ gitStatus?.conflicted_files?.length || 0 }})</h4>
+        <h4>📜 提交历史</h4>
+        <button @click="refreshHistory" class="action-btn">🔄</button>
       </div>
-      <div class="file-list">
-        <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file" :is-staged="false"
-          @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
-      </div>
-
-      <!-- 无更改状态 -->
-      <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
-        <p>✨ 工作区干净，没有待提交的更改</p>
-      </div>
-
-      <!-- 提交历史 -->
-      <div class="commit-history" v-if="commitHistory.length > 0">
-        <div class="section-header">
-          <h4>📜 提交历史</h4>
-          <button @click="refreshHistory" class="action-btn">🔄</button>
-        </div>
-        <div class="history-list">
-          <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
-            <div class="commit-info">
-              <div class="commit-message">{{ commit.message }}</div>
-              <div class="commit-meta">
-                <span class="commit-author">{{ commit.author }}</span>
-                <span class="commit-hash">{{ commit.short_hash }}</span>
-                <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
-              </div>
+      <div class="history-list">
+        <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
+          <div class="commit-info">
+            <div class="commit-message">{{ commit.message }}</div>
+            <div class="commit-meta">
+              <span class="commit-author">{{ commit.author }}</span>
+              <span class="commit-hash">{{ commit.short_hash }}</span>
+              <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
             </div>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Toast通知组件 -->
-    <Toast ref="toastRef" />
-
-    <!-- 确认对话框组件 -->
-    <ConfirmDialog :visible="globalConfirm.visible.value" :options="globalConfirm.options.value"
-      @confirm="globalConfirm.confirm" @cancel="globalConfirm.cancel" @close="globalConfirm.close" />
   </div>
+
+  <!-- Toast通知组件 -->
+  <Toast ref="toastRef" />
+
+  <!-- 确认对话框组件 -->
+  <ConfirmDialog :visible="globalConfirm.visible.value" :options="globalConfirm.options.value"
+    @confirm="globalConfirm.confirm" @cancel="globalConfirm.cancel" @close="globalConfirm.close" />
+
+  <!-- 分层提交进度弹窗 -->
+  <LayeredCommitProgress :visible="layeredProgress.visible" :session-id="layeredProgress.sessionId"
+    :current-step="layeredProgress.currentStep" :total-steps="layeredProgress.totalSteps"
+    :current-status="layeredProgress.currentStatus" :current-file="layeredProgress.currentFile"
+    :file-summaries="layeredProgress.fileSummaries" @cancel="cancelLayeredCommit" />
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import FileItem from './FileItem.vue'
 import Toast from './Toast.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import LayeredCommitProgress from './LayeredCommitProgress.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
@@ -311,6 +325,17 @@ const selectedTemplate = ref('standard')
 const isGenerating = ref(false)
 const generationProgress = ref('')
 const isAIGenerated = ref(false)
+const isLayeredCommit = ref(false)
+const layeredProgress = ref({
+  visible: false,
+  sessionId: '',
+  currentStep: 0,
+  totalSteps: 0,
+  currentStatus: '',
+  currentFile: '',
+  fileSummaries: []
+})
+
 // 模板相关状态
 const availableTemplates = ref<any[]>([])
 const templatesLoaded = ref(false)
@@ -671,8 +696,8 @@ const generateCommitMessage = async () => {
       generationProgress.value = '正在获取差异信息...'
       const diffContent = await invoke('get_staged_diff_summary') as string
 
-      // 使用模板生成提交消息
-      generationProgress.value = '正在生成提交消息...'
+      // 检查是否需要分层提交
+      generationProgress.value = '检查是否需要分层提交...'
 
       // 调试信息：检查当前选择的模板
       console.log('🔍 [GitPanel] 当前选择的模板ID:', selectedTemplate.value)
@@ -689,21 +714,37 @@ const generateCommitMessage = async () => {
         selectedTemplate.value = availableTemplates.value[0].id
       }
 
-      const result = await invoke('generate_commit_with_template', {
+      // 检查是否需要分层提交
+      const shouldUseLayered = await invoke('should_use_layered_commit', {
         templateId: selectedTemplate.value,
         diff: diffContent,
-        stagedFiles: filePaths,
-        branchName: gitStatus.value.branch
-      }) as string
+        stagedFiles: filePaths
+      }) as boolean
 
-      commitMessage.value = result
-      isAIGenerated.value = true
-      generationProgress.value = '生成完成！'
+      if (shouldUseLayered) {
+        // 使用分层提交
+        await executeLayeredCommit(filePaths, gitStatus.value.branch)
+      } else {
+        // 使用常规提交
+        generationProgress.value = '正在生成提交消息...'
 
-      // 短暂显示完成状态
-      setTimeout(() => {
-        generationProgress.value = ''
-      }, 1000)
+        const result = await invoke('generate_commit_with_template', {
+          templateId: selectedTemplate.value,
+          diff: diffContent,
+          stagedFiles: filePaths,
+          branchName: gitStatus.value.branch
+        }) as string
+
+        commitMessage.value = result
+        isAIGenerated.value = true
+        isLayeredCommit.value = false
+        generationProgress.value = '生成完成！'
+
+        // 短暂显示完成状态
+        setTimeout(() => {
+          generationProgress.value = ''
+        }, 1000)
+      }
 
     } catch (error) {
       console.error('Failed to generate commit message:', error)
@@ -749,7 +790,73 @@ const clearRepositoryState = () => {
   isRefreshing.value = false
   refreshCount.value = 0
 
+  // 清空分层提交状态
+  isLayeredCommit.value = false
+  layeredProgress.value.visible = false
+
   console.log('🧹 [GitPanel] 已清空仓库状态')
+}
+
+/**
+ * 执行分层提交
+ * 作者：Evilek
+ * 编写日期：2025-08-04
+ */
+const executeLayeredCommit = async (stagedFiles: string[], branchName: string | null) => {
+  try {
+    // 显示分层提交进度弹窗
+    layeredProgress.value.visible = true
+    loading.value = false // 关闭主加载状态
+    isGenerating.value = false
+
+    // 监听进度更新事件
+    const unlisten = await listen('layered-commit-progress', (event: any) => {
+      const progress = event.payload
+      layeredProgress.value = {
+        visible: true,
+        sessionId: progress.session_id,
+        currentStep: progress.current_step,
+        totalSteps: progress.total_steps,
+        currentStatus: progress.status,
+        currentFile: progress.current_file || '',
+        fileSummaries: progress.file_summaries || []
+      }
+    })
+
+    // 执行分层提交
+    const result = await invoke('execute_layered_commit', {
+      templateId: selectedTemplate.value,
+      stagedFiles: stagedFiles,
+      branchName: branchName
+    }) as any
+
+    // 设置最终结果
+    commitMessage.value = result.final_message
+    isAIGenerated.value = true
+    isLayeredCommit.value = true
+
+    toast.success('分层提交消息生成成功', '操作完成')
+
+    // 清理
+    unlisten()
+    layeredProgress.value.visible = false
+  } catch (error) {
+    layeredProgress.value.visible = false
+    throw error
+  }
+}
+
+/**
+ * 取消分层提交
+ * 作者：Evilek
+ * 编写日期：2025-08-04
+ */
+const cancelLayeredCommit = () => {
+  layeredProgress.value.visible = false
+  loading.value = false
+  isGenerating.value = false
+  generationProgress.value = ''
+  toast.info('分层提交已取消', '操作取消')
 }
 
 // 批量操作相关方法

@@ -225,7 +225,7 @@ impl Default for AIConfig {
             features: FeaturesConfig {
                 enable_emoji: true,
                 enable_body: true,
-                enable_layered_commit: false,
+                enable_layered_commit: true,
                 use_recent_commits: true,
                 enable_streaming: true,
             },

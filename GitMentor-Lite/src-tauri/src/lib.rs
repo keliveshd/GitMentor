@@ -1,6 +1,7 @@
 mod commands;
 mod core;
 mod types;
+mod utils;
 
 use commands::{ai_commands, git_commands};
 use core::{
@@ -73,6 +74,12 @@ pub fn run() {
             ai_commands::clear_conversation_history,
             ai_commands::get_conversation_history_by_repository,
             ai_commands::get_repository_paths,
+            ai_commands::should_use_layered_commit,
+            ai_commands::execute_layered_commit,
+            ai_commands::should_use_layered_commit,
+            ai_commands::execute_layered_commit,
+            ai_commands::get_layered_sessions,
+            ai_commands::get_conversation_records_by_session,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

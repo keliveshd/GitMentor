@@ -18,12 +18,24 @@ pub struct ConversationRecord {
     pub id: String,
     pub timestamp: DateTime<Utc>,
     pub template_id: String,
-    pub repository_path: Option<String>, // 新增：仓库路径标识
+    pub repository_path: Option<String>, // 仓库路径标识
+    pub session_id: Option<String>,      // 新增：会话ID，用于分层提交分组
+    pub session_type: Option<String>,    // 新增：会话类型（single/layered）
+    pub step_info: Option<StepInfo>,     // 新增：步骤信息
     pub request: AIRequest,
     pub response: Option<AIResponse>,
     pub processing_time_ms: u64,
     pub success: bool,
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StepInfo {
+    pub step_type: String,           // "file_analysis" | "final_summary"
+    pub step_index: Option<u32>,     // 步骤索引
+    pub total_steps: Option<u32>,    // 总步骤数
+    pub file_path: Option<String>,   // 相关文件路径（用于文件分析步骤）
+    pub description: Option<String>, // 步骤描述
 }
 
 #[derive(Debug)]
@@ -65,11 +77,40 @@ impl ConversationLogger {
         response: AIResponse,
         processing_time_ms: u64,
     ) -> Result<()> {
+        self.log_success_with_session(
+            template_id,
+            repository_path,
+            None,
+            None,
+            None,
+            request,
+            response,
+            processing_time_ms,
+        )
+    }
+
+    /// 记录成功的对话（带会话信息）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub fn log_success_with_session(
+        &mut self,
+        template_id: String,
+        repository_path: Option<String>,
+        session_id: Option<String>,
+        session_type: Option<String>,
+        step_info: Option<StepInfo>,
+        request: AIRequest,
+        response: AIResponse,
+        processing_time_ms: u64,
+    ) -> Result<()> {
         let record = ConversationRecord {
             id: Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             template_id,
             repository_path,
+            session_id,
+            session_type,
+            step_info,
             request,
             response: Some(response),
             processing_time_ms,
@@ -93,11 +134,40 @@ impl ConversationLogger {
         error_message: String,
         processing_time_ms: u64,
     ) -> Result<()> {
+        self.log_failure_with_session(
+            template_id,
+            repository_path,
+            None,
+            None,
+            None,
+            request,
+            error_message,
+            processing_time_ms,
+        )
+    }
+
+    /// 记录失败的对话（带会话信息）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub fn log_failure_with_session(
+        &mut self,
+        template_id: String,
+        repository_path: Option<String>,
+        session_id: Option<String>,
+        session_type: Option<String>,
+        step_info: Option<StepInfo>,
+        request: AIRequest,
+        error_message: String,
+        processing_time_ms: u64,
+    ) -> Result<()> {
         let record = ConversationRecord {
             id: Uuid::new_v4().to_string(),
             timestamp: Utc::now(),
             template_id,
             repository_path,
+            session_id,
+            session_type,
+            step_info,
             request,
             response: None,
             processing_time_ms,
@@ -147,6 +217,42 @@ impl ConversationLogger {
             .collect();
         paths.sort();
         paths
+    }
+
+    /// 根据会话ID获取对话记录
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub fn get_records_by_session(&self, session_id: &str) -> Vec<&ConversationRecord> {
+        self.records
+            .iter()
+            .filter(|record| {
+                record
+                    .session_id
+                    .as_ref()
+                    .map_or(false, |id| id == session_id)
+            })
+            .collect()
+    }
+
+    /// 获取所有分层提交会话
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub fn get_layered_sessions(&self) -> Vec<String> {
+        let mut sessions: Vec<String> = self
+            .records
+            .iter()
+            .filter(|record| {
+                record
+                    .session_type
+                    .as_ref()
+                    .map_or(false, |t| t == "layered")
+            })
+            .filter_map(|record| record.session_id.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
+            .collect();
+        sessions.sort();
+        sessions
     }
 
     /// 获取最近的N条记录

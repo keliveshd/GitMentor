@@ -58,8 +58,53 @@
         </div>
 
         <div v-else class="conversation-items">
-          <div v-for="conversation in conversationHistory" :key="conversation.id" class="conversation-item"
-            :class="{ error: !conversation.success }">
+          <!-- 分层提交会话 -->
+          <div v-for="session in groupedConversations.sessions" :key="session.sessionId" class="session-group">
+            <div class="session-header" @click="toggleSessionExpanded(session.sessionId)">
+              <div class="session-info">
+                <div class="session-title">
+                  <span class="session-icon">🔄</span>
+                  <span class="session-label">分层提交会话</span>
+                  <span class="session-id">{{ session.sessionId.slice(0, 8) }}...</span>
+                </div>
+                <div class="session-meta">
+                  <span class="session-time">{{ formatTime(session.timestamp) }}</span>
+                  <span class="session-repository">{{ getRepositoryDisplayName(session.repository) }}</span>
+                  <span class="session-stats">{{ session.fileCount }} 文件 · {{ session.totalProcessingTime }}ms</span>
+                </div>
+              </div>
+              <div class="session-toggle">
+                <span class="expand-icon" :class="{ expanded: expandedSessions.has(session.sessionId) }">🔽</span>
+              </div>
+            </div>
+
+            <!-- 会话详情 -->
+            <div v-if="expandedSessions.has(session.sessionId)" class="session-details">
+              <div v-for="record in session.records" :key="record.id" class="session-step">
+                <div class="step-header">
+                  <span class="step-icon">{{ getStepIcon(record.step_info?.step_type || '') }}</span>
+                  <span class="step-name">{{ getStepTypeName(record.step_info?.step_type || '') }}</span>
+                  <span v-if="record.step_info?.file_path" class="step-file">{{ record.step_info.file_path }}</span>
+                  <span class="step-time">{{ record.processing_time_ms }}ms</span>
+                  <span class="step-status" :class="record.success ? 'success' : 'error'">
+                    {{ record.success ? '成功' : '失败' }}
+                  </span>
+                </div>
+
+                <div v-if="record.response" class="step-content">
+                  <div class="response-content">{{ record.response.content }}</div>
+                </div>
+
+                <div v-if="record.error_message" class="step-error">
+                  <strong>错误:</strong> {{ record.error_message }}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 单独的对话记录 -->
+          <div v-for="conversation in groupedConversations.singleRecords" :key="conversation.id"
+            class="conversation-item" :class="{ error: !conversation.success }">
             <div class="conversation-header">
               <div class="conversation-info">
                 <span class="conversation-time">{{ formatTime(conversation.timestamp) }}</span>
@@ -159,7 +204,10 @@ interface ConversationRecord {
   id: string
   timestamp: string
   template_id: string
-  repository_path?: string // 新增：仓库路径
+  repository_path?: string
+  session_id?: string // 新增：会话ID
+  session_type?: string // 新增：会话类型
+  step_info?: StepInfo // 新增：步骤信息
   request: {
     messages: Array<{ role: string; content: string }>
     model: string
@@ -182,12 +230,32 @@ interface ConversationRecord {
   error_message?: string
 }
 
+interface StepInfo {
+  step_type: string // "file_analysis" | "final_summary"
+  step_index?: number
+  total_steps?: number
+  file_path?: string
+  description?: string
+}
+
 // 响应式数据
 const conversationHistory = ref<ConversationRecord[]>([])
 const loading = ref(false)
 const expandedItems = ref<Set<string>>(new Set())
+const expandedSessions = ref<Set<string>>(new Set())
 const repositoryPaths = ref<string[]>([])
 const selectedRepository = ref<string>('all')
+
+// 会话分组接口
+interface SessionGroup {
+  sessionId: string
+  sessionType: string
+  timestamp: string
+  repository: string
+  records: ConversationRecord[]
+  totalProcessingTime: number
+  fileCount: number
+}
 
 // 计算属性
 const successCount = computed(() =>
@@ -214,6 +282,39 @@ const toggleExpanded = (id: string) => {
     expandedItems.value.delete(id)
   } else {
     expandedItems.value.add(id)
+  }
+}
+
+// 切换会话展开状态
+const toggleSessionExpanded = (sessionId: string) => {
+  if (expandedSessions.value.has(sessionId)) {
+    expandedSessions.value.delete(sessionId)
+  } else {
+    expandedSessions.value.add(sessionId)
+  }
+}
+
+// 获取步骤类型的显示名称
+const getStepTypeName = (stepType: string) => {
+  switch (stepType) {
+    case 'file_analysis':
+      return '文件分析'
+    case 'final_summary':
+      return '最终总结'
+    default:
+      return stepType
+  }
+}
+
+// 获取步骤图标
+const getStepIcon = (stepType: string) => {
+  switch (stepType) {
+    case 'file_analysis':
+      return '📄'
+    case 'final_summary':
+      return '📝'
+    default:
+      return '🔧'
   }
 }
 
@@ -281,6 +382,50 @@ const getRepositoryDisplayName = (path: string) => {
 const onRepositoryChange = () => {
   loadConversationHistory()
 }
+
+// 计算属性：分组后的对话记录
+const groupedConversations = computed(() => {
+  const sessions = new Map<string, SessionGroup>()
+  const singleRecords: ConversationRecord[] = []
+
+  conversationHistory.value.forEach(record => {
+    if (record.session_id && record.session_type === 'layered') {
+      // 分层提交记录，按会话分组
+      if (!sessions.has(record.session_id)) {
+        sessions.set(record.session_id, {
+          sessionId: record.session_id,
+          sessionType: record.session_type,
+          timestamp: record.timestamp,
+          repository: record.repository_path || '未知仓库',
+          records: [],
+          totalProcessingTime: 0,
+          fileCount: 0
+        })
+      }
+
+      const session = sessions.get(record.session_id)!
+      session.records.push(record)
+      session.totalProcessingTime += record.processing_time_ms
+
+      // 统计文件数量
+      if (record.step_info?.step_type === 'file_analysis') {
+        session.fileCount++
+      }
+    } else {
+      // 单独的对话记录
+      singleRecords.push(record)
+    }
+  })
+
+  return {
+    sessions: Array.from(sessions.values()).sort((a, b) =>
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    ),
+    singleRecords: singleRecords.sort((a, b) =>
+      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+    )
+  }
+})
 
 // 生命周期
 onMounted(async () => {
@@ -511,6 +656,182 @@ onMounted(async () => {
   color: #1e40af;
   padding: 2px 8px;
   border-radius: 12px;
+}
+
+/* 分层提交会话样式 */
+.session-group {
+  margin-bottom: 20px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  overflow: hidden;
+  background: white;
+}
+
+.session-header {
+  padding: 16px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.session-header:hover {
+  background: #f1f5f9;
+}
+
+.session-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.session-icon {
+  font-size: 16px;
+}
+
+.session-label {
+  font-weight: 600;
+  color: #374151;
+  font-size: 16px;
+}
+
+.session-id {
+  background: #e5e7eb;
+  color: #6b7280;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.session-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.session-time {
+  font-weight: 500;
+}
+
+.session-repository {
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.session-stats {
+  background: #f3f4f6;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.session-toggle {
+  display: flex;
+  align-items: center;
+}
+
+.expand-icon {
+  font-size: 14px;
+  color: #6b7280;
+  transition: transform 0.2s;
+}
+
+.expand-icon.expanded {
+  transform: rotate(180deg);
+}
+
+.session-details {
+  padding: 0;
+}
+
+.session-step {
+  border-bottom: 1px solid #f3f4f6;
+  padding: 12px 16px;
+}
+
+.session-step:last-child {
+  border-bottom: none;
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.step-icon {
+  font-size: 14px;
+}
+
+.step-name {
+  font-weight: 500;
+  color: #374151;
+}
+
+.step-file {
+  background: #f3f4f6;
+  color: #6b7280;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: monospace;
+}
+
+.step-time {
+  color: #9ca3af;
+  font-size: 12px;
+}
+
+.step-status {
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.step-status.success {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.step-status.error {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.step-content {
+  margin-left: 22px;
+}
+
+.response-content {
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: #374151;
+  white-space: pre-wrap;
+}
+
+.step-error {
+  margin-left: 22px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #991b1b;
+  font-size: 13px;
 }
 
 .conversation-status.success {

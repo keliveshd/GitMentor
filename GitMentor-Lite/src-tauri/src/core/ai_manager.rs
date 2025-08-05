@@ -210,6 +210,23 @@ impl AIManager {
         Ok(logger.get_repository_paths())
     }
 
+    /// 获取所有分层提交会话
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub async fn get_layered_sessions(&self) -> Result<Vec<String>> {
+        let logger = self.conversation_logger.read().await;
+        Ok(logger.get_layered_sessions())
+    }
+
+    /// 根据会话ID获取对话记录
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub async fn get_conversation_records_by_session(&self, session_id: &str) -> Result<Vec<ConversationRecord>> {
+        let logger = self.conversation_logger.read().await;
+        let records = logger.get_records_by_session(session_id);
+        Ok(records.into_iter().cloned().collect())
+    }
+
     /// 添加自定义提示模板
     pub async fn add_prompt_template(&self, template: PromptTemplate) {
         let mut prompt_manager = self.prompt_manager.write().await;

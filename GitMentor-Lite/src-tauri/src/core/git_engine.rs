@@ -31,6 +31,62 @@ impl GitEngine {
         self.repo_path.clone()
     }
 
+    /// 获取单个文件的diff内容（简单版本）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    pub fn get_simple_file_diff(&self, file_path: &str) -> Result<String> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No repository opened"))?;
+
+        let repo = Repository::open(repo_path)?;
+
+        // 获取HEAD提交
+        let head = repo.head()?;
+        let head_commit = head.peel_to_commit()?;
+        let head_tree = head_commit.tree()?;
+
+        // 获取工作目录状态
+        let mut opts = DiffOptions::new();
+        opts.include_untracked(true);
+
+        let diff = repo.diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut opts))?;
+
+        // 查找指定文件的diff
+        let mut file_diff = String::new();
+        diff.foreach(
+            &mut |delta, _progress| {
+                if let Some(path) = delta.new_file().path() {
+                    if path.to_string_lossy() == file_path {
+                        return true; // 找到目标文件
+                    }
+                }
+                false
+            },
+            None,
+            None,
+            Some(&mut |_delta, _hunk, line| {
+                match line.origin() {
+                    '+' | '-' | ' ' => {
+                        file_diff.push(line.origin());
+                        if let Ok(content) = std::str::from_utf8(line.content()) {
+                            file_diff.push_str(content);
+                        }
+                    }
+                    _ => {}
+                }
+                true
+            }),
+        )?;
+
+        if file_diff.is_empty() {
+            return Err(anyhow::anyhow!("No diff found for file: {}", file_path));
+        }
+
+        Ok(file_diff)
+    }
+
     /// 获取当前仓库引用
     fn get_repository(&self) -> Result<Repository> {
         let repo_path = self
