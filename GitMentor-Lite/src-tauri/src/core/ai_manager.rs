@@ -34,10 +34,16 @@ impl AIManager {
         log_path.push("conversation_history.json");
         let conversation_logger = ConversationLogger::new(log_path)?;
 
+        // 创建模板配置文件路径
+        let mut template_config_path = config_path.clone();
+        template_config_path.pop(); // 移除文件名，保留目录
+        template_config_path.push("prompt_templates.json");
+        let prompt_manager = PromptManager::new_with_config(template_config_path)?;
+
         Ok(Self {
             config_manager: Arc::new(RwLock::new(config_manager)),
             provider_factory: Arc::new(RwLock::new(provider_factory)),
-            prompt_manager: Arc::new(RwLock::new(PromptManager::new())),
+            prompt_manager: Arc::new(RwLock::new(prompt_manager)),
             conversation_logger: Arc::new(RwLock::new(conversation_logger)),
         })
     }
@@ -280,6 +286,30 @@ impl AIManager {
     pub async fn delete_template(&self, template_id: &str) -> Result<()> {
         let mut prompt_manager = self.prompt_manager.write().await;
         prompt_manager.delete_template(template_id)
+    }
+
+    /// 重新加载默认模板（清理缓存）
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub async fn reload_default_templates(&self) -> Result<()> {
+        let mut prompt_manager = self.prompt_manager.write().await;
+        prompt_manager.reload_default_templates()
+    }
+
+    /// 清理所有缓存和配置文件
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub async fn clear_all_cache(&self) -> Result<()> {
+        // 清理对话记录
+        {
+            let mut logger = self.conversation_logger.write().await;
+            logger.clear_all_records()?;
+        }
+
+        // 重新加载默认模板
+        self.reload_default_templates().await?;
+
+        Ok(())
     }
 
     /// 获取自定义模板列表

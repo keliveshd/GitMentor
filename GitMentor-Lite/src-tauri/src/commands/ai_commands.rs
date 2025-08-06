@@ -227,54 +227,37 @@ pub async fn generate_commit_message_ai(
     })
 }
 
-/// 创建提交消息系统提示词（参考Dish AI Commit）
+/// 创建提交消息系统提示词（优化版，避免标题格式干扰）
+/// 作者：Evilek
+/// 编写日期：2025-01-29
 fn create_commit_system_prompt(config: &AIConfig) -> String {
     let language = &config.base.language;
     let enable_emoji = config.features.enable_emoji;
     let enable_body = config.features.enable_body;
-    
+
     format!(
-        r#"# Git提交消息生成指南
+        r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、准确的提交消息。
 
-## 核心指令
+核心要求：
+- 根据实际更改确定此次提交的真实意图
+- 识别已修改的模块/文件和修改类型
+- 使用{}编写所有内容（技术术语和范围除外）
+- 范围和技术术语仅使用英文
+- 严格遵循格式：<type>(<scope>): <description>
+- {}包含适当的表情符号
+- {}包含详细的提交描述
 
-1. 根据实际更改确定此次提交的真实意图
-2. 识别已修改的模块/文件
-3. 确定修改类型
-4. 使用{}编写所有内容（技术术语和范围除外）
-5. 严格遵循示例中显示的确切格式模板
-6. 范围和技术术语仅使用英文
-7. {}包含适当的表情符号
-8. {}包含详细的提交描述
+提交类型说明：
+feat: 新功能, fix: 错误修复, docs: 文档更改, style: 代码格式, refactor: 重构, test: 增加测试, chore: 构建过程或辅助工具的变动
 
-## 禁止操作
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+- 不要添加任何评论或问题
+- 不要偏离所需格式
 
-1. 不要包含任何解释、问候或额外文本
-2. 不要用英文写作（技术术语和范围除外）
-3. 不要添加任何格式说明或元数据
-4. 不要在输出中包含三重反引号（```）
-5. 不要添加任何评论或问题
-6. 不要偏离所需格式
-
-## 格式模板
-
-```
-<type>(<scope>): <description>
-
-[可选的详细描述]
-```
-
-## 类型检测指南
-
-- feat: 新功能
-- fix: 错误修复
-- docs: 文档更改
-- style: 代码格式（不影响代码运行的变动）
-- refactor: 重构（既不是新增功能，也不是修改bug的代码变动）
-- test: 增加测试
-- chore: 构建过程或辅助工具的变动
-
-请严格按照以上指南生成提交消息。"#,
+直接输出提交消息，无需其他内容。"#,
         language,
         if enable_emoji { "启用时" } else { "禁用时" },
         if enable_body { "启用时" } else { "禁用时" }
@@ -591,4 +574,28 @@ pub async fn get_conversation_records_by_session(
     let manager = ai_manager.lock().await;
     manager.get_conversation_records_by_session(&session_id).await
         .map_err(|e| format!("Failed to get conversation records by session: {}", e))
+}
+
+/// 重新加载默认模板（清理缓存）
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[tauri::command]
+pub async fn reload_default_templates(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<(), String> {
+    let manager = ai_manager.lock().await;
+    manager.reload_default_templates().await
+        .map_err(|e| format!("Failed to reload templates: {}", e))
+}
+
+/// 清理所有缓存和配置文件
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[tauri::command]
+pub async fn clear_all_cache(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<(), String> {
+    let manager = ai_manager.lock().await;
+    manager.clear_all_cache().await
+        .map_err(|e| format!("Failed to clear cache: {}", e))
 }

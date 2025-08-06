@@ -173,12 +173,11 @@ impl PromptManager {
             system_prompt: r#"你是一个专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰、符合规范的提交消息。
 
 规则：
-1. 使用英文编写提交消息
-2. 第一行为简短摘要（50字符以内）
-3. 使用动词开头，如 Add, Fix, Update, Remove 等
-4. 描述做了什么，而不是为什么做
-5. 不要以句号结尾
-6. 如果需要，可以添加详细描述（空行后）"#.to_string(),
+1. 第一行为简短摘要（50字符以内）
+2. 使用动词开头，如 Add, Fix, Update, Remove 等
+3. 描述做了什么，而不是为什么做
+4. 不要以句号结尾
+5. 如果需要，可以添加详细描述（空行后）"#.to_string(),
             user_prompt_template: r#"请为以下代码变更生成提交消息：
 
 变更的文件：
@@ -188,7 +187,7 @@ impl PromptManager {
 {diff}
 
 请生成一个简洁明了的提交消息。"#.to_string(),
-            language: "en".to_string(),
+            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
             max_tokens: Some(200),
             temperature: Some(0.3),
             enable_emoji: Some(false),
@@ -201,21 +200,20 @@ impl PromptManager {
             updated_at: Some(chrono::Utc::now().to_rfc3339()),
         });
 
-        // 中文提交消息模板
+        // 简洁提交消息模板
         self.add_template(PromptTemplate {
             id: "chinese".to_string(),
-            name: "中文提交消息".to_string(),
-            description: "生成中文的提交消息".to_string(),
+            name: "简洁提交消息".to_string(),
+            description: "生成简洁明了的提交消息".to_string(),
             system_prompt:
-                r#"你是一个专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的中文提交消息。
+                r#"你是一个专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的提交消息。
 
 规则：
-1. 必须使用中文编写提交消息
-2. 第一行为简短摘要（25字以内）
-3. 使用动词开头，如 添加, 修复, 更新, 删除, 优化, 重构 等
-4. 描述做了什么，而不是为什么做
-5. 语言简洁明了，避免冗余
-6. 符合中文表达习惯，自然流畅"#
+1. 第一行为简短摘要（25字以内）
+2. 使用动词开头，如 添加, 修复, 更新, 删除, 优化, 重构 等
+3. 描述做了什么，而不是为什么做
+4. 语言简洁明了，避免冗余
+5. 表达自然流畅"#
                     .to_string(),
             user_prompt_template: r#"请为以下代码变更生成中文提交消息：
 
@@ -227,7 +225,7 @@ impl PromptManager {
 
 请生成一个简洁明了的中文提交消息。"#
                 .to_string(),
-            language: "zh".to_string(),
+            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
             max_tokens: Some(150),
             temperature: Some(0.3),
             enable_emoji: Some(false),
@@ -256,10 +254,9 @@ impl PromptManager {
 - 如果有破坏性变更，请说明
 
 规则：
-1. 使用英文编写
-2. 摘要使用动词开头
-3. 详细描述使用项目符号
-4. 保持专业和清晰"#.to_string(),
+1. 摘要使用动词开头
+2. 详细描述使用项目符号
+3. 保持专业和清晰"#.to_string(),
             user_prompt_template: r#"请为以下代码变更生成详细的提交消息：
 
 分支：{branch_name}
@@ -270,7 +267,7 @@ impl PromptManager {
 {diff}
 
 请生成包含摘要和详细描述的提交消息。"#.to_string(),
-            language: "en".to_string(),
+            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
             max_tokens: Some(400),
             temperature: Some(0.4),
             enable_emoji: Some(false),
@@ -303,10 +300,9 @@ impl PromptManager {
 - chore: 构建过程或辅助工具的变动
 
 规则：
-1. 使用英文编写
-2. 描述使用小写开头
-3. 不要以句号结尾
-4. 描述要简洁明了"#
+1. 描述使用小写开头
+2. 不要以句号结尾
+3. 描述要简洁明了"#
                     .to_string(),
             user_prompt_template: r#"请为以下代码变更生成约定式提交消息：
 
@@ -318,7 +314,7 @@ impl PromptManager {
 
 请分析变更类型并生成符合约定式提交规范的消息。"#
                 .to_string(),
-            language: "en".to_string(),
+            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
             max_tokens: Some(150),
             temperature: Some(0.2),
             enable_emoji: Some(true),
