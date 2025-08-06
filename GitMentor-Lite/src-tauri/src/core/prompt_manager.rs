@@ -1,7 +1,10 @@
 use anyhow::Result;
 use chrono;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 
 use crate::core::ai_provider::ChatMessage;
 
@@ -30,6 +33,9 @@ pub struct PromptTemplate {
     pub is_custom: Option<bool>, // 标识是否为用户自定义模板
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+    // 新增版本管理
+    pub version: Option<String>,       // 模板版本号
+    pub template_hash: Option<String>, // 模板内容哈希，用于检测变更
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,19 +56,117 @@ pub struct CommitContext {
     pub language: String,
 }
 
+/// 模板配置文件结构
+/// 作者：Evilek
+/// 编写日期：2025-01-29
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateConfig {
+    pub version: String,
+    pub last_updated: String,
+    pub templates: HashMap<String, PromptTemplate>,
+}
+
+impl Default for TemplateConfig {
+    fn default() -> Self {
+        Self {
+            version: "1.0.0".to_string(),
+            last_updated: chrono::Utc::now().to_rfc3339(),
+            templates: HashMap::new(),
+        }
+    }
+}
+
 pub struct PromptManager {
     templates: HashMap<String, PromptTemplate>,
+    config_path: Option<PathBuf>, // 独立的模板配置文件路径
+    current_version: String,
 }
 
 impl PromptManager {
     pub fn new() -> Self {
         let mut manager = Self {
             templates: HashMap::new(),
+            config_path: None,
+            current_version: "1.0.0".to_string(),
         };
 
         // 加载默认模板
         manager.load_default_templates();
         manager
+    }
+
+    /// 创建带配置文件的PromptManager
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub fn new_with_config(config_path: PathBuf) -> Result<Self> {
+        let mut manager = Self {
+            templates: HashMap::new(),
+            config_path: Some(config_path.clone()),
+            current_version: "1.0.0".to_string(),
+        };
+
+        // 尝试加载现有配置
+        if config_path.exists() {
+            manager.load_from_config()?;
+        } else {
+            // 加载默认模板并保存
+            manager.load_default_templates();
+            manager.save_to_config()?;
+        }
+
+        Ok(manager)
+    }
+
+    /// 从配置文件加载模板
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    fn load_from_config(&mut self) -> Result<()> {
+        if let Some(config_path) = &self.config_path {
+            let content = fs::read_to_string(config_path)?;
+            let config: TemplateConfig = serde_json::from_str(&content)?;
+
+            // 检查版本是否需要更新
+            if config.version != self.current_version {
+                // 版本不匹配，需要更新默认模板
+                self.load_default_templates();
+                self.save_to_config()?;
+            } else {
+                self.templates = config.templates;
+            }
+        }
+        Ok(())
+    }
+
+    /// 保存模板到配置文件
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    fn save_to_config(&self) -> Result<()> {
+        if let Some(config_path) = &self.config_path {
+            // 确保目录存在
+            if let Some(parent) = config_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+
+            let config = TemplateConfig {
+                version: self.current_version.clone(),
+                last_updated: chrono::Utc::now().to_rfc3339(),
+                templates: self.templates.clone(),
+            };
+
+            let content = serde_json::to_string_pretty(&config)?;
+            fs::write(config_path, content)?;
+        }
+        Ok(())
+    }
+
+    /// 计算模板内容哈希
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    fn calculate_template_hash(template: &PromptTemplate) -> String {
+        let mut hasher = Sha256::new();
+        hasher.update(template.system_prompt.as_bytes());
+        hasher.update(template.user_prompt_template.as_bytes());
+        format!("{:x}", hasher.finalize())
     }
 
     /// 获取默认的提交类型配置
@@ -165,19 +269,26 @@ impl PromptManager {
         // 获取默认的提交类型
         let default_commit_types = self.get_default_commit_types();
 
-        // 标准提交消息模板
-        self.add_template(PromptTemplate {
+        // 标准提交消息模板（优化版）
+        let standard_template = PromptTemplate {
             id: "standard".to_string(),
             name: "标准提交消息".to_string(),
             description: "生成符合常规规范的提交消息".to_string(),
-            system_prompt: r#"你是一个专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰、符合规范的提交消息。
+            system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰、符合规范的提交消息。
 
-规则：
-1. 第一行为简短摘要（50字符以内）
-2. 使用动词开头，如 Add, Fix, Update, Remove 等
-3. 描述做了什么，而不是为什么做
-4. 不要以句号结尾
-5. 如果需要，可以添加详细描述（空行后）"#.to_string(),
+核心要求：
+- 第一行为简短摘要（50字符以内）
+- 使用动词开头，如 Add, Fix, Update, Remove 等
+- 描述做了什么，而不是为什么做
+- 不要以句号结尾
+- 如果需要，可以添加详细描述（空行后）
+
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+
+直接输出提交消息，无需其他内容。"#.to_string(),
             user_prompt_template: r#"请为以下代码变更生成提交消息：
 
 变更的文件：
@@ -187,7 +298,7 @@ impl PromptManager {
 {diff}
 
 请生成一个简洁明了的提交消息。"#.to_string(),
-            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
+            language: "FOLLOW_GLOBAL".to_string(),
             max_tokens: Some(200),
             temperature: Some(0.3),
             enable_emoji: Some(false),
@@ -198,22 +309,73 @@ impl PromptManager {
             is_custom: Some(false),
             created_at: Some(chrono::Utc::now().to_rfc3339()),
             updated_at: Some(chrono::Utc::now().to_rfc3339()),
-        });
+            version: Some(self.current_version.clone()),
+            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
+                id: "standard".to_string(),
+                name: "标准提交消息".to_string(),
+                description: "生成符合常规规范的提交消息".to_string(),
+                system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰、符合规范的提交消息。
 
-        // 简洁提交消息模板
-        self.add_template(PromptTemplate {
+核心要求：
+- 第一行为简短摘要（50字符以内）
+- 使用动词开头，如 Add, Fix, Update, Remove 等
+- 描述做了什么，而不是为什么做
+- 不要以句号结尾
+- 如果需要，可以添加详细描述（空行后）
+
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+
+直接输出提交消息，无需其他内容。"#.to_string(),
+                user_prompt_template: r#"请为以下代码变更生成提交消息：
+
+变更的文件：
+{staged_files}
+
+代码差异：
+{diff}
+
+请生成一个简洁明了的提交消息。"#.to_string(),
+                language: "FOLLOW_GLOBAL".to_string(),
+                max_tokens: Some(200),
+                temperature: Some(0.3),
+                enable_emoji: Some(false),
+                enable_body: Some(true),
+                enable_merge_commit: Some(false),
+                use_recent_commits: Some(false),
+                commit_types: Some(default_commit_types.clone()),
+                is_custom: Some(false),
+                created_at: Some(chrono::Utc::now().to_rfc3339()),
+                updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                version: None,
+                template_hash: None,
+            })),
+        };
+        self.add_template(standard_template);
+
+        // 简洁提交消息模板（优化版）
+        let chinese_template = PromptTemplate {
             id: "chinese".to_string(),
             name: "简洁提交消息".to_string(),
             description: "生成简洁明了的提交消息".to_string(),
             system_prompt:
-                r#"你是一个专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的提交消息。
+                r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的提交消息。
 
-规则：
-1. 第一行为简短摘要（25字以内）
-2. 使用动词开头，如 添加, 修复, 更新, 删除, 优化, 重构 等
-3. 描述做了什么，而不是为什么做
-4. 语言简洁明了，避免冗余
-5. 表达自然流畅"#
+核心要求：
+- 第一行为简短摘要（25字以内）
+- 使用动词开头，如 添加, 修复, 更新, 删除, 优化, 重构 等
+- 描述做了什么，而不是为什么做
+- 语言简洁明了，避免冗余
+- 表达自然流畅
+
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+
+直接输出提交消息，无需其他内容。"#
                     .to_string(),
             user_prompt_template: r#"请为以下代码变更生成中文提交消息：
 
@@ -225,7 +387,7 @@ impl PromptManager {
 
 请生成一个简洁明了的中文提交消息。"#
                 .to_string(),
-            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
+            language: "FOLLOW_GLOBAL".to_string(),
             max_tokens: Some(150),
             temperature: Some(0.3),
             enable_emoji: Some(false),
@@ -236,27 +398,77 @@ impl PromptManager {
             is_custom: Some(false),
             created_at: Some(chrono::Utc::now().to_rfc3339()),
             updated_at: Some(chrono::Utc::now().to_rfc3339()),
-        });
+            version: Some(self.current_version.clone()),
+            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
+                id: "chinese".to_string(),
+                name: "简洁提交消息".to_string(),
+                description: "生成简洁明了的提交消息".to_string(),
+                system_prompt:
+                    r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的提交消息。
 
-        // 详细提交消息模板
-        self.add_template(PromptTemplate {
+核心要求：
+- 第一行为简短摘要（25字以内）
+- 使用动词开头，如 添加, 修复, 更新, 删除, 优化, 重构 等
+- 描述做了什么，而不是为什么做
+- 语言简洁明了，避免冗余
+- 表达自然流畅
+
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+
+直接输出提交消息，无需其他内容。"#
+                        .to_string(),
+                user_prompt_template: r#"请为以下代码变更生成中文提交消息：
+
+变更的文件：
+{staged_files}
+
+代码差异：
+{diff}
+
+请生成一个简洁明了的中文提交消息。"#
+                    .to_string(),
+                language: "FOLLOW_GLOBAL".to_string(),
+                max_tokens: Some(150),
+                temperature: Some(0.3),
+                enable_emoji: Some(false),
+                enable_body: Some(true),
+                enable_merge_commit: Some(false),
+                use_recent_commits: Some(false),
+                commit_types: Some(default_commit_types.clone()),
+                is_custom: Some(false),
+                created_at: Some(chrono::Utc::now().to_rfc3339()),
+                updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                version: None,
+                template_hash: None,
+            })),
+        };
+        self.add_template(chinese_template);
+
+        // 详细提交消息模板（优化版）
+        let detailed_template = PromptTemplate {
             id: "detailed".to_string(),
             name: "详细提交消息".to_string(),
             description: "生成包含详细描述的提交消息".to_string(),
-            system_prompt: r#"你是一个专业的Git提交消息生成助手。请根据代码变更生成详细的提交消息，包括摘要和详细描述。
+            system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成详细的提交消息，包括摘要和详细描述。
 
-格式：
-第一行：简短摘要（50字符以内）
-空行
-详细描述：
-- 解释做了什么变更
-- 说明变更的原因
+核心要求：
+- 第一行：简短摘要（50字符以内）
+- 空行后添加详细描述
+- 解释做了什么变更和变更原因
 - 如果有破坏性变更，请说明
+- 摘要使用动词开头
+- 详细描述使用项目符号
+- 保持专业和清晰
 
-规则：
-1. 摘要使用动词开头
-2. 详细描述使用项目符号
-3. 保持专业和清晰"#.to_string(),
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+
+直接输出提交消息，无需其他内容。"#.to_string(),
             user_prompt_template: r#"请为以下代码变更生成详细的提交消息：
 
 分支：{branch_name}
@@ -267,7 +479,7 @@ impl PromptManager {
 {diff}
 
 请生成包含摘要和详细描述的提交消息。"#.to_string(),
-            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
+            language: "FOLLOW_GLOBAL".to_string(),
             max_tokens: Some(400),
             temperature: Some(0.4),
             enable_emoji: Some(false),
@@ -278,32 +490,75 @@ impl PromptManager {
             is_custom: Some(false),
             created_at: Some(chrono::Utc::now().to_rfc3339()),
             updated_at: Some(chrono::Utc::now().to_rfc3339()),
-        });
+            version: Some(self.current_version.clone()),
+            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
+                id: "detailed".to_string(),
+                name: "详细提交消息".to_string(),
+                description: "生成包含详细描述的提交消息".to_string(),
+                system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成详细的提交消息，包括摘要和详细描述。
 
-        // 约定式提交模板
-        self.add_template(PromptTemplate {
+核心要求：
+- 第一行：简短摘要（50字符以内）
+- 空行后添加详细描述
+- 解释做了什么变更和变更原因
+- 如果有破坏性变更，请说明
+- 摘要使用动词开头
+- 详细描述使用项目符号
+- 保持专业和清晰
+
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+
+直接输出提交消息，无需其他内容。"#.to_string(),
+                user_prompt_template: r#"请为以下代码变更生成详细的提交消息：
+
+分支：{branch_name}
+变更的文件：
+{staged_files}
+
+代码差异：
+{diff}
+
+请生成包含摘要和详细描述的提交消息。"#.to_string(),
+                language: "FOLLOW_GLOBAL".to_string(),
+                max_tokens: Some(400),
+                temperature: Some(0.4),
+                enable_emoji: Some(false),
+                enable_body: Some(true),
+                enable_merge_commit: Some(false),
+                use_recent_commits: Some(true),
+                commit_types: Some(default_commit_types.clone()),
+                is_custom: Some(false),
+                created_at: Some(chrono::Utc::now().to_rfc3339()),
+                updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                version: None,
+                template_hash: None,
+            })),
+        };
+        self.add_template(detailed_template);
+
+        // 约定式提交模板（优化版）
+        let conventional_template = PromptTemplate {
             id: "conventional".to_string(),
             name: "约定式提交".to_string(),
             description: "生成符合约定式提交规范的消息".to_string(),
-            system_prompt:
-                r#"你是一个专业的Git提交消息生成助手。请根据代码变更生成符合约定式提交规范的消息。
+            system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成符合约定式提交规范的消息。
 
-格式：<type>[optional scope]: <description>
+核心要求：
+- 格式：<type>[optional scope]: <description>
+- 类型：feat(新功能), fix(修复bug), docs(文档变更), style(代码格式变更), refactor(重构), test(测试相关), chore(构建过程或辅助工具的变动)
+- 描述使用小写开头
+- 不要以句号结尾
+- 描述要简洁明了
 
-类型（type）：
-- feat: 新功能
-- fix: 修复bug
-- docs: 文档变更
-- style: 代码格式变更
-- refactor: 重构
-- test: 测试相关
-- chore: 构建过程或辅助工具的变动
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
 
-规则：
-1. 描述使用小写开头
-2. 不要以句号结尾
-3. 描述要简洁明了"#
-                    .to_string(),
+直接输出提交消息，无需其他内容。"#.to_string(),
             user_prompt_template: r#"请为以下代码变更生成约定式提交消息：
 
 变更的文件：
@@ -312,9 +567,8 @@ impl PromptManager {
 代码差异：
 {diff}
 
-请分析变更类型并生成符合约定式提交规范的消息。"#
-                .to_string(),
-            language: "FOLLOW_GLOBAL".to_string(), // 跟随全局语言设置
+请分析变更类型并生成符合约定式提交规范的消息。"#.to_string(),
+            language: "FOLLOW_GLOBAL".to_string(),
             max_tokens: Some(150),
             temperature: Some(0.2),
             enable_emoji: Some(true),
@@ -325,7 +579,51 @@ impl PromptManager {
             is_custom: Some(false),
             created_at: Some(chrono::Utc::now().to_rfc3339()),
             updated_at: Some(chrono::Utc::now().to_rfc3339()),
-        });
+            version: Some(self.current_version.clone()),
+            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
+                id: "conventional".to_string(),
+                name: "约定式提交".to_string(),
+                description: "生成符合约定式提交规范的消息".to_string(),
+                system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成符合约定式提交规范的消息。
+
+核心要求：
+- 格式：<type>[optional scope]: <description>
+- 类型：feat(新功能), fix(修复bug), docs(文档变更), style(代码格式变更), refactor(重构), test(测试相关), chore(构建过程或辅助工具的变动)
+- 描述使用小写开头
+- 不要以句号结尾
+- 描述要简洁明了
+
+严格禁止：
+- 不要包含任何解释、问候或额外文本
+- 不要添加格式说明或元数据
+- 不要在输出中包含三重反引号或标题格式
+
+直接输出提交消息，无需其他内容。"#.to_string(),
+                user_prompt_template: r#"请为以下代码变更生成约定式提交消息：
+
+变更的文件：
+{staged_files}
+
+代码差异：
+{diff}
+
+请分析变更类型并生成符合约定式提交规范的消息。"#.to_string(),
+                language: "FOLLOW_GLOBAL".to_string(),
+                max_tokens: Some(150),
+                temperature: Some(0.2),
+                enable_emoji: Some(true),
+                enable_body: Some(false),
+                enable_merge_commit: Some(false),
+                use_recent_commits: Some(false),
+                commit_types: Some(default_commit_types.clone()),
+                is_custom: Some(false),
+                created_at: Some(chrono::Utc::now().to_rfc3339()),
+                updated_at: Some(chrono::Utc::now().to_rfc3339()),
+                version: None,
+                template_hash: None,
+            })),
+        };
+        self.add_template(conventional_template);
     }
 
     pub fn add_template(&mut self, template: PromptTemplate) {
@@ -450,6 +748,23 @@ impl PromptManager {
         }
 
         self.templates.remove(template_id);
+        self.save_to_config()?;
+        Ok(())
+    }
+
+    /// 重新加载默认模板
+    /// 作者：Evilek
+    /// 编写日期：2025-01-29
+    pub fn reload_default_templates(&mut self) -> Result<()> {
+        // 清空现有模板
+        self.templates.clear();
+
+        // 重新加载默认模板
+        self.load_default_templates();
+
+        // 保存到配置文件
+        self.save_to_config()?;
+
         Ok(())
     }
 

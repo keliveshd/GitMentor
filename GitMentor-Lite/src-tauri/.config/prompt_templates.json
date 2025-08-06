@@ -1,0 +1,486 @@
+{
+  "version": "1.0.0",
+  "last_updated": "2025-08-06T02:43:40.537060600+00:00",
+  "templates": {
+    "standard": {
+      "id": "standard",
+      "name": "标准提交消息",
+      "description": "生成符合常规规范的提交消息",
+      "system_prompt": "你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰、符合规范的提交消息。\n\n核心要求：\n- 第一行为简短摘要（50字符以内）\n- 使用动词开头，如 Add, Fix, Update, Remove 等\n- 描述做了什么，而不是为什么做\n- 不要以句号结尾\n- 如果需要，可以添加详细描述（空行后）\n\n严格禁止：\n- 不要包含任何解释、问候或额外文本\n- 不要添加格式说明或元数据\n- 不要在输出中包含三重反引号或标题格式\n\n直接输出提交消息，无需其他内容。",
+      "user_prompt_template": "请为以下代码变更生成提交消息：\n\n变更的文件：\n{staged_files}\n\n代码差异：\n{diff}\n\n请生成一个简洁明了的提交消息。",
+      "language": "FOLLOW_GLOBAL",
+      "max_tokens": 200,
+      "temperature": 0.3,
+      "enable_emoji": false,
+      "enable_body": true,
+      "enable_merge_commit": false,
+      "use_recent_commits": false,
+      "commit_types": [
+        {
+          "name": "feat",
+          "emoji": "✨",
+          "description": "新功能",
+          "example_scopes": [
+            "user",
+            "payment",
+            "auth"
+          ]
+        },
+        {
+          "name": "fix",
+          "emoji": "🐛",
+          "description": "修复bug",
+          "example_scopes": [
+            "auth",
+            "data",
+            "ui"
+          ]
+        },
+        {
+          "name": "docs",
+          "emoji": "📝",
+          "description": "文档变更",
+          "example_scopes": [
+            "README",
+            "API",
+            "guide"
+          ]
+        },
+        {
+          "name": "style",
+          "emoji": "💄",
+          "description": "代码格式变更",
+          "example_scopes": [
+            "formatting",
+            "lint"
+          ]
+        },
+        {
+          "name": "refactor",
+          "emoji": "♻️",
+          "description": "代码重构",
+          "example_scopes": [
+            "utils",
+            "helpers",
+            "core"
+          ]
+        },
+        {
+          "name": "perf",
+          "emoji": "⚡️",
+          "description": "性能优化",
+          "example_scopes": [
+            "query",
+            "cache",
+            "render"
+          ]
+        },
+        {
+          "name": "test",
+          "emoji": "✅",
+          "description": "测试相关",
+          "example_scopes": [
+            "unit",
+            "e2e",
+            "integration"
+          ]
+        },
+        {
+          "name": "build",
+          "emoji": "📦️",
+          "description": "构建系统",
+          "example_scopes": [
+            "webpack",
+            "npm",
+            "docker"
+          ]
+        },
+        {
+          "name": "ci",
+          "emoji": "👷",
+          "description": "CI配置",
+          "example_scopes": [
+            "travis",
+            "jenkins",
+            "github"
+          ]
+        },
+        {
+          "name": "chore",
+          "emoji": "🔧",
+          "description": "其他变更",
+          "example_scopes": [
+            "scripts",
+            "config",
+            "deps"
+          ]
+        }
+      ],
+      "is_custom": false,
+      "created_at": "2025-08-06T02:43:40.536189+00:00",
+      "updated_at": "2025-08-06T02:43:40.536202800+00:00",
+      "version": "1.0.0",
+      "template_hash": "3c85eebfda13fe98b9bdecb7ebb167414791a381c5894100a4ce71c184d36945"
+    },
+    "chinese": {
+      "id": "chinese",
+      "name": "简洁提交消息",
+      "description": "生成简洁明了的提交消息",
+      "system_prompt": "你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的提交消息。\n\n核心要求：\n- 第一行为简短摘要（25字以内）\n- 使用动词开头，如 添加, 修复, 更新, 删除, 优化, 重构 等\n- 描述做了什么，而不是为什么做\n- 语言简洁明了，避免冗余\n- 表达自然流畅\n\n严格禁止：\n- 不要包含任何解释、问候或额外文本\n- 不要添加格式说明或元数据\n- 不要在输出中包含三重反引号或标题格式\n\n直接输出提交消息，无需其他内容。",
+      "user_prompt_template": "请为以下代码变更生成中文提交消息：\n\n变更的文件：\n{staged_files}\n\n代码差异：\n{diff}\n\n请生成一个简洁明了的中文提交消息。",
+      "language": "FOLLOW_GLOBAL",
+      "max_tokens": 150,
+      "temperature": 0.3,
+      "enable_emoji": false,
+      "enable_body": true,
+      "enable_merge_commit": false,
+      "use_recent_commits": false,
+      "commit_types": [
+        {
+          "name": "feat",
+          "emoji": "✨",
+          "description": "新功能",
+          "example_scopes": [
+            "user",
+            "payment",
+            "auth"
+          ]
+        },
+        {
+          "name": "fix",
+          "emoji": "🐛",
+          "description": "修复bug",
+          "example_scopes": [
+            "auth",
+            "data",
+            "ui"
+          ]
+        },
+        {
+          "name": "docs",
+          "emoji": "📝",
+          "description": "文档变更",
+          "example_scopes": [
+            "README",
+            "API",
+            "guide"
+          ]
+        },
+        {
+          "name": "style",
+          "emoji": "💄",
+          "description": "代码格式变更",
+          "example_scopes": [
+            "formatting",
+            "lint"
+          ]
+        },
+        {
+          "name": "refactor",
+          "emoji": "♻️",
+          "description": "代码重构",
+          "example_scopes": [
+            "utils",
+            "helpers",
+            "core"
+          ]
+        },
+        {
+          "name": "perf",
+          "emoji": "⚡️",
+          "description": "性能优化",
+          "example_scopes": [
+            "query",
+            "cache",
+            "render"
+          ]
+        },
+        {
+          "name": "test",
+          "emoji": "✅",
+          "description": "测试相关",
+          "example_scopes": [
+            "unit",
+            "e2e",
+            "integration"
+          ]
+        },
+        {
+          "name": "build",
+          "emoji": "📦️",
+          "description": "构建系统",
+          "example_scopes": [
+            "webpack",
+            "npm",
+            "docker"
+          ]
+        },
+        {
+          "name": "ci",
+          "emoji": "👷",
+          "description": "CI配置",
+          "example_scopes": [
+            "travis",
+            "jenkins",
+            "github"
+          ]
+        },
+        {
+          "name": "chore",
+          "emoji": "🔧",
+          "description": "其他变更",
+          "example_scopes": [
+            "scripts",
+            "config",
+            "deps"
+          ]
+        }
+      ],
+      "is_custom": false,
+      "created_at": "2025-08-06T02:43:40.536558600+00:00",
+      "updated_at": "2025-08-06T02:43:40.536565200+00:00",
+      "version": "1.0.0",
+      "template_hash": "0ff01cc34fe7f27f5e332012b30bb6410baabec2cb2f3782805c6a0e586eaade"
+    },
+    "detailed": {
+      "id": "detailed",
+      "name": "详细提交消息",
+      "description": "生成包含详细描述的提交消息",
+      "system_prompt": "你是专业的Git提交消息生成助手。请根据代码变更生成详细的提交消息，包括摘要和详细描述。\n\n核心要求：\n- 第一行：简短摘要（50字符以内）\n- 空行后添加详细描述\n- 解释做了什么变更和变更原因\n- 如果有破坏性变更，请说明\n- 摘要使用动词开头\n- 详细描述使用项目符号\n- 保持专业和清晰\n\n严格禁止：\n- 不要包含任何解释、问候或额外文本\n- 不要添加格式说明或元数据\n- 不要在输出中包含三重反引号或标题格式\n\n直接输出提交消息，无需其他内容。",
+      "user_prompt_template": "请为以下代码变更生成详细的提交消息：\n\n分支：{branch_name}\n变更的文件：\n{staged_files}\n\n代码差异：\n{diff}\n\n请生成包含摘要和详细描述的提交消息。",
+      "language": "FOLLOW_GLOBAL",
+      "max_tokens": 400,
+      "temperature": 0.4,
+      "enable_emoji": false,
+      "enable_body": true,
+      "enable_merge_commit": false,
+      "use_recent_commits": true,
+      "commit_types": [
+        {
+          "name": "feat",
+          "emoji": "✨",
+          "description": "新功能",
+          "example_scopes": [
+            "user",
+            "payment",
+            "auth"
+          ]
+        },
+        {
+          "name": "fix",
+          "emoji": "🐛",
+          "description": "修复bug",
+          "example_scopes": [
+            "auth",
+            "data",
+            "ui"
+          ]
+        },
+        {
+          "name": "docs",
+          "emoji": "📝",
+          "description": "文档变更",
+          "example_scopes": [
+            "README",
+            "API",
+            "guide"
+          ]
+        },
+        {
+          "name": "style",
+          "emoji": "💄",
+          "description": "代码格式变更",
+          "example_scopes": [
+            "formatting",
+            "lint"
+          ]
+        },
+        {
+          "name": "refactor",
+          "emoji": "♻️",
+          "description": "代码重构",
+          "example_scopes": [
+            "utils",
+            "helpers",
+            "core"
+          ]
+        },
+        {
+          "name": "perf",
+          "emoji": "⚡️",
+          "description": "性能优化",
+          "example_scopes": [
+            "query",
+            "cache",
+            "render"
+          ]
+        },
+        {
+          "name": "test",
+          "emoji": "✅",
+          "description": "测试相关",
+          "example_scopes": [
+            "unit",
+            "e2e",
+            "integration"
+          ]
+        },
+        {
+          "name": "build",
+          "emoji": "📦️",
+          "description": "构建系统",
+          "example_scopes": [
+            "webpack",
+            "npm",
+            "docker"
+          ]
+        },
+        {
+          "name": "ci",
+          "emoji": "👷",
+          "description": "CI配置",
+          "example_scopes": [
+            "travis",
+            "jenkins",
+            "github"
+          ]
+        },
+        {
+          "name": "chore",
+          "emoji": "🔧",
+          "description": "其他变更",
+          "example_scopes": [
+            "scripts",
+            "config",
+            "deps"
+          ]
+        }
+      ],
+      "is_custom": false,
+      "created_at": "2025-08-06T02:43:40.536684800+00:00",
+      "updated_at": "2025-08-06T02:43:40.536686800+00:00",
+      "version": "1.0.0",
+      "template_hash": "02d65f7bf40c7614007a7ca4a2dce496b9e9999580b5d7749f509bece52bc5bb"
+    },
+    "conventional": {
+      "id": "conventional",
+      "name": "约定式提交",
+      "description": "生成符合约定式提交规范的消息",
+      "system_prompt": "你是专业的Git提交消息生成助手。请根据代码变更生成符合约定式提交规范的消息。\n\n核心要求：\n- 格式：<type>[optional scope]: <description>\n- 类型：feat(新功能), fix(修复bug), docs(文档变更), style(代码格式变更), refactor(重构), test(测试相关), chore(构建过程或辅助工具的变动)\n- 描述使用小写开头\n- 不要以句号结尾\n- 描述要简洁明了\n\n严格禁止：\n- 不要包含任何解释、问候或额外文本\n- 不要添加格式说明或元数据\n- 不要在输出中包含三重反引号或标题格式\n\n直接输出提交消息，无需其他内容。",
+      "user_prompt_template": "请为以下代码变更生成约定式提交消息：\n\n变更的文件：\n{staged_files}\n\n代码差异：\n{diff}\n\n请分析变更类型并生成符合约定式提交规范的消息。",
+      "language": "FOLLOW_GLOBAL",
+      "max_tokens": 150,
+      "temperature": 0.2,
+      "enable_emoji": true,
+      "enable_body": false,
+      "enable_merge_commit": false,
+      "use_recent_commits": false,
+      "commit_types": [
+        {
+          "name": "feat",
+          "emoji": "✨",
+          "description": "新功能",
+          "example_scopes": [
+            "user",
+            "payment",
+            "auth"
+          ]
+        },
+        {
+          "name": "fix",
+          "emoji": "🐛",
+          "description": "修复bug",
+          "example_scopes": [
+            "auth",
+            "data",
+            "ui"
+          ]
+        },
+        {
+          "name": "docs",
+          "emoji": "📝",
+          "description": "文档变更",
+          "example_scopes": [
+            "README",
+            "API",
+            "guide"
+          ]
+        },
+        {
+          "name": "style",
+          "emoji": "💄",
+          "description": "代码格式变更",
+          "example_scopes": [
+            "formatting",
+            "lint"
+          ]
+        },
+        {
+          "name": "refactor",
+          "emoji": "♻️",
+          "description": "代码重构",
+          "example_scopes": [
+            "utils",
+            "helpers",
+            "core"
+          ]
+        },
+        {
+          "name": "perf",
+          "emoji": "⚡️",
+          "description": "性能优化",
+          "example_scopes": [
+            "query",
+            "cache",
+            "render"
+          ]
+        },
+        {
+          "name": "test",
+          "emoji": "✅",
+          "description": "测试相关",
+          "example_scopes": [
+            "unit",
+            "e2e",
+            "integration"
+          ]
+        },
+        {
+          "name": "build",
+          "emoji": "📦️",
+          "description": "构建系统",
+          "example_scopes": [
+            "webpack",
+            "npm",
+            "docker"
+          ]
+        },
+        {
+          "name": "ci",
+          "emoji": "👷",
+          "description": "CI配置",
+          "example_scopes": [
+            "travis",
+            "jenkins",
+            "github"
+          ]
+        },
+        {
+          "name": "chore",
+          "emoji": "🔧",
+          "description": "其他变更",
+          "example_scopes": [
+            "scripts",
+            "config",
+            "deps"
+          ]
+        }
+      ],
+      "is_custom": false,
+      "created_at": "2025-08-06T02:43:40.536860800+00:00",
+      "updated_at": "2025-08-06T02:43:40.536863400+00:00",
+      "version": "1.0.0",
+      "template_hash": "7eb0f0c5af44325dd7c6379a27899358f84fa7a4caafafff2d539d5a13e04a86"
+    }
+  }
+}
