@@ -16,10 +16,7 @@
             <span class="progress-fraction">{{ currentStep }}/{{ totalSteps }}</span>
           </div>
           <div class="progress-bar">
-            <div 
-              class="progress-fill" 
-              :style="{ width: overallProgressPercent + '%' }"
-            ></div>
+            <div class="progress-fill" :style="{ width: overallProgressPercent + '%' }"></div>
           </div>
         </div>
 
@@ -32,11 +29,7 @@
           <div class="status-text">{{ currentStatus }}</div>
         </div>
 
-        <!-- 当前文件信息 -->
-        <div v-if="currentFile" class="current-file">
-          <div class="file-label">当前分析文件:</div>
-          <div class="file-path">{{ currentFile }}</div>
-        </div>
+
 
         <!-- 已完成的文件摘要 -->
         <div v-if="fileSummaries.length > 0" class="completed-files">
@@ -47,11 +40,7 @@
             </button>
           </div>
           <div v-if="showSummaries" class="summaries-list">
-            <div 
-              v-for="summary in fileSummaries" 
-              :key="summary.file_path"
-              class="summary-item"
-            >
+            <div v-for="summary in fileSummaries" :key="summary.file_path" class="summary-item">
               <div class="summary-file">{{ getFileName(summary.file_path) }}</div>
               <div class="summary-text">{{ summary.summary }}</div>
               <div class="summary-meta">{{ summary.tokens_used }} tokens</div>
@@ -61,12 +50,7 @@
 
         <!-- 操作按钮 -->
         <div class="progress-actions">
-          <button 
-            v-if="canCancel" 
-            @click="$emit('cancel')" 
-            class="cancel-btn"
-            :disabled="!isProcessing"
-          >
+          <button v-if="canCancel" @click="$emit('cancel')" class="cancel-btn" :disabled="!isProcessing">
             取消
           </button>
         </div>
@@ -105,7 +89,7 @@ const props = withDefaults(defineProps<Props>(), {
   canCancel: true
 })
 
-const emit = defineEmits<{
+defineEmits<{
   cancel: []
 }>()
 
@@ -255,26 +239,7 @@ const getFileName = (filePath: string) => {
   font-weight: 500;
 }
 
-.current-file {
-  margin-bottom: 16px;
-  padding: 10px;
-  background: #eff6ff;
-  border-radius: 6px;
-  border-left: 3px solid #3b82f6;
-}
 
-.file-label {
-  font-size: 12px;
-  color: #6b7280;
-  margin-bottom: 4px;
-}
-
-.file-path {
-  font-size: 13px;
-  color: #1f2937;
-  font-family: monospace;
-  word-break: break-all;
-}
 
 .completed-files {
   margin-bottom: 20px;
@@ -373,7 +338,12 @@ const getFileName = (filePath: string) => {
 }
 
 @keyframes spin {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }
 </style>

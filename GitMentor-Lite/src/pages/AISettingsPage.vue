@@ -42,6 +42,20 @@
                   <option value="English">English</option>
                   <option value="Japanese">日本語</option>
                   <option value="Korean">한국어</option>
+                  <option value="French">Français</option>
+                  <option value="German">Deutsch</option>
+                  <option value="Spanish">Español</option>
+                  <option value="Russian">Русский</option>
+                  <option value="Portuguese">Português</option>
+                  <option value="Italian">Italiano</option>
+                  <option value="Dutch">Nederlands</option>
+                  <option value="Swedish">Svenska</option>
+                  <option value="Czech">Čeština</option>
+                  <option value="Polish">Polski</option>
+                  <option value="Turkish">Türkçe</option>
+                  <option value="Vietnamese">Tiếng Việt</option>
+                  <option value="Thai">ไทย</option>
+                  <option value="Indonesian">Bahasa Indonesia</option>
                 </select>
               </div>
             </div>

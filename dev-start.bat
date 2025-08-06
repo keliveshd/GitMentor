@@ -61,6 +61,9 @@ echo [提示] 应用将自动打开，支持热重载
 echo [提示] 按 Ctrl+C 停止开发服务器
 echo.
 
+REM 设置环境变量禁用libpng警告
+set LIBPNG_NO_WARN=1
+
 REM 启动开发模式
 npm run tauri:dev
 

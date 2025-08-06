@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{State, Emitter};
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
@@ -314,6 +314,16 @@ pub async fn generate_commit_with_template(
         "German" => "de",
         "Spanish" => "es",
         "Russian" => "ru",
+        "Portuguese" => "pt",
+        "Italian" => "it",
+        "Dutch" => "nl",
+        "Swedish" => "sv",
+        "Czech" => "cs",
+        "Polish" => "pl",
+        "Turkish" => "tr",
+        "Vietnamese" => "vi",
+        "Thai" => "th",
+        "Indonesian" => "id",
         _ => "en", // 默认英文
     };
 
@@ -326,15 +336,11 @@ pub async fn generate_commit_with_template(
         language: language.to_string(), // 使用配置中的语言设置
     };
 
-    println!("🔍 [AI Commands] 使用模板生成提交消息，模板ID: {}, 仓库路径: {:?}", template_id, repository_path);
-
     match manager.generate_commit_with_template(&template_id, context, repository_path).await {
         Ok(response) => {
-            println!("✅ [AI Commands] 提交消息生成成功");
             Ok(response.content)
         },
         Err(e) => {
-            println!("❌ [AI Commands] 提交消息生成失败: {}", e);
             Err(format!("Failed to generate commit message: {}", e))
         },
     }
@@ -472,6 +478,7 @@ pub async fn get_repository_paths(
 /// 检查是否应该使用分层提交
 /// 作者：Evilek
 /// 编写日期：2025-08-04
+/// 更新日期：2025-08-05
 #[tauri::command]
 pub async fn should_use_layered_commit(
     ai_manager: State<'_, Mutex<AIManager>>,
@@ -480,14 +487,25 @@ pub async fn should_use_layered_commit(
     diff: String,
     staged_files: Vec<String>,
 ) -> Result<bool, String> {
-    // 暂时返回 false，因为分层提交功能还在开发中
-    // TODO: 实现分层提交检查逻辑
-    Ok(false)
+    use crate::core::layered_commit_manager::LayeredCommitManager;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    // 创建LayeredCommitManager实例
+    let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
+    let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
+    let manager = LayeredCommitManager::new(ai_manager_arc, git_engine_arc);
+
+    // 调用真正的分层提交检测逻辑
+    manager.should_use_layered_commit(&template_id, &diff, &staged_files)
+        .await
+        .map_err(|e| format!("检查分层提交失败: {}", e))
 }
 
 /// 执行分层提交
 /// 作者：Evilek
 /// 编写日期：2025-08-04
+/// 更新日期：2025-08-05
 #[tauri::command]
 pub async fn execute_layered_commit(
     ai_manager: State<'_, Mutex<AIManager>>,
@@ -497,9 +515,53 @@ pub async fn execute_layered_commit(
     staged_files: Vec<String>,
     branch_name: Option<String>,
 ) -> Result<crate::core::layered_commit_manager::LayeredCommitResult, String> {
-    // 暂时返回错误，因为分层提交功能还在开发中
-    // TODO: 实现分层提交执行逻辑
-    Err("分层提交功能正在开发中".to_string())
+    use crate::core::layered_commit_manager::LayeredCommitManager;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+
+
+    // 获取当前仓库路径
+    let repository_path = {
+        let engine = git_engine.lock().await;
+        engine.get_repository_path()
+    };
+
+    // 创建LayeredCommitManager实例
+    let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
+    let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
+    let manager = LayeredCommitManager::new(ai_manager_arc, git_engine_arc);
+
+    // 创建进度回调函数，用于发送进度事件到前端
+    let app_handle_clone = app_handle.clone();
+    let progress_callback = move |progress: crate::core::layered_commit_manager::LayeredCommitProgress| {
+        let progress_json = serde_json::json!({
+            "session_id": progress.session_id,
+            "current_step": progress.current_step,
+            "total_steps": progress.total_steps,
+            "status": progress.status,
+            "current_file": progress.current_file,
+            "file_summaries": progress.file_summaries
+        });
+
+        let _ = app_handle_clone.emit("layered-commit-progress", &progress_json);
+    };
+
+    // 调用真正的分层提交逻辑
+    match manager.execute_layered_commit(
+        &template_id,
+        staged_files,
+        branch_name,
+        repository_path,
+        progress_callback,
+    ).await {
+        Ok(result) => {
+            Ok(result)
+        },
+        Err(e) => {
+            Err(format!("分层提交执行失败: {}", e))
+        }
+    }
 }
 
 

@@ -202,7 +202,7 @@ pub async fn get_file_diff(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<FileDiffResult, String> {
     let engine = git_engine.lock().await;
-    engine.get_file_diff(&request)
+    engine.get_file_diff_detailed(&request)
         .map_err(|e| format!("Failed to get file diff: {}", e))
 }
 

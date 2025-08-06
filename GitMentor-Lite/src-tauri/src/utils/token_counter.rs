@@ -36,6 +36,7 @@ impl TokenCounter {
     }
 
     /// 估算单个文件diff的token数量
+    #[allow(dead_code)]
     pub fn estimate_file_diff_tokens(file_path: &str, diff_content: &str) -> u32 {
         let path_tokens = Self::estimate_tokens(file_path);
         let diff_tokens = Self::estimate_tokens(diff_content);
@@ -62,6 +63,7 @@ impl TokenCounter {
     }
 
     /// 将大的diff内容分割为多个文件块
+    #[allow(dead_code)]
     pub fn split_files_by_token_limit(
         files_with_diffs: Vec<(String, String)>,
         max_tokens_per_chunk: u32,

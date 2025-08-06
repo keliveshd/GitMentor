@@ -91,8 +91,23 @@
                   </span>
                 </div>
 
-                <div v-if="record.response" class="step-content">
-                  <div class="response-content">{{ record.response.content }}</div>
+                <!-- 用户提示词显示 -->
+                <div class="step-content">
+                  <!-- 用户提示词 -->
+                  <div v-if="record.request.messages && record.request.messages.length > 0" class="step-messages">
+                    <h6 style="margin: 10px 0 5px 0; color: #333; font-size: 13px;">💬 对话内容：</h6>
+                    <div v-for="(message, index) in record.request.messages" :key="index" class="step-message"
+                      :class="message.role">
+                      <div class="message-role">{{ message.role === 'system' ? '🤖 系统提示' : '👤 用户提示' }}</div>
+                      <div class="message-content">{{ message.content }}</div>
+                    </div>
+                  </div>
+
+                  <!-- AI响应 -->
+                  <div v-if="record.response" class="step-response">
+                    <h6 style="margin: 10px 0 5px 0; color: #333; font-size: 13px;">🤖 AI响应：</h6>
+                    <div class="response-content">{{ record.response.content }}</div>
+                  </div>
                 </div>
 
                 <div v-if="record.error_message" class="step-error">
@@ -142,12 +157,24 @@
                     <span>{{ conversation.request.max_tokens }}</span>
                   </div>
                 </div>
+                <!-- 用户提示词和系统提示 -->
                 <div class="messages-section">
-                  <div v-for="(message, index) in conversation.request.messages" :key="index" class="message-item"
-                    :class="message.role">
-                    <div class="message-role">{{ message.role === 'system' ? '🤖 系统' : '👤 用户' }}</div>
-                    <div class="message-content">{{ message.content }}</div>
-                  </div>
+                  <h5 style="margin: 15px 0 10px 0; color: #333; font-size: 14px; font-weight: 600;">� 对话内容</h5>
+
+                  <template v-if="conversation.request.messages && conversation.request.messages.length > 0">
+                    <div v-for="(message, index) in conversation.request.messages" :key="index" class="message-item"
+                      :class="message.role">
+                      <div class="message-role">{{ message.role === 'system' ? '🤖 系统提示' : '👤 用户提示' }}</div>
+                      <div class="message-content">{{ message.content }}</div>
+                    </div>
+                  </template>
+
+                  <template v-else>
+                    <div class="no-messages"
+                      style="padding: 15px; background: #f8f9fa; border-radius: 6px; color: #666; font-style: italic;">
+                      📝 此对话记录没有保存用户提示词信息
+                    </div>
+                  </template>
                 </div>
               </div>
 
@@ -320,6 +347,10 @@ const getStepIcon = (stepType: string) => {
 
 const refreshHistory = async () => {
   await loadConversationHistory()
+}
+
+const reloadPage = () => {
+  window.location.reload()
 }
 
 const clearHistory = async () => {
@@ -930,6 +961,44 @@ onMounted(async () => {
   white-space: pre-wrap;
   line-height: 1.4;
   font-size: 14px;
+}
+
+/* 分层会话中的消息样式 */
+.step-messages {
+  margin: 10px 0;
+}
+
+.step-message {
+  margin-bottom: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  border-left: 3px solid #ddd;
+  font-size: 13px;
+}
+
+.step-message.system {
+  background: #f8f9fa;
+  border-left-color: #2196f3;
+}
+
+.step-message.user {
+  background: #e8f5e8;
+  border-left-color: #4caf50;
+}
+
+.step-message .message-role {
+  font-weight: 500;
+  margin-bottom: 4px;
+  font-size: 12px;
+}
+
+.step-message .message-content {
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.step-response {
+  margin: 10px 0;
 }
 
 .response-content {

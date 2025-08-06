@@ -51,10 +51,7 @@ impl ConversationLogger {
             if content.trim().is_empty() {
                 Vec::new()
             } else {
-                serde_json::from_str(&content).unwrap_or_else(|e| {
-                    eprintln!("警告: 无法解析对话记录文件: {}", e);
-                    Vec::new()
-                })
+                serde_json::from_str(&content).unwrap_or_else(|_| Vec::new())
             }
         } else {
             Vec::new()
@@ -256,6 +253,7 @@ impl ConversationLogger {
     }
 
     /// 获取最近的N条记录
+    #[allow(dead_code)]
     pub fn get_recent_records(&self, limit: usize) -> Vec<&ConversationRecord> {
         let mut sorted_records: Vec<&ConversationRecord> = self.records.iter().collect();
         sorted_records.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -270,6 +268,7 @@ impl ConversationLogger {
     }
 
     /// 获取统计信息
+    #[allow(dead_code)]
     pub fn get_statistics(&self) -> ConversationStatistics {
         let total_count = self.records.len();
         let success_count = self.records.iter().filter(|r| r.success).count();

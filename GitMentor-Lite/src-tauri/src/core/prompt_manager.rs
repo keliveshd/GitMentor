@@ -353,21 +353,9 @@ impl PromptManager {
         template_id: &str,
         context: &CommitContext,
     ) -> Result<Vec<ChatMessage>> {
-        // 调试信息：显示可用的模板
-        println!("🔍 [PromptManager] 查找模板ID: {}", template_id);
-        println!(
-            "🔍 [PromptManager] 可用模板: {:?}",
-            self.templates.keys().collect::<Vec<_>>()
-        );
-
         let template = self
             .get_template(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", template_id))?;
-
-        println!(
-            "✅ [PromptManager] 找到模板: {} ({})",
-            template.name, template.id
-        );
 
         let mut messages = Vec::new();
 
@@ -510,6 +498,7 @@ impl PromptManager {
     /// 根据配置动态生成系统提示词（参考dish-ai-commit）
     /// 作者：Evilek
     /// 编写日期：2025-01-29
+    /// 更新日期：2025-08-05 (支持跟随全局和完整语言声明)
     pub fn generate_dynamic_system_prompt(
         &self,
         template: &PromptTemplate,
@@ -533,13 +522,86 @@ impl PromptManager {
                 .push_str("\n\n重要：如果有多个文件变更，请为每个主要变更生成单独的提交消息。");
         }
 
-        // 根据语言配置调整
-        if context.language.starts_with("zh") && !template.language.starts_with("zh") {
-            system_prompt.push_str("\n\n重要：请使用中文生成提交消息，确保语言自然流畅。");
-        } else if context.language == "en" && template.language.starts_with("zh") {
-            system_prompt.push_str("\n\nImportant: Please generate commit messages in English, ensure natural and fluent language.");
-        }
+        // 确定实际使用的语言
+        let effective_language = self.resolve_effective_language(template, context);
+
+        // 添加语言声明
+        let language_instruction = self.generate_language_instruction(&effective_language);
+        system_prompt.push_str(&language_instruction);
 
         system_prompt
+    }
+
+    /// 解析实际使用的语言（处理跟随全局逻辑）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-05
+    fn resolve_effective_language(
+        &self,
+        template: &PromptTemplate,
+        context: &CommitContext,
+    ) -> String {
+        if template.language == "FOLLOW_GLOBAL" {
+            // 跟随全局设置，使用context中的语言
+            self.convert_language_code_to_name(&context.language)
+        } else {
+            // 使用模板独立的语言设置
+            template.language.clone()
+        }
+    }
+
+    /// 将语言代码转换为语言名称
+    /// 作者：Evilek
+    /// 编写日期：2025-08-05
+    fn convert_language_code_to_name(&self, language_code: &str) -> String {
+        match language_code {
+            "zh-CN" => "Simplified Chinese".to_string(),
+            "zh-TW" => "Traditional Chinese".to_string(),
+            "en" => "English".to_string(),
+            "ja" => "Japanese".to_string(),
+            "ko" => "Korean".to_string(),
+            "fr" => "French".to_string(),
+            "de" => "German".to_string(),
+            "es" => "Spanish".to_string(),
+            "ru" => "Russian".to_string(),
+            "pt" => "Portuguese".to_string(),
+            "it" => "Italian".to_string(),
+            "nl" => "Dutch".to_string(),
+            "sv" => "Swedish".to_string(),
+            "cs" => "Czech".to_string(),
+            "pl" => "Polish".to_string(),
+            "tr" => "Turkish".to_string(),
+            "vi" => "Vietnamese".to_string(),
+            "th" => "Thai".to_string(),
+            "id" => "Indonesian".to_string(),
+            _ => "English".to_string(), // 默认英文
+        }
+    }
+
+    /// 生成语言指令
+    /// 作者：Evilek
+    /// 编写日期：2025-08-05
+    fn generate_language_instruction(&self, language: &str) -> String {
+        match language {
+            "Simplified Chinese" => "\n\n重要：请使用简体中文生成提交消息，确保语言自然流畅。".to_string(),
+            "Traditional Chinese" => "\n\n重要：请使用繁体中文生成提交消息，确保语言自然流畅。".to_string(),
+            "English" => "\n\nImportant: Please generate commit messages in English, ensure natural and fluent language.".to_string(),
+            "Japanese" => "\n\n重要：日本語でコミットメッセージを生成してください。自然で流暢な言語を確保してください。".to_string(),
+            "Korean" => "\n\n중요: 한국어로 커밋 메시지를 생성해주세요. 자연스럽고 유창한 언어를 보장해주세요.".to_string(),
+            "French" => "\n\nImportant: Veuillez générer des messages de commit en français, en vous assurant que le langage soit naturel et fluide.".to_string(),
+            "German" => "\n\nWichtig: Bitte generieren Sie Commit-Nachrichten auf Deutsch und stellen Sie sicher, dass die Sprache natürlich und fließend ist.".to_string(),
+            "Spanish" => "\n\nImportante: Por favor genere mensajes de commit en español, asegurando que el lenguaje sea natural y fluido.".to_string(),
+            "Russian" => "\n\nВажно: Пожалуйста, генерируйте сообщения коммитов на русском языке, обеспечивая естественность и беглость языка.".to_string(),
+            "Portuguese" => "\n\nImportante: Por favor, gere mensagens de commit em português, garantindo que a linguagem seja natural e fluida.".to_string(),
+            "Italian" => "\n\nImportante: Si prega di generare messaggi di commit in italiano, assicurandosi che il linguaggio sia naturale e fluido.".to_string(),
+            "Dutch" => "\n\nBelangrijk: Genereer commit-berichten in het Nederlands en zorg ervoor dat de taal natuurlijk en vloeiend is.".to_string(),
+            "Swedish" => "\n\nViktigt: Vänligen generera commit-meddelanden på svenska och se till att språket är naturligt och flytande.".to_string(),
+            "Czech" => "\n\nDůležité: Prosím generujte commit zprávy v češtině a zajistěte, aby byl jazyk přirozený a plynulý.".to_string(),
+            "Polish" => "\n\nWażne: Proszę generować wiadomości commit w języku polskim, zapewniając naturalność i płynność języka.".to_string(),
+            "Turkish" => "\n\nÖnemli: Lütfen commit mesajlarını Türkçe olarak oluşturun ve dilin doğal ve akıcı olmasını sağlayın.".to_string(),
+            "Vietnamese" => "\n\nQuan trọng: Vui lòng tạo thông điệp commit bằng tiếng Việt, đảm bảo ngôn ngữ tự nhiên và trôi chảy.".to_string(),
+            "Thai" => "\n\nสำคัญ: โปรดสร้างข้อความ commit เป็นภาษาไทย โดยให้แน่ใจว่าภาษาเป็นธรรมชาติและลื่นไหล".to_string(),
+            "Indonesian" => "\n\nPenting: Harap buat pesan commit dalam bahasa Indonesia, pastikan bahasa yang digunakan alami dan lancar.".to_string(),
+            _ => "\n\nImportant: Please generate commit messages in English, ensure natural and fluent language.".to_string(),
+        }
     }
 }

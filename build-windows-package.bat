@@ -178,6 +178,9 @@ if "%SKIP_DEPS%"=="false" (
     echo.
 )
 
+REM 设置环境变量禁用libpng警告
+set LIBPNG_NO_WARN=1
+
 REM 构建应用
 if "%DEV_MODE%"=="true" (
     echo %YELLOW%正在启动开发模式...%RESET%

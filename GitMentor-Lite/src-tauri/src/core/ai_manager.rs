@@ -14,6 +14,7 @@ use crate::core::providers::create_provider_factory;
  * 编写日期：2025-07-25
  */
 
+#[derive(Clone)]
 pub struct AIManager {
     config_manager: Arc<RwLock<AIConfigManager>>,
     provider_factory: Arc<RwLock<AIProviderFactory>>,
@@ -149,26 +150,22 @@ impl AIManager {
         let mut logger = self.conversation_logger.write().await;
         match &result {
             Ok(response) => {
-                if let Err(e) = logger.log_success(
+                let _ = logger.log_success(
                     template_id.to_string(),
                     repository_path.clone(),
                     request.clone(),
                     response.clone(),
                     processing_time,
-                ) {
-                    eprintln!("警告: 记录成功对话失败: {}", e);
-                }
+                );
             }
             Err(error) => {
-                if let Err(e) = logger.log_failure(
+                let _ = logger.log_failure(
                     template_id.to_string(),
                     repository_path.clone(),
                     request.clone(),
                     error.to_string(),
                     processing_time,
-                ) {
-                    eprintln!("警告: 记录失败对话失败: {}", e);
-                }
+                );
             }
         }
 
@@ -227,6 +224,34 @@ impl AIManager {
         Ok(records.into_iter().cloned().collect())
     }
 
+    /// 记录对话（带会话信息）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-05
+    pub async fn log_conversation_with_session(
+        &self,
+        template_id: String,
+        repository_path: Option<String>,
+        session_id: Option<String>,
+        session_type: Option<String>,
+        step_info: Option<crate::core::conversation_logger::StepInfo>,
+        request: AIRequest,
+        response: AIResponse,
+        processing_time_ms: u64,
+    ) -> Result<String> {
+        let mut logger = self.conversation_logger.write().await;
+        logger.log_success_with_session(
+            template_id,
+            repository_path,
+            session_id,
+            session_type,
+            step_info,
+            request,
+            response,
+            processing_time_ms,
+        )?;
+        Ok(uuid::Uuid::new_v4().to_string())
+    }
+
     /// 添加自定义提示模板
     pub async fn add_prompt_template(&self, template: PromptTemplate) {
         let mut prompt_manager = self.prompt_manager.write().await;
@@ -271,5 +296,12 @@ impl AIManager {
     pub async fn get_default_templates(&self) -> Vec<PromptTemplate> {
         let prompt_manager = self.prompt_manager.read().await;
         prompt_manager.get_default_templates().into_iter().cloned().collect()
+    }
+
+    /// 获取提示词管理器的只读引用
+    /// 作者：Evilek
+    /// 编写日期：2025-08-05
+    pub async fn get_prompt_manager(&self) -> tokio::sync::RwLockReadGuard<'_, crate::core::prompt_manager::PromptManager> {
+        self.prompt_manager.read().await
     }
 }

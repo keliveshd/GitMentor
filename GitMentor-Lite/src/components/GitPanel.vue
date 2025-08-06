@@ -180,11 +180,6 @@
       </div>
     </div>
 
-    <!-- 分层提交进度弹窗 -->
-    <LayeredCommitProgress :visible="layeredProgress.visible" :session-id="layeredProgress.sessionId"
-      :current-step="layeredProgress.currentStep" :total-steps="layeredProgress.totalSteps"
-      :current-status="layeredProgress.currentStatus" :current-file="layeredProgress.currentFile"
-      :file-summaries="layeredProgress.fileSummaries" @cancel="cancelLayeredCommit" />
   </div>
 
   <!-- 工作区更改 -->
@@ -429,31 +424,39 @@ const openRepository = async () => {
 // 作者：Evilek
 // 编写日期：2025-08-04
 const openRepoByPath = async (path: string) => {
-  setLoading(true, '正在选择仓库...')
-  currentRepoPath.value = path
+  try {
+    setLoading(true, '正在选择仓库...')
+    currentRepoPath.value = path
 
-  // 清空之前的提示信息和状态
-  clearRepositoryState()
+    // 清空之前的提示信息和状态
+    clearRepositoryState()
 
-  setLoading(true, '正在初始化仓库...')
-  await invoke('select_repository', { path })
+    setLoading(true, '正在初始化仓库...')
+    await invoke('select_repository', { path })
 
-  setLoading(true, '正在获取Git状态...')
-  await refreshGitStatus(true)
+    setLoading(true, '正在获取Git状态...')
+    await refreshGitStatus(true)
 
-  setLoading(true, '正在加载提交历史...')
-  await refreshHistory()
+    setLoading(true, '正在加载提交历史...')
+    await refreshHistory()
 
-  setLoading(true, '正在保存配置...')
-  // 保存到最近仓库列表
-  RecentReposManager.addRecentRepo(path)
-  loadRecentRepos()
+    setLoading(true, '正在保存配置...')
+    // 保存到最近仓库列表
+    RecentReposManager.addRecentRepo(path)
+    loadRecentRepos()
 
-  // 关闭下拉菜单
-  showRecentDropdown.value = false
+    // 关闭下拉菜单
+    showRecentDropdown.value = false
 
-  setLoading(true, '完成')
-  setTimeout(() => setLoading(false), 500)
+    setLoading(true, '完成')
+    setTimeout(() => setLoading(false), 500)
+  } catch (error) {
+    console.error('打开仓库失败:', error)
+    toast.error(`打开仓库失败: ${error}`, '操作失败')
+    setLoading(false)
+    // 重置仓库路径
+    currentRepoPath.value = ''
+  }
 }
 
 // 智能防抖刷新Git状态
@@ -490,7 +493,11 @@ const refreshGitStatus = async (force = false) => {
       lastRefreshTime = Date.now()
     } catch (error) {
       console.error('Failed to get git status:', error)
-      throw error
+      // 如果没有仓库打开，不显示错误提示
+      if (currentRepoPath.value) {
+        toast.error(`获取Git状态失败: ${error}`, '状态更新失败')
+      }
+      gitStatus.value = null
     } finally {
       isRefreshing.value = false
       refreshPromise = null
@@ -515,7 +522,11 @@ const refreshHistory = async () => {
       commitHistory.value = history
     } catch (error) {
       console.error('Failed to get commit history:', error)
-      throw error
+      // 如果没有仓库打开，不显示错误提示
+      if (currentRepoPath.value) {
+        toast.error(`获取提交历史失败: ${error}`, '历史加载失败')
+      }
+      commitHistory.value = []
     } finally {
       historyRefreshPromise = null
     }
@@ -568,7 +579,7 @@ const toggleStage = async (filePath: string, shouldStage: boolean) => {
 }
 
 const stageAll = async () => {
-  if (!gitStatus.value?.unstaged_files.length) return
+  if (!gitStatus.value?.unstaged_files?.length) return
 
   try {
     const filePaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
@@ -592,7 +603,7 @@ const stageAll = async () => {
 }
 
 const unstageAll = async () => {
-  if (!gitStatus.value?.staged_files.length) return
+  if (!gitStatus.value?.staged_files?.length) return
 
   try {
     const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
@@ -609,7 +620,7 @@ const unstageAll = async () => {
 }
 
 const stageAllUntracked = async () => {
-  if (!gitStatus.value?.untracked_files.length) return
+  if (!gitStatus.value?.untracked_files?.length) return
 
   try {
     const filePaths = gitStatus.value.untracked_files.map((f: any) => f.path)
@@ -657,11 +668,11 @@ const generateCommitMessage = async () => {
       generationProgress.value = '正在分析代码变更...'
 
       // 如果暂存区为空，先暂存所有修改的文件
-      if (!gitStatus.value.staged_files.length) {
+      if (!gitStatus.value?.staged_files?.length) {
         generationProgress.value = '暂存区为空，正在自动暂存所有修改的文件...'
 
         // 暂存所有未暂存的文件
-        if (gitStatus.value.unstaged_files.length > 0) {
+        if (gitStatus.value?.unstaged_files?.length > 0) {
           const unstagedPaths = gitStatus.value.unstaged_files.map((f: any) => f.path)
           const result = await invoke('stage_files', {
             request: { file_paths: unstagedPaths, stage: true }
@@ -674,7 +685,7 @@ const generateCommitMessage = async () => {
         }
 
         // 暂存所有未跟踪的文件
-        if (gitStatus.value.untracked_files.length > 0) {
+        if (gitStatus.value?.untracked_files?.length > 0) {
           const untrackedPaths = gitStatus.value.untracked_files.map((f: any) => f.path)
           const result = await invoke('stage_files', {
             request: { file_paths: untrackedPaths, stage: true }
@@ -690,7 +701,7 @@ const generateCommitMessage = async () => {
         await refreshGitStatus(true)
       }
 
-      const filePaths = gitStatus.value.staged_files.map((f: any) => f.path)
+      const filePaths = gitStatus.value?.staged_files?.map((f: any) => f.path) || []
 
       // 获取暂存文件的差异摘要
       generationProgress.value = '正在获取差异信息...'
@@ -723,7 +734,7 @@ const generateCommitMessage = async () => {
 
       if (shouldUseLayered) {
         // 使用分层提交
-        await executeLayeredCommit(filePaths, gitStatus.value.branch)
+        await executeLayeredCommit(filePaths, gitStatus.value?.branch || 'main')
       } else {
         // 使用常规提交
         generationProgress.value = '正在生成提交消息...'
@@ -732,7 +743,7 @@ const generateCommitMessage = async () => {
           templateId: selectedTemplate.value,
           diff: diffContent,
           stagedFiles: filePaths,
-          branchName: gitStatus.value.branch
+          branchName: gitStatus.value?.branch || 'main'
         }) as string
 
         commitMessage.value = result
@@ -827,7 +838,7 @@ const executeLayeredCommit = async (stagedFiles: string[], branchName: string | 
     const result = await invoke('execute_layered_commit', {
       templateId: selectedTemplate.value,
       stagedFiles: stagedFiles,
-      branchName: branchName
+      branchName: branchName || 'main'
     }) as any
 
     // 设置最终结果

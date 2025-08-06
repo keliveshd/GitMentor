@@ -38,6 +38,20 @@
                 <option value="English">English</option>
                 <option value="Japanese">日本語</option>
                 <option value="Korean">한국어</option>
+                <option value="French">Français</option>
+                <option value="German">Deutsch</option>
+                <option value="Spanish">Español</option>
+                <option value="Russian">Русский</option>
+                <option value="Portuguese">Português</option>
+                <option value="Italian">Italiano</option>
+                <option value="Dutch">Nederlands</option>
+                <option value="Swedish">Svenska</option>
+                <option value="Czech">Čeština</option>
+                <option value="Polish">Polski</option>
+                <option value="Turkish">Türkçe</option>
+                <option value="Vietnamese">Tiếng Việt</option>
+                <option value="Thai">ไทย</option>
+                <option value="Indonesian">Bahasa Indonesia</option>
               </select>
             </div>
             <div class="setting-description">
@@ -133,11 +147,26 @@
           <div class="form-group">
             <label for="template-language">语言</label>
             <select id="template-language" v-model="editingTemplate.language" class="form-select">
+              <option value="FOLLOW_GLOBAL">跟随全局</option>
               <option value="Simplified Chinese">简体中文</option>
               <option value="Traditional Chinese">繁体中文</option>
               <option value="English">English</option>
               <option value="Japanese">日本語</option>
               <option value="Korean">한국어</option>
+              <option value="French">Français</option>
+              <option value="German">Deutsch</option>
+              <option value="Spanish">Español</option>
+              <option value="Russian">Русский</option>
+              <option value="Portuguese">Português</option>
+              <option value="Italian">Italiano</option>
+              <option value="Dutch">Nederlands</option>
+              <option value="Swedish">Svenska</option>
+              <option value="Czech">Čeština</option>
+              <option value="Polish">Polski</option>
+              <option value="Turkish">Türkçe</option>
+              <option value="Vietnamese">Tiếng Việt</option>
+              <option value="Thai">ไทย</option>
+              <option value="Indonesian">Bahasa Indonesia</option>
             </select>
           </div>
 
@@ -245,7 +274,7 @@ const editingTemplate = ref<PromptTemplate>({
   description: '',
   system_prompt: '',
   user_prompt_template: '',
-  language: 'Simplified Chinese',
+  language: 'FOLLOW_GLOBAL',
   max_tokens: 200,
   temperature: 0.3,
   enable_emoji: false,
@@ -273,11 +302,26 @@ const formatDate = (dateStr?: string) => {
 
 const getLanguageDisplayName = (language: string) => {
   const languageMap: Record<string, string> = {
+    'FOLLOW_GLOBAL': '跟随全局',
     'Simplified Chinese': '简体中文',
     'Traditional Chinese': '繁体中文',
     'English': 'English',
     'Japanese': '日本語',
     'Korean': '한국어',
+    'French': 'Français',
+    'German': 'Deutsch',
+    'Spanish': 'Español',
+    'Russian': 'Русский',
+    'Portuguese': 'Português',
+    'Italian': 'Italiano',
+    'Dutch': 'Nederlands',
+    'Swedish': 'Svenska',
+    'Czech': 'Čeština',
+    'Polish': 'Polski',
+    'Turkish': 'Türkçe',
+    'Vietnamese': 'Tiếng Việt',
+    'Thai': 'ไทย',
+    'Indonesian': 'Bahasa Indonesia',
     // 兼容旧版本
     'zh': '简体中文',
     'en': 'English'
@@ -384,7 +428,7 @@ const closeDialogs = () => {
     description: '',
     system_prompt: '',
     user_prompt_template: '',
-    language: 'Simplified Chinese',
+    language: 'FOLLOW_GLOBAL',
     max_tokens: 200,
     temperature: 0.3,
     enable_emoji: false,

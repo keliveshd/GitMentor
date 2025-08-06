@@ -9,6 +9,7 @@ use std::path::Path;
 
 /// Git引擎，提供类似VSCode的Git功能
 /// 作者：Evilek
+#[derive(Clone)]
 pub struct GitEngine {
     repo_path: Option<String>,
 }
@@ -33,40 +34,107 @@ impl GitEngine {
 
     /// 获取单个文件的diff内容（简单版本）
     /// 作者：Evilek
-    /// 编写日期：2025-08-04
+    /// 编写日期：2025-08-05
     pub fn get_simple_file_diff(&self, file_path: &str) -> Result<String> {
         let repo_path = self
             .repo_path
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No repository opened"))?;
 
-        let repo = Repository::open(repo_path)?;
+        let repo = Repository::open(repo_path)
+            .map_err(|e| anyhow::anyhow!("无法打开Git仓库 {}: {}", repo_path, e))?;
 
-        // 获取HEAD提交
-        let head = repo.head()?;
-        let head_commit = head.peel_to_commit()?;
-        let head_tree = head_commit.tree()?;
+        let head = repo
+            .head()
+            .map_err(|e| anyhow::anyhow!("无法获取HEAD引用: {}", e))?;
+
+        let head_commit = head
+            .peel_to_commit()
+            .map_err(|e| anyhow::anyhow!("无法获取HEAD提交: {}", e))?;
+
+        let head_tree = head_commit
+            .tree()
+            .map_err(|e| anyhow::anyhow!("无法获取HEAD树: {}", e))?;
 
         // 获取工作目录状态
         let mut opts = DiffOptions::new();
         opts.include_untracked(true);
 
-        let diff = repo.diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut opts))?;
+        let diff = repo
+            .diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut opts))
+            .map_err(|e| anyhow::anyhow!("创建diff失败: {}", e))?;
 
-        // 查找指定文件的diff
-        let mut file_diff = String::new();
-        diff.foreach(
+        // 首先列出所有diff中的文件
+        let mut all_files = Vec::new();
+
+        // 使用更安全的回调处理方式
+        let foreach_result = diff.foreach(
             &mut |delta, _progress| {
-                if let Some(path) = delta.new_file().path() {
-                    if path.to_string_lossy() == file_path {
-                        return true; // 找到目标文件
+                match delta.new_file().path() {
+                    Some(path) => {
+                        let delta_path = path.to_string_lossy().to_string();
+                        all_files.push(delta_path.clone());
+                        true // 继续处理
+                    }
+                    None => {
+                        true // 继续处理，即使这个delta没有路径
                     }
                 }
-                false
             },
             None,
             None,
-            Some(&mut |_delta, _hunk, line| {
+            None,
+        );
+
+        if let Err(e) = foreach_result {
+            return Err(anyhow::anyhow!("遍历diff文件列表失败: {}", e));
+        }
+
+        // 查找指定文件的diff
+        let mut file_diff = String::new();
+        let mut found_file = false;
+
+        // 使用更安全的回调处理方式，分离文件查找和内容处理
+        let diff_result = diff.foreach(
+            &mut |delta, _progress| {
+                match delta.new_file().path() {
+                    Some(path) => {
+                        let delta_path = path.to_string_lossy();
+
+                        // 尝试多种路径匹配方式
+                        let delta_path_str = delta_path.as_ref();
+                        let is_match = delta_path_str == file_path
+                            || delta_path_str.ends_with(file_path)
+                            || file_path.ends_with(delta_path_str)
+                            || delta_path_str.replace('\\', "/") == file_path.replace('\\', "/");
+
+                        if is_match {
+                            found_file = true;
+                        }
+                        true // 总是返回true，避免用户中断错误
+                    }
+                    None => {
+                        true // 总是返回true，避免用户中断错误
+                    }
+                }
+            },
+            None,
+            None,
+            Some(&mut |delta, _hunk, line| {
+                // 只处理匹配文件的diff行
+                if let Some(path) = delta.new_file().path() {
+                    let delta_path = path.to_string_lossy();
+                    let delta_path_str = delta_path.as_ref();
+                    let is_match = delta_path_str == file_path
+                        || delta_path_str.ends_with(file_path)
+                        || file_path.ends_with(delta_path_str)
+                        || delta_path_str.replace('\\', "/") == file_path.replace('\\', "/");
+
+                    if !is_match {
+                        return true; // 不是目标文件，跳过这行
+                    }
+                }
+
                 match line.origin() {
                     '+' | '-' | ' ' => {
                         file_diff.push(line.origin());
@@ -74,14 +142,62 @@ impl GitEngine {
                             file_diff.push_str(content);
                         }
                     }
-                    _ => {}
+                    _ => {
+                        // 跳过非内容行
+                    }
                 }
-                true
+                true // 总是返回true继续处理
             }),
-        )?;
+        );
+
+        if let Err(e) = diff_result {
+            return Err(anyhow::anyhow!("获取文件diff内容失败: {}", e));
+        }
+
+        if !found_file {
+            // 尝试备用方法：使用简化的路径匹配
+            return self.get_simple_file_diff_fallback(file_path);
+        }
 
         if file_diff.is_empty() {
-            return Err(anyhow::anyhow!("No diff found for file: {}", file_path));
+            return self.get_simple_file_diff_fallback(file_path);
+        }
+
+        Ok(file_diff)
+    }
+
+    /// 备用的文件diff获取方法
+    /// 作者：Evilek
+    /// 编写日期：2025-08-05
+    fn get_simple_file_diff_fallback(&self, file_path: &str) -> Result<String> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("No repository opened"))?;
+
+        let repo = Repository::open(repo_path)
+            .map_err(|e| anyhow::anyhow!("无法打开Git仓库 {}: {}", repo_path, e))?;
+
+        // 使用更简单的方法：直接比较HEAD和工作目录
+        let head = repo.head()?;
+        let head_commit = head.peel_to_commit()?;
+        let head_tree = head_commit.tree()?;
+
+        let mut opts = DiffOptions::new();
+        opts.pathspec(file_path); // 只处理指定文件
+        opts.context_lines(3);
+
+        let diff = repo.diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut opts))?;
+
+        let mut file_diff = String::new();
+        diff.print(git2::DiffFormat::Patch, |_delta, _hunk, line| {
+            let content = String::from_utf8_lossy(line.content());
+            file_diff.push_str(&content);
+            true
+        })?;
+
+        if file_diff.is_empty() {
+            return Err(anyhow::anyhow!("文件没有变更内容: {}", file_path));
         }
 
         Ok(file_diff)
@@ -242,13 +358,11 @@ impl GitEngine {
                 match (file_exists, file_in_head) {
                     (false, true) => {
                         // 文件被删除：从工作目录删除但在HEAD中存在
-                        println!("暂存删除的文件: {}", file_path);
                         index.remove_path(path)?;
                         staged_count += 1;
                     }
                     (true, _) => {
                         // 文件存在：新增或修改的文件
-                        println!("暂存存在的文件: {}", file_path);
                         match index.add_path(path) {
                             Ok(_) => staged_count += 1,
                             Err(e) => {
@@ -258,7 +372,6 @@ impl GitEngine {
                     }
                     (false, false) => {
                         // 文件既不存在于工作目录也不存在于HEAD中，跳过
-                        println!("跳过不存在的文件: {}", file_path);
                         skipped_files.push(format!("{} (文件不存在)", file_path));
                     }
                 }
@@ -602,10 +715,62 @@ impl GitEngine {
         Ok(diff_output)
     }
 
-    /// 获取文件差异
+    /// 获取单个文件的diff内容（用于分层提交）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-04
+    #[allow(dead_code)]
+    pub fn get_file_diff(&self, file_path: &str) -> Result<String> {
+        let repo = self.get_repository()?;
+
+        // 获取HEAD提交
+        let head = repo.head()?;
+        let head_commit = head.peel_to_commit()?;
+        let head_tree = head_commit.tree()?;
+
+        // 获取工作目录状态
+        let mut opts = git2::DiffOptions::new();
+        opts.include_untracked(true);
+
+        let diff = repo.diff_tree_to_workdir_with_index(Some(&head_tree), Some(&mut opts))?;
+
+        // 查找指定文件的diff
+        let mut file_diff = String::new();
+        diff.foreach(
+            &mut |delta, _progress| {
+                if let Some(path) = delta.new_file().path() {
+                    if path.to_string_lossy() == file_path {
+                        return true; // 找到目标文件
+                    }
+                }
+                false
+            },
+            None,
+            None,
+            Some(&mut |_delta, _hunk, line| {
+                match line.origin() {
+                    '+' | '-' | ' ' => {
+                        file_diff.push(line.origin());
+                        if let Ok(content) = std::str::from_utf8(line.content()) {
+                            file_diff.push_str(content);
+                        }
+                    }
+                    _ => {}
+                }
+                true
+            }),
+        )?;
+
+        if file_diff.is_empty() {
+            return Err(anyhow::anyhow!("No diff found for file: {}", file_path));
+        }
+
+        Ok(file_diff)
+    }
+
+    /// 获取文件差异（原有方法）
     /// 作者：Evilek
     /// 编写日期：2025-01-18
-    pub fn get_file_diff(&self, request: &FileDiffRequest) -> Result<FileDiffResult> {
+    pub fn get_file_diff_detailed(&self, request: &FileDiffRequest) -> Result<FileDiffResult> {
         let repo = self.get_repository()?;
         let file_path = &request.file_path;
 
@@ -876,27 +1041,19 @@ impl GitEngine {
         file_path: &str,
         diff_type: DiffType,
     ) -> Result<Vec<DiffHunk>> {
-        println!("🔍 [GitEngine] 开始生成diff hunks");
-        println!(
-            "📋 [GitEngine] 输入参数: file_path={}, diff_type={:?}",
-            file_path, diff_type
-        );
         let mut diff_options = DiffOptions::new();
         diff_options.pathspec(file_path);
         diff_options.context_lines(3); // 设置上下文行数
 
         let diff = match diff_type {
             DiffType::WorkingTree => {
-                println!("🔧 [GitEngine] 生成工作区与暂存区的差异");
                 // 工作区与暂存区的差异
                 let mut index = repo.index()?;
                 let tree = index.write_tree()?;
                 let tree = repo.find_tree(tree)?;
-                println!("📊 [GitEngine] 暂存区tree ID: {}", tree.id());
                 repo.diff_tree_to_workdir(Some(&tree), Some(&mut diff_options))?
             }
             DiffType::Staged => {
-                println!("🔧 [GitEngine] 生成暂存区与HEAD的差异");
                 // 暂存区与HEAD的差异
                 let head = repo.head()?;
                 let head_commit = head.peel_to_commit()?;
@@ -904,11 +1061,6 @@ impl GitEngine {
                 let mut index = repo.index()?;
                 let index_tree = index.write_tree()?;
                 let index_tree = repo.find_tree(index_tree)?;
-                println!(
-                    "📊 [GitEngine] HEAD tree ID: {}, Index tree ID: {}",
-                    head_tree.id(),
-                    index_tree.id()
-                );
                 repo.diff_tree_to_tree(
                     Some(&head_tree),
                     Some(&index_tree),
@@ -916,17 +1068,13 @@ impl GitEngine {
                 )?
             }
             DiffType::HeadToWorking => {
-                println!("🔧 [GitEngine] 生成HEAD与工作区的差异");
                 // HEAD与工作区的差异
                 let head = repo.head()?;
                 let head_commit = head.peel_to_commit()?;
                 let head_tree = head_commit.tree()?;
-                println!("📊 [GitEngine] HEAD tree ID: {}", head_tree.id());
                 repo.diff_tree_to_workdir(Some(&head_tree), Some(&mut diff_options))?
             }
         };
-
-        println!("📈 [GitEngine] Git diff操作完成，开始解析结果");
 
         use std::cell::RefCell;
         use std::rc::Rc;
@@ -1016,49 +1164,6 @@ impl GitEngine {
         }
 
         let result = hunks.borrow().clone();
-
-        println!("📊 [GitEngine] Diff解析完成统计:");
-        println!("  总Hunk数量: {}", result.len());
-        for (i, hunk) in result.iter().enumerate() {
-            println!(
-                "  Hunk {}: 老文件{}行起{}行, 新文件{}行起{}行, 包含{}行差异",
-                i + 1,
-                hunk.old_start,
-                hunk.old_lines,
-                hunk.new_start,
-                hunk.new_lines,
-                hunk.lines.len()
-            );
-
-            let mut context_count = 0;
-            let mut delete_count = 0;
-            let mut insert_count = 0;
-
-            for line in &hunk.lines {
-                match line.line_type {
-                    DiffLineType::Context => context_count += 1,
-                    DiffLineType::Delete => delete_count += 1,
-                    DiffLineType::Insert => insert_count += 1,
-                }
-            }
-
-            println!(
-                "    行类型统计: 上下文{}行, 删除{}行, 新增{}行",
-                context_count, delete_count, insert_count
-            );
-
-            if i == 0 && !hunk.lines.is_empty() {
-                println!("    第一个hunk的前3行内容:");
-                for (j, line) in hunk.lines.iter().take(3).enumerate() {
-                    println!("      {}. {:?}: {}", j + 1, line.line_type, line.content);
-                }
-            }
-        }
-
-        if result.is_empty() {
-            println!("⚠️ [GitEngine] 警告: 没有生成任何hunks，可能文件没有差异");
-        }
-
         Ok(result)
     }
 }

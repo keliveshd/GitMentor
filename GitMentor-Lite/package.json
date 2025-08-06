@@ -8,8 +8,8 @@
     "build": "vue-tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:dev": "set LIBPNG_NO_WARN=1 && tauri dev",
+    "tauri:build": "set LIBPNG_NO_WARN=1 && tauri build"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
