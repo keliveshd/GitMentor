@@ -58,71 +58,31 @@
         </div>
 
         <div v-else class="conversation-items">
-          <!-- 分层提交会话 -->
-          <div v-for="session in groupedConversations.sessions" :key="session.sessionId" class="session-group">
-            <div class="session-header" @click="toggleSessionExpanded(session.sessionId)">
-              <div class="session-info">
-                <div class="session-title">
-                  <span class="session-icon">🔄</span>
-                  <span class="session-label">分层提交会话</span>
-                  <span class="session-id">{{ session.sessionId.slice(0, 8) }}...</span>
-                </div>
-                <div class="session-meta">
-                  <span class="session-time">{{ formatTime(session.timestamp) }}</span>
-                  <span class="session-repository">{{ getRepositoryDisplayName(session.repository) }}</span>
-                  <span class="session-stats">{{ session.fileCount }} 文件 · {{ session.totalProcessingTime }}ms</span>
-                </div>
-              </div>
-              <div class="session-toggle">
-                <span class="expand-icon" :class="{ expanded: expandedSessions.has(session.sessionId) }">🔽</span>
-              </div>
-            </div>
-
-            <!-- 会话详情 -->
-            <div v-if="expandedSessions.has(session.sessionId)" class="session-details">
-              <div v-for="record in session.records" :key="record.id" class="session-step">
-                <div class="step-header">
-                  <span class="step-icon">{{ getStepIcon(record.step_info?.step_type || '') }}</span>
-                  <span class="step-name">{{ getStepTypeName(record.step_info?.step_type || '') }}</span>
-                  <span v-if="record.step_info?.file_path" class="step-file">{{ record.step_info.file_path }}</span>
-                  <span class="step-time">{{ record.processing_time_ms }}ms</span>
-                  <span class="step-status" :class="record.success ? 'success' : 'error'">
-                    {{ record.success ? '成功' : '失败' }}
-                  </span>
-                </div>
-
-                <!-- 用户提示词显示 -->
-                <div class="step-content">
-                  <!-- 用户提示词 -->
-                  <div v-if="record.request.messages && record.request.messages.length > 0" class="step-messages">
-                    <h6 style="margin: 10px 0 5px 0; color: #333; font-size: 13px;">💬 对话内容：</h6>
-                    <div v-for="(message, index) in record.request.messages" :key="index" class="step-message"
-                      :class="message.role">
-                      <div class="message-role">{{ message.role === 'system' ? '🤖 系统提示' : '👤 用户提示' }}</div>
-                      <div class="message-content">{{ message.content }}</div>
-                    </div>
-                  </div>
-
-                  <!-- AI响应 -->
-                  <div v-if="record.response" class="step-response">
-                    <h6 style="margin: 10px 0 5px 0; color: #333; font-size: 13px;">🤖 AI响应：</h6>
-                    <div class="response-content">{{ record.response.content }}</div>
-                  </div>
-                </div>
-
-                <div v-if="record.error_message" class="step-error">
-                  <strong>错误:</strong> {{ record.error_message }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 单独的对话记录 -->
-          <div v-for="conversation in groupedConversations.singleRecords" :key="conversation.id"
-            class="conversation-item" :class="{ error: !conversation.success }">
+          <!-- 统一的对话记录列表 -->
+          <div v-for="conversation in unifiedConversations" :key="conversation.id" class="conversation-item" :class="{
+            error: !conversation.success,
+            'layered-session': conversation.session_type === 'layered'
+          }">
             <div class="conversation-header">
               <div class="conversation-info">
                 <span class="conversation-time">{{ formatTime(conversation.timestamp) }}</span>
+
+                <!-- 分层提交标识 -->
+                <span v-if="conversation.session_type === 'layered'" class="conversation-type layered">
+                  🔄 分层提交
+                  <span v-if="conversation.step_info?.step_type" class="step-type">
+                    - {{ getStepTypeName(conversation.step_info.step_type) }}
+                  </span>
+                  <span v-if="conversation.step_info?.file_path" class="step-file">
+                    ({{ conversation.step_info.file_path }})
+                  </span>
+                </span>
+
+                <!-- 普通提交标识 -->
+                <span v-else class="conversation-type normal">
+                  💬 普通提交
+                </span>
+
                 <span class="conversation-template">模板: {{ conversation.template_id }}</span>
                 <span v-if="conversation.repository_path" class="conversation-repository">
                   仓库: {{ getRepositoryDisplayName(conversation.repository_path) }}
@@ -269,20 +229,11 @@ interface StepInfo {
 const conversationHistory = ref<ConversationRecord[]>([])
 const loading = ref(false)
 const expandedItems = ref<Set<string>>(new Set())
-const expandedSessions = ref<Set<string>>(new Set())
+// 移除了expandedSessions，现在使用统一的expandedItems
 const repositoryPaths = ref<string[]>([])
 const selectedRepository = ref<string>('all')
 
-// 会话分组接口
-interface SessionGroup {
-  sessionId: string
-  sessionType: string
-  timestamp: string
-  repository: string
-  records: ConversationRecord[]
-  totalProcessingTime: number
-  fileCount: number
-}
+// 移除了SessionGroup接口，现在使用统一的对话记录列表
 
 // 计算属性
 const successCount = computed(() =>
@@ -312,14 +263,7 @@ const toggleExpanded = (id: string) => {
   }
 }
 
-// 切换会话展开状态
-const toggleSessionExpanded = (sessionId: string) => {
-  if (expandedSessions.value.has(sessionId)) {
-    expandedSessions.value.delete(sessionId)
-  } else {
-    expandedSessions.value.add(sessionId)
-  }
-}
+// 移除了toggleSessionExpanded函数，现在使用统一的展开逻辑
 
 // 获取步骤类型的显示名称
 const getStepTypeName = (stepType: string) => {
@@ -414,48 +358,12 @@ const onRepositoryChange = () => {
   loadConversationHistory()
 }
 
-// 计算属性：分组后的对话记录
-const groupedConversations = computed(() => {
-  const sessions = new Map<string, SessionGroup>()
-  const singleRecords: ConversationRecord[] = []
-
-  conversationHistory.value.forEach(record => {
-    if (record.session_id && record.session_type === 'layered') {
-      // 分层提交记录，按会话分组
-      if (!sessions.has(record.session_id)) {
-        sessions.set(record.session_id, {
-          sessionId: record.session_id,
-          sessionType: record.session_type,
-          timestamp: record.timestamp,
-          repository: record.repository_path || '未知仓库',
-          records: [],
-          totalProcessingTime: 0,
-          fileCount: 0
-        })
-      }
-
-      const session = sessions.get(record.session_id)!
-      session.records.push(record)
-      session.totalProcessingTime += record.processing_time_ms
-
-      // 统计文件数量
-      if (record.step_info?.step_type === 'file_analysis') {
-        session.fileCount++
-      }
-    } else {
-      // 单独的对话记录
-      singleRecords.push(record)
-    }
-  })
-
-  return {
-    sessions: Array.from(sessions.values()).sort((a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    ),
-    singleRecords: singleRecords.sort((a, b) =>
-      new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
-    )
-  }
+// 计算属性：统一的对话记录列表（按时间倒序，限制30条）
+const unifiedConversations = computed(() => {
+  // 直接返回所有记录，按时间倒序排列，限制30条
+  return conversationHistory.value
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, 30)
 })
 
 // 生命周期
@@ -1029,5 +937,41 @@ onMounted(async () => {
   border-radius: 6px;
   border-left: 4px solid #f44336;
   font-size: 14px;
+}
+
+/* 新增：统一列表的样式 */
+.conversation-type {
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  margin-right: 8px;
+}
+
+.conversation-type.layered {
+  background: #e3f2fd;
+  color: #1976d2;
+  border: 1px solid #bbdefb;
+}
+
+.conversation-type.normal {
+  background: #f3e5f5;
+  color: #7b1fa2;
+  border: 1px solid #ce93d8;
+}
+
+.step-type {
+  font-weight: normal;
+  color: #666;
+}
+
+.step-file {
+  font-weight: normal;
+  color: #888;
+  font-size: 11px;
+}
+
+.layered-session {
+  border-left: 4px solid #2196f3;
 }
 </style>

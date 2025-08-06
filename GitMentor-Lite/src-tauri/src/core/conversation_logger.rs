@@ -296,11 +296,11 @@ impl ConversationLogger {
             fs::create_dir_all(parent)?;
         }
 
-        // 限制记录数量，只保留最近的1000条记录
-        let records_to_save = if self.records.len() > 1000 {
+        // 限制记录数量，只保留最近的30条记录
+        let records_to_save = if self.records.len() > 30 {
             let mut sorted_records = self.records.clone();
             sorted_records.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-            sorted_records.into_iter().take(1000).collect()
+            sorted_records.into_iter().take(30).collect()
         } else {
             self.records.clone()
         };
