@@ -579,6 +579,7 @@ pub async fn get_conversation_records_by_session(
 /// 重新加载默认模板（清理缓存）
 /// 作者：Evilek
 /// 编写日期：2025-01-29
+#[allow(dead_code)] // 预留的管理功能，暂未在前端使用
 #[tauri::command]
 pub async fn reload_default_templates(
     ai_manager: State<'_, Mutex<AIManager>>,
@@ -591,6 +592,7 @@ pub async fn reload_default_templates(
 /// 清理所有缓存和配置文件
 /// 作者：Evilek
 /// 编写日期：2025-01-29
+#[allow(dead_code)] // 预留的管理功能，暂未在前端使用
 #[tauri::command]
 pub async fn clear_all_cache(
     ai_manager: State<'_, Mutex<AIManager>>,

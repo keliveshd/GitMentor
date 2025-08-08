@@ -83,6 +83,7 @@ pub struct PromptManager {
 }
 
 impl PromptManager {
+    #[allow(dead_code)] // 备用构造函数，项目中使用new_with_config
     pub fn new() -> Self {
         let mut manager = Self {
             templates: HashMap::new(),
@@ -755,6 +756,7 @@ impl PromptManager {
     /// 重新加载默认模板
     /// 作者：Evilek
     /// 编写日期：2025-01-29
+    #[allow(dead_code)] // 预留的管理功能，通过ai_manager调用
     pub fn reload_default_templates(&mut self) -> Result<()> {
         // 清空现有模板
         self.templates.clear();

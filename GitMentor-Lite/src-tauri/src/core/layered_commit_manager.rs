@@ -340,10 +340,11 @@ impl LayeredCommitManager {
         };
 
         // 使用动态系统提示词生成，确保语言声明正确应用
-        let mut system_prompt = prompt_manager.generate_dynamic_system_prompt(template, &temp_context);
+        let mut system_prompt = String::from("你现在正在处理分层提交的最终总结阶段,下面的部分为提示词模板:\n\n");
+        system_prompt.push_str(&prompt_manager.generate_dynamic_system_prompt(template, &temp_context));
 
         // 添加分层提交的特定说明
-        system_prompt.push_str("\n\n特别说明：你现在正在处理分层提交的最终总结阶段。以上是各个文件的AI分析摘要，请基于这些摘要生成一个统一、简洁的提交消息。");
+        system_prompt.push_str("\n\n特别说明：你现在正在处理分层提交的最终总结阶段。以下是各个文件的AI分析摘要，请基于这些摘要使用上述模板生成一个统一的提交消息。");
 
         let user_prompt = format!(
             "以下是各个文件的变更摘要:\n\n{}\n\n请生成一个简洁、准确的提交消息：",

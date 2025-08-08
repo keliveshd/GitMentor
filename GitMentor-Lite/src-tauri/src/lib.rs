@@ -3,9 +3,45 @@ mod core;
 mod types;
 mod utils;
 
-use commands::{ai_commands, git_commands};
+/// 调试日志宏
+/// 只有在调试开关启用时才输出日志
+#[macro_export]
+macro_rules! debug_log {
+    ($($arg:tt)*) => {
+        if $crate::commands::debug_commands::is_debug_enabled() {
+            println!($($arg)*);
+        }
+    };
+}
+
+/// 警告日志宏（始终显示）
+#[macro_export]
+macro_rules! warn_log {
+    ($($arg:tt)*) => {
+        println!($($arg)*);
+    };
+}
+
+/// 错误日志宏（始终显示）
+#[macro_export]
+macro_rules! error_log {
+    ($($arg:tt)*) => {
+        eprintln!($($arg)*);
+    };
+}
+
+/// 信息日志宏（始终显示）
+#[macro_export]
+macro_rules! info_log {
+    ($($arg:tt)*) => {
+        println!($($arg)*);
+    };
+}
+
+use commands::{ai_commands, debug_commands, git_commands, git_config_commands};
 use core::{
     ai_manager::AIManager,
+    git_config::GitConfigManager,
     git_engine::GitEngine,
     llm_client::{LLMClient, LLMConfig},
 };
@@ -19,13 +55,22 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Initialize configuration directory
+    let config_dir = std::env::current_dir().unwrap().join(".config");
+
+    // Initialize Git configuration
+    let git_config_path = config_dir.join("git_config.json");
+    let git_config_manager =
+        GitConfigManager::new(git_config_path).expect("Failed to initialize Git Config Manager");
+    let git_config = git_config_manager.get_config().clone();
+
     // Initialize components
-    let git_engine = Mutex::new(GitEngine::new());
+    let git_engine = Mutex::new(GitEngine::new_with_config(git_config));
+    let git_config_manager = Mutex::new(git_config_manager);
     let llm_config = LLMConfig::default();
     let llm_client = LLMClient::new(llm_config);
 
     // Initialize AI Manager
-    let config_dir = std::env::current_dir().unwrap().join(".config");
     let ai_config_path = config_dir.join("ai_config.json");
     let ai_manager =
         Mutex::new(AIManager::new(ai_config_path).expect("Failed to initialize AI Manager"));
@@ -33,7 +78,9 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_shell::init())
         .manage(git_engine)
+        .manage(git_config_manager)
         .manage(llm_client)
         .manage(ai_manager)
         .invoke_handler(tauri::generate_handler![
@@ -44,6 +91,15 @@ pub fn run() {
             git_commands::stage_files,
             git_commands::commit_changes,
             git_commands::revert_files,
+            debug_commands::get_debug_settings,
+            debug_commands::set_debug_logs_enabled,
+            debug_commands::update_debug_settings,
+            // Git config commands
+            git_config_commands::get_git_config,
+            git_config_commands::update_git_config,
+            git_config_commands::get_available_git_modes,
+            git_config_commands::test_git_execution_mode,
+            git_config_commands::reset_git_config,
             git_commands::get_commit_history,
             git_commands::get_branches,
             git_commands::discard_all_changes,

@@ -23,9 +23,15 @@ pub async fn select_repository(
 pub async fn get_git_status(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitStatusResult, String> {
+    println!("[DEBUG] 前端请求获取Git状态（智能方式）");
+    let start_time = Instant::now();
+
     let engine = git_engine.lock().await;
-    engine.get_status()
-        .map_err(|e| format!("Failed to get git status: {}", e))
+    let result = engine.get_status()
+        .map_err(|e| format!("Failed to get git status: {}", e));
+
+    println!("[DEBUG] Git状态命令完成，耗时: {:?}", start_time.elapsed());
+    result
 }
 
 #[tauri::command]

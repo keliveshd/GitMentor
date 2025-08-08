@@ -291,6 +291,7 @@ impl AIManager {
     /// 重新加载默认模板（清理缓存）
     /// 作者：Evilek
     /// 编写日期：2025-01-29
+    #[allow(dead_code)] // 预留的管理功能，暂未直接使用
     pub async fn reload_default_templates(&self) -> Result<()> {
         let mut prompt_manager = self.prompt_manager.write().await;
         prompt_manager.reload_default_templates()
@@ -299,6 +300,7 @@ impl AIManager {
     /// 清理所有缓存和配置文件
     /// 作者：Evilek
     /// 编写日期：2025-01-29
+    #[allow(dead_code)] // 预留的管理功能，暂未直接使用
     pub async fn clear_all_cache(&self) -> Result<()> {
         // 清理对话记录
         {

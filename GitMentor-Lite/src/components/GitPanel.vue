@@ -20,6 +20,10 @@
             <button @click="openConversationHistory" class="menu-item" :disabled="loading || !tauriReady">
               📊 对话记录
             </button>
+            <div class="menu-divider"></div>
+            <button @click="openDebugSettings" class="menu-item">
+              🛠️ 开发设置
+            </button>
             <button @click="openAbout" class="menu-item">
               ℹ️ 关于
             </button>
@@ -178,99 +182,98 @@
           </div>
         </div>
       </div>
-    </div>
 
-  </div>
+      <!-- 工作区更改 -->
+      <div class="unstaged-files" v-if="gitStatus && gitStatus.unstaged_files.length > 0">
+        <div class="section-title">
+          <h4>📝 更改 ({{ gitStatus?.unstaged_files?.length || 0 }})</h4>
+          <div class="section-actions">
+            <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
+              {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
+            </button>
+            <button @click="stageAll" class="action-btn" title="暂存所有">
+              ➕
+            </button>
+          </div>
+        </div>
 
-  <!-- 工作区更改 -->
-  <div class="unstaged-files" v-if="gitStatus && gitStatus.unstaged_files.length > 0">
-    <div class="section-title">
-      <h4>📝 更改 ({{ gitStatus?.unstaged_files?.length || 0 }})</h4>
-      <div class="section-actions">
-        <button @click="toggleBatchMode" class="batch-mode-btn" :class="{ active: batchMode }" title="批量操作模式">
-          {{ batchMode ? '✅ 批量模式' : '☑️ 批量选择' }}
-        </button>
-        <button @click="stageAll" class="action-btn" title="暂存所有">
-          ➕
-        </button>
+        <!-- 批量操作工具栏 -->
+        <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
+          <div class="batch-info">
+            <span>已选择 {{ selectedFilesCount }} 个文件</span>
+          </div>
+          <div class="batch-actions">
+            <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
+              title="批量暂存选中文件">
+              暂存选中
+            </button>
+            <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
+              回滚选中
+            </button>
+            <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
+              全选
+            </button>
+            <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
+              清空
+            </button>
+          </div>
+        </div>
+
+        <div class="file-list">
+          <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
+            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+        </div>
       </div>
-    </div>
 
-    <!-- 批量操作工具栏 -->
-    <div v-if="batchMode && selectedFilesCount > 0" class="batch-toolbar">
-      <div class="batch-info">
-        <span>已选择 {{ selectedFilesCount }} 个文件</span>
+      <!-- 未跟踪文件 -->
+      <div class="file-section" v-if="gitStatus && gitStatus.untracked_files.length > 0">
+        <div class="section-header">
+          <h4>❓ 未跟踪的文件 ({{ gitStatus?.untracked_files?.length || 0 }})</h4>
+          <div class="section-actions">
+            <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
+              ➕
+            </button>
+          </div>
+        </div>
+        <div class="file-list">
+          <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file" :is-staged="false"
+            :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
+            @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+        </div>
       </div>
-      <div class="batch-actions">
-        <button v-if="canBatchStage" @click="batchStageFiles" class="batch-btn stage-btn" :disabled="loading"
-          title="批量暂存选中文件">
-          暂存选中
-        </button>
-        <button @click="batchRevertFiles" class="batch-btn revert-btn" :disabled="loading" title="批量回滚选中文件">
-          回滚选中
-        </button>
-        <button @click="selectAllUnstaged" class="batch-btn select-all-btn" title="全选工作区文件">
-          全选
-        </button>
-        <button @click="clearSelection" class="batch-btn clear-btn" title="清空选择">
-          清空
-        </button>
-      </div>
-    </div>
 
-    <div class="file-list">
-      <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
-        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
-    </div>
-  </div>
+      <!-- 冲突文件 -->
+      <div class="file-section" v-if="gitStatus && gitStatus.conflicted_files.length > 0">
+        <div class="section-header">
+          <h4>⚠️ 合并冲突 ({{ gitStatus?.conflicted_files?.length || 0 }})</h4>
+        </div>
+        <div class="file-list">
+          <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file" :is-staged="false"
+            @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+        </div>
 
-  <!-- 未跟踪文件 -->
-  <div class="file-section" v-if="gitStatus && gitStatus.untracked_files.length > 0">
-    <div class="section-header">
-      <h4>❓ 未跟踪的文件 ({{ gitStatus?.untracked_files?.length || 0 }})</h4>
-      <div class="section-actions">
-        <button @click="stageAllUntracked" class="action-btn" title="暂存所有">
-          ➕
-        </button>
-      </div>
-    </div>
-    <div class="file-list">
-      <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file" :is-staged="false"
-        :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-        @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
-    </div>
-  </div>
+        <!-- 无更改状态 -->
+        <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
+          <p>✨ 工作区干净，没有待提交的更改</p>
+        </div>
 
-  <!-- 冲突文件 -->
-  <div class="file-section" v-if="gitStatus && gitStatus.conflicted_files.length > 0">
-    <div class="section-header">
-      <h4>⚠️ 合并冲突 ({{ gitStatus?.conflicted_files?.length || 0 }})</h4>
-    </div>
-    <div class="file-list">
-      <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file" :is-staged="false"
-        @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
-    </div>
-
-    <!-- 无更改状态 -->
-    <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
-      <p>✨ 工作区干净，没有待提交的更改</p>
-    </div>
-
-    <!-- 提交历史 -->
-    <div class="commit-history" v-if="commitHistory.length > 0">
-      <div class="section-header">
-        <h4>📜 提交历史</h4>
-        <button @click="refreshHistory" class="action-btn">🔄</button>
-      </div>
-      <div class="history-list">
-        <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
-          <div class="commit-info">
-            <div class="commit-message">{{ commit.message }}</div>
-            <div class="commit-meta">
-              <span class="commit-author">{{ commit.author }}</span>
-              <span class="commit-hash">{{ commit.short_hash }}</span>
-              <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
+        <!-- 提交历史 -->
+        <div class="commit-history" v-if="commitHistory.length > 0">
+          <div class="section-header">
+            <h4>📜 提交历史</h4>
+            <button @click="refreshHistory" class="action-btn">🔄</button>
+          </div>
+          <div class="history-list">
+            <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
+              <div class="commit-info">
+                <div class="commit-message">{{ commit.message }}</div>
+                <div class="commit-meta">
+                  <span class="commit-author">{{ commit.author }}</span>
+                  <span class="commit-hash">{{ commit.short_hash }}</span>
+                  <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -290,6 +293,19 @@
     :current-step="layeredProgress.currentStep" :total-steps="layeredProgress.totalSteps"
     :current-status="layeredProgress.currentStatus" :current-file="layeredProgress.currentFile"
     :file-summaries="layeredProgress.fileSummaries" @cancel="cancelLayeredCommit" />
+
+  <!-- 调试设置弹窗 -->
+  <div v-if="showDebugSettings" class="modal-overlay debug-settings-overlay" @click="closeDebugSettings">
+    <div class="modal-content debug-settings-modal" @click.stop>
+      <div class="modal-header">
+        <h3>🛠️ 开发设置</h3>
+        <button @click="closeDebugSettings" class="close-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <DebugSettings />
+      </div>
+    </div>
+  </div>
 </template>
 
 <script setup lang="ts">
@@ -300,6 +316,7 @@ import FileItem from './FileItem.vue'
 import Toast from './Toast.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import LayeredCommitProgress from './LayeredCommitProgress.vue'
+import DebugSettings from './DebugSettings.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
@@ -344,6 +361,9 @@ const showRecentDropdown = ref(false)
 
 // 菜单状态
 const showMenu = ref(false)
+
+// 调试设置状态
+const showDebugSettings = ref(false)
 
 // 提交区域高度自适应相关状态
 const commitTextareaHeight = ref(60) // 默认高度约3行
@@ -1199,6 +1219,16 @@ const toggleMenu = () => {
   showMenu.value = !showMenu.value
 }
 
+// 调试设置功能
+const openDebugSettings = () => {
+  showDebugSettings.value = true
+  showMenu.value = false
+}
+
+const closeDebugSettings = () => {
+  showDebugSettings.value = false
+}
+
 // 关于功能
 const openAbout = () => {
   // TODO: 实现关于对话框
@@ -1510,8 +1540,9 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  height: 100vh;
-  overflow: hidden;
+  /* 移除固定高度，改为根据内容自适应 - 修复暂存区为空时占用大量空间的问题 */
+  min-height: 100vh;
+  /* 允许内容超出视口高度时滚动 */
 }
 
 /* 菜单栏样式 - 优化高度以节省垂直空间 */
@@ -1936,16 +1967,16 @@ onUnmounted(() => {
   overflow: hidden;
 }
 
-/* 主要内容区域 - 用于高度分配 */
+/* 主要内容区域 - 修改为根据内容自适应高度，避免暂存区为空时占用大量空间 */
 .main-content {
   display: flex;
   flex-direction: column;
-  flex: 1;
+  /* 移除 flex: 1，改为根据内容自适应高度 */
   gap: 16px;
   overflow-y: auto;
   /* 允许整体滚动 */
-  padding-right: 4px;
-  /* 为滚动条留出空间 */
+  padding: 16px;
+  /* 添加内边距，让内容与边界有适当距离 */
   padding-bottom: 60px;
   /* 为绝对定位的提示信息留出空间 */
 }
@@ -1961,24 +1992,24 @@ onUnmounted(() => {
   flex-direction: column;
 }
 
-/* 暂存区 - 优化高度分配，提升空间利用率 */
+/* 暂存区 - 根据内容自适应高度 */
 .staged-files {
   flex: 0 1 auto;
-  min-height: 100px;
+  /* 移除 min-height，让暂存区根据内容自适应 */
   max-height: 280px;
 }
 
-/* 工作区 - 优化高度分配，提升空间利用率 */
+/* 工作区 - 根据内容自适应高度 */
 .unstaged-files {
   flex: 0 1 auto;
-  min-height: 120px;
+  /* 移除 min-height，让工作区根据内容自适应 */
   max-height: 300px;
 }
 
-/* 未跟踪文件和冲突文件 - 优化高度分配 */
+/* 未跟踪文件和冲突文件 - 根据内容自适应高度 */
 .file-section {
   flex: 0 1 auto;
-  min-height: 80px;
+  /* 移除 min-height，让未跟踪文件区域根据内容自适应 */
   max-height: 220px;
 }
 
@@ -2023,9 +2054,10 @@ onUnmounted(() => {
 .file-list {
   padding: 4px;
   background: white;
-  flex: 1;
+  /* 移除 flex: 1，改为根据内容自适应高度 - 修复暂存区空时占用大量空间的问题 */
   overflow-y: auto;
-  min-height: 0;
+  /* 设置最大高度约为10条文件的高度(每条约24px) + padding */
+  max-height: 248px;
 }
 
 /* 提交区域 - 优化高度以节省垂直空间 */
@@ -2287,11 +2319,8 @@ onUnmounted(() => {
 /* 重复的按钮样式已移除，使用统一的 .action-btn 样式 */
 
 .commit-hint {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  margin-top: 4px;
+  /* 移除绝对定位，改为正常文档流 - 修复挡住其他元素的问题 */
+  margin-top: 8px;
   padding: 8px 12px;
   background: #fff3cd;
   border: 1px solid #ffeaa7;
@@ -2299,7 +2328,6 @@ onUnmounted(() => {
   color: #856404;
   font-size: 12px;
   text-align: center;
-  z-index: 8;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
@@ -2588,12 +2616,10 @@ onUnmounted(() => {
 
   /* 在较小屏幕上进一步优化区域设置 */
   .staged-files {
-    min-height: 80px;
     max-height: 180px;
   }
 
   .unstaged-files {
-    min-height: 100px;
     max-height: 200px;
   }
 
@@ -2602,7 +2628,6 @@ onUnmounted(() => {
   }
 
   .file-section {
-    min-height: 60px;
     max-height: 160px;
   }
 }
@@ -2611,17 +2636,14 @@ onUnmounted(() => {
 
   /* 在很小的屏幕上进一步优化压缩 */
   .staged-files {
-    min-height: 60px;
     max-height: 120px;
   }
 
   .unstaged-files {
-    min-height: 80px;
     max-height: 140px;
   }
 
   .file-section {
-    min-height: 50px;
     max-height: 100px;
   }
 
@@ -2633,5 +2655,83 @@ onUnmounted(() => {
     min-height: 40px;
     max-height: 80px;
   }
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+/* 调试设置弹窗样式 - 必须在modal-overlay之后定义以确保优先级 */
+.debug-settings-overlay {
+  z-index: 9999 !important;
+}
+
+.debug-settings-modal {
+  width: 90%;
+  max-width: 600px;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+
+.modal-content {
+  background: var(--color-bg);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--color-border);
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 20px 0 20px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 0;
+}
+
+.modal-header h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 1.2rem;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  padding: 0;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+}
+
+.modal-body {
+  padding: 0;
+}
+
+.menu-divider {
+  height: 1px;
+  background: var(--color-border);
+  margin: 5px 0;
 }
 </style>

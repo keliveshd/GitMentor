@@ -2,6 +2,7 @@ pub mod ai_config;
 pub mod ai_manager;
 pub mod ai_provider;
 pub mod conversation_logger;
+pub mod git_config;
 pub mod git_engine;
 pub mod layered_commit_manager;
 pub mod llm_client;
