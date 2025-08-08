@@ -96,7 +96,7 @@ pub struct TemplateConfig {
 impl Default for TemplateConfig {
     fn default() -> Self {
         Self {
-            version: "1.0.0".to_string(),
+            version: "1.1.0".to_string(), // 更新版本号以支持两段式提示词
             last_updated: chrono::Utc::now().to_rfc3339(),
             templates: HashMap::new(),
         }
@@ -115,7 +115,7 @@ impl PromptManager {
         let mut manager = Self {
             templates: HashMap::new(),
             config_path: None,
-            current_version: "1.0.0".to_string(),
+            current_version: "1.1.0".to_string(), // 更新版本号以支持两段式提示词
         };
 
         // 加载默认模板
@@ -130,7 +130,7 @@ impl PromptManager {
         let mut manager = Self {
             templates: HashMap::new(),
             config_path: Some(config_path.clone()),
-            current_version: "1.0.0".to_string(),
+            current_version: "1.1.0".to_string(), // 更新版本号以支持两段式提示词
         };
 
         // 尝试加载现有配置

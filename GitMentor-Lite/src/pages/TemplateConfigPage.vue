@@ -423,7 +423,15 @@ const saveLanguageSettings = async () => {
 
 // 编辑模板
 const editTemplate = (template: PromptTemplate) => {
-  editingTemplate.value = { ...template }
+  // 确保所有两段式提示词字段都有默认值
+  editingTemplate.value = {
+    ...template,
+    // 如果新字段为空或undefined，使用空字符串作为默认值
+    file_analysis_system_prompt: template.file_analysis_system_prompt || '',
+    file_analysis_user_prompt: template.file_analysis_user_prompt || '',
+    summary_system_prompt: template.summary_system_prompt || '',
+    summary_user_prompt: template.summary_user_prompt || ''
+  }
   showEditDialog.value = true
 }
 
@@ -479,6 +487,13 @@ const closeDialogs = () => {
     description: '',
     system_prompt: '',
     user_prompt_template: '',
+
+    // 新增：两段式提示词字段的默认值
+    file_analysis_system_prompt: '',
+    file_analysis_user_prompt: '',
+    summary_system_prompt: '',
+    summary_user_prompt: '',
+
     language: 'FOLLOW_GLOBAL',
     max_tokens: 200,
     temperature: 0.3,
