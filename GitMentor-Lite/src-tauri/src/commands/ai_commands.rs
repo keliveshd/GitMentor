@@ -338,6 +338,32 @@ pub async fn get_prompt_templates(
     Ok(manager.get_prompt_templates().await)
 }
 
+/// 检查模板是否支持两段式处理
+/// 作者：Evilek
+/// 编写日期：2025-08-08
+#[tauri::command]
+pub async fn check_template_two_phase_support(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    template_id: String,
+) -> Result<bool, String> {
+    let manager = ai_manager.lock().await;
+    let prompt_manager = manager.get_prompt_manager().await;
+    Ok(prompt_manager.supports_two_phase(&template_id))
+}
+
+/// 获取模板的两段式配置状态
+/// 作者：Evilek
+/// 编写日期：2025-08-08
+#[tauri::command]
+pub async fn get_template_two_phase_status(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    template_id: String,
+) -> Result<Option<(bool, bool)>, String> {
+    let manager = ai_manager.lock().await;
+    let prompt_manager = manager.get_prompt_manager().await;
+    Ok(prompt_manager.get_two_phase_status(&template_id))
+}
+
 /// 创建自定义模板
 /// 作者：Evilek
 /// 编写日期：2025-01-29

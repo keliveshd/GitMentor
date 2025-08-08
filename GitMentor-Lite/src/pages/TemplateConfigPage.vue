@@ -132,89 +132,124 @@
         </div>
 
         <div class="dialog-body">
-          <div class="form-group">
-            <label for="template-name">模板名称</label>
-            <input id="template-name" v-model="editingTemplate.name" type="text" class="form-input"
-              placeholder="输入模板名称">
-          </div>
+          <!-- 基本信息区域 -->
+          <div class="basic-info-section">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="template-name">模板名称</label>
+                <input id="template-name" v-model="editingTemplate.name" type="text" class="form-input"
+                  placeholder="输入模板名称">
+              </div>
+              <div class="form-group">
+                <label for="template-description">模板描述</label>
+                <input id="template-description" v-model="editingTemplate.description" type="text" class="form-input"
+                  placeholder="输入模板描述">
+              </div>
+            </div>
 
-          <div class="form-group">
-            <label for="template-description">模板描述</label>
-            <input id="template-description" v-model="editingTemplate.description" type="text" class="form-input"
-              placeholder="输入模板描述">
-          </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="template-language">语言</label>
+                <select id="template-language" v-model="editingTemplate.language" class="form-select">
+                  <option value="FOLLOW_GLOBAL">跟随全局</option>
+                  <option value="Simplified Chinese">简体中文</option>
+                  <option value="Traditional Chinese">繁体中文</option>
+                  <option value="English">English</option>
+                  <option value="Japanese">日本語</option>
+                  <option value="Korean">한국어</option>
+                  <option value="French">Français</option>
+                  <option value="German">Deutsch</option>
+                  <option value="Spanish">Español</option>
+                  <option value="Russian">Русский</option>
+                  <option value="Portuguese">Português</option>
+                  <option value="Italian">Italiano</option>
+                  <option value="Dutch">Nederlands</option>
+                  <option value="Swedish">Svenska</option>
+                  <option value="Czech">Čeština</option>
+                  <option value="Polish">Polski</option>
+                  <option value="Turkish">Türkçe</option>
+                  <option value="Vietnamese">Tiếng Việt</option>
+                  <option value="Thai">ไทย</option>
+                  <option value="Indonesian">Bahasa Indonesia</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>配置选项</label>
+                <div class="checkbox-group">
+                  <label class="checkbox-item">
+                    <input type="checkbox" v-model="editingTemplate.enable_emoji">
+                    <span>启用Emoji</span>
+                  </label>
+                  <label class="checkbox-item">
+                    <input type="checkbox" v-model="editingTemplate.enable_body">
+                    <span>详细描述</span>
+                  </label>
+                  <label class="checkbox-item">
+                    <input type="checkbox" v-model="editingTemplate.enable_merge_commit">
+                    <span>合并提交</span>
+                  </label>
+                  <label class="checkbox-item">
+                    <input type="checkbox" v-model="editingTemplate.use_recent_commits">
+                    <span>参考历史</span>
+                  </label>
+                </div>
+              </div>
+            </div>
 
-          <div class="form-group">
-            <label for="template-language">语言</label>
-            <select id="template-language" v-model="editingTemplate.language" class="form-select">
-              <option value="FOLLOW_GLOBAL">跟随全局</option>
-              <option value="Simplified Chinese">简体中文</option>
-              <option value="Traditional Chinese">繁体中文</option>
-              <option value="English">English</option>
-              <option value="Japanese">日本語</option>
-              <option value="Korean">한국어</option>
-              <option value="French">Français</option>
-              <option value="German">Deutsch</option>
-              <option value="Spanish">Español</option>
-              <option value="Russian">Русский</option>
-              <option value="Portuguese">Português</option>
-              <option value="Italian">Italiano</option>
-              <option value="Dutch">Nederlands</option>
-              <option value="Swedish">Svenska</option>
-              <option value="Czech">Čeština</option>
-              <option value="Polish">Polski</option>
-              <option value="Turkish">Türkçe</option>
-              <option value="Vietnamese">Tiếng Việt</option>
-              <option value="Thai">ไทย</option>
-              <option value="Indonesian">Bahasa Indonesia</option>
-            </select>
-          </div>
-
-          <div class="form-group">
-            <label>配置选项</label>
-            <div class="checkbox-group">
-              <label class="checkbox-item">
-                <input type="checkbox" v-model="editingTemplate.enable_emoji">
-                <span>启用Emoji表情</span>
-              </label>
-              <label class="checkbox-item">
-                <input type="checkbox" v-model="editingTemplate.enable_body">
-                <span>启用详细描述</span>
-              </label>
-              <label class="checkbox-item">
-                <input type="checkbox" v-model="editingTemplate.enable_merge_commit">
-                <span>合并提交模式</span>
-              </label>
-              <label class="checkbox-item">
-                <input type="checkbox" v-model="editingTemplate.use_recent_commits">
-                <span>参考最近提交</span>
-              </label>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="max-tokens">最大Token数</label>
+                <input id="max-tokens" v-model.number="editingTemplate.max_tokens" type="number" class="form-input"
+                  min="50" max="4000">
+              </div>
+              <div class="form-group">
+                <label for="temperature">温度值</label>
+                <input id="temperature" v-model.number="editingTemplate.temperature" type="number" class="form-input"
+                  min="0" max="2" step="0.1">
+              </div>
             </div>
           </div>
 
-          <div class="form-group">
-            <label for="system-prompt">系统提示词</label>
-            <textarea id="system-prompt" v-model="editingTemplate.system_prompt" class="form-textarea" rows="8"
-              placeholder="输入系统提示词..."></textarea>
+          <!-- 两段式提示词编辑区域 -->
+          <div class="two-phase-editor">
+            <div class="phase-section">
+              <h4>🔍 单文件分析阶段</h4>
+              <p class="phase-description">用于分析单个文件的变更内容和意图</p>
+
+              <div class="form-group">
+                <label for="file-analysis-system">系统提示词</label>
+                <textarea id="file-analysis-system" v-model="editingTemplate.file_analysis_system_prompt"
+                  class="form-textarea" rows="6" placeholder="输入单文件分析的系统提示词..."></textarea>
+              </div>
+
+              <div class="form-group">
+                <label for="file-analysis-user">用户提示词模板</label>
+                <textarea id="file-analysis-user" v-model="editingTemplate.file_analysis_user_prompt"
+                  class="form-textarea" rows="4" placeholder="输入单文件分析的用户提示词模板，可使用变量：{diff}, {staged_files}"></textarea>
+              </div>
+            </div>
+
+            <div class="phase-section">
+              <h4>📝 总结阶段</h4>
+              <p class="phase-description">基于所有文件分析结果生成最终提交消息</p>
+
+              <div class="form-group">
+                <label for="summary-system">系统提示词</label>
+                <textarea id="summary-system" v-model="editingTemplate.summary_system_prompt" class="form-textarea"
+                  rows="6" placeholder="输入总结阶段的系统提示词..."></textarea>
+              </div>
+
+              <div class="form-group">
+                <label for="summary-user">用户提示词模板</label>
+                <textarea id="summary-user" v-model="editingTemplate.summary_user_prompt" class="form-textarea" rows="4"
+                  placeholder="输入总结阶段的用户提示词模板，可使用变量：{diff}"></textarea>
+              </div>
+            </div>
           </div>
 
-          <div class="form-group">
-            <label for="user-prompt">用户提示词模板</label>
-            <textarea id="user-prompt" v-model="editingTemplate.user_prompt_template" class="form-textarea" rows="6"
-              placeholder="输入用户提示词模板，可使用变量：{diff}, {staged_files}, {branch_name}"></textarea>
-          </div>
-
-          <div class="form-row">
-            <div class="form-group">
-              <label for="max-tokens">最大Token数</label>
-              <input id="max-tokens" v-model.number="editingTemplate.max_tokens" type="number" class="form-input"
-                min="50" max="4000">
-            </div>
-            <div class="form-group">
-              <label for="temperature">温度值</label>
-              <input id="temperature" v-model.number="editingTemplate.temperature" type="number" class="form-input"
-                min="0" max="2" step="0.1">
-            </div>
+          <!-- 兼容性提示 -->
+          <div class="compatibility-note">
+            <p><strong>💡 提示：</strong>两段式提示词为新功能，如果留空将自动使用原有的系统提示词和用户提示词作为后备。</p>
           </div>
         </div>
 
@@ -239,13 +274,22 @@ import { invoke } from '@tauri-apps/api/core'
  * 编写日期：2025-01-29
  */
 
-// 接口定义
+// 接口定义（更新为两段式模板）
 interface PromptTemplate {
   id: string
   name: string
   description: string
+
+  // 原有字段（保持向后兼容）
   system_prompt: string
   user_prompt_template: string
+
+  // 新增：两段式提示词字段
+  file_analysis_system_prompt?: string
+  file_analysis_user_prompt?: string
+  summary_system_prompt?: string
+  summary_user_prompt?: string
+
   language: string
   max_tokens?: number
   temperature?: number
@@ -267,13 +311,20 @@ const showEditDialog = ref(false)
 const saving = ref(false)
 const globalLanguage = ref('Simplified Chinese')
 
-// 编辑中的模板
+// 编辑中的模板（更新为两段式）
 const editingTemplate = ref<PromptTemplate>({
   id: '',
   name: '',
   description: '',
   system_prompt: '',
   user_prompt_template: '',
+
+  // 新增：两段式提示词字段
+  file_analysis_system_prompt: '',
+  file_analysis_user_prompt: '',
+  summary_system_prompt: '',
+  summary_user_prompt: '',
+
   language: 'FOLLOW_GLOBAL',
   max_tokens: 200,
   temperature: 0.3,
@@ -739,9 +790,9 @@ onMounted(() => {
 .dialog-content {
   background: white;
   border-radius: 8px;
-  width: 90%;
-  max-width: 600px;
-  max-height: 90vh;
+  width: 95%;
+  max-width: 1200px;
+  max-height: 95vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -778,6 +829,67 @@ onMounted(() => {
   flex: 1;
   padding: 20px;
   overflow-y: auto;
+  max-height: 80vh;
+}
+
+/* 基本信息区域样式 */
+.basic-info-section {
+  margin-bottom: 30px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+/* 两段式编辑器样式 */
+.two-phase-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.phase-section {
+  padding: 20px;
+  background: #ffffff;
+  border: 2px solid #e9ecef;
+  border-radius: 8px;
+  transition: border-color 0.2s;
+}
+
+.phase-section:hover {
+  border-color: #2196f3;
+}
+
+.phase-section h4 {
+  margin: 0 0 8px 0;
+  font-size: 16px;
+  color: #333;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.phase-description {
+  margin: 0 0 20px 0;
+  font-size: 13px;
+  color: #666;
+  font-style: italic;
+}
+
+/* 兼容性提示样式 */
+.compatibility-note {
+  padding: 15px;
+  background: #e3f2fd;
+  border: 1px solid #bbdefb;
+  border-radius: 6px;
+  margin-bottom: 20px;
+}
+
+.compatibility-note p {
+  margin: 0;
+  font-size: 13px;
+  color: #1565c0;
 }
 
 .form-group {

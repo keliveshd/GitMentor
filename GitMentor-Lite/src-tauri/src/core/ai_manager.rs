@@ -184,6 +184,13 @@ impl AIManager {
         prompt_manager.get_all_templates().into_iter().cloned().collect()
     }
 
+    /// 获取提示词管理器的只读引用
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    pub async fn get_prompt_manager(&self) -> tokio::sync::RwLockReadGuard<'_, PromptManager> {
+        self.prompt_manager.read().await
+    }
+
     /// 获取对话记录
     pub async fn get_conversation_history(&self) -> Vec<ConversationRecord> {
         let logger = self.conversation_logger.read().await;
@@ -330,10 +337,5 @@ impl AIManager {
         prompt_manager.get_default_templates().into_iter().cloned().collect()
     }
 
-    /// 获取提示词管理器的只读引用
-    /// 作者：Evilek
-    /// 编写日期：2025-08-05
-    pub async fn get_prompt_manager(&self) -> tokio::sync::RwLockReadGuard<'_, crate::core::prompt_manager::PromptManager> {
-        self.prompt_manager.read().await
-    }
+
 }

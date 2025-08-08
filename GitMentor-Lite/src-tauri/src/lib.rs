@@ -55,6 +55,9 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 过滤PNG警告和其他不必要的日志
+    std::env::set_var("RUST_LOG", "warn,libpng=off,image=off");
+
     // Initialize configuration directory
     let config_dir = std::env::current_dir().unwrap().join(".config");
 
@@ -126,6 +129,8 @@ pub fn run() {
             ai_commands::delete_template,
             ai_commands::get_custom_templates,
             ai_commands::get_default_templates,
+            ai_commands::check_template_two_phase_support,
+            ai_commands::get_template_two_phase_status,
             ai_commands::get_conversation_history,
             ai_commands::clear_conversation_history,
             ai_commands::get_conversation_history_by_repository,

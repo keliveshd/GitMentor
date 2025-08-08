@@ -19,8 +19,35 @@ pub struct PromptTemplate {
     pub id: String,
     pub name: String,
     pub description: String,
+
+    // 原有字段（保持向后兼容，但标记为废弃）
+    #[serde(default)]
     pub system_prompt: String,
+    #[serde(default)]
     pub user_prompt_template: String,
+
+    // 新增：两段式提示词模板
+    /// 单文件分析阶段的系统提示词
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    #[serde(default)]
+    pub file_analysis_system_prompt: String,
+    /// 单文件分析阶段的用户提示词模板
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    #[serde(default)]
+    pub file_analysis_user_prompt: String,
+    /// 总结阶段的系统提示词
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    #[serde(default)]
+    pub summary_system_prompt: String,
+    /// 总结阶段的用户提示词模板
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    #[serde(default)]
+    pub summary_user_prompt: String,
+
     pub language: String,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
@@ -270,11 +297,13 @@ impl PromptManager {
         // 获取默认的提交类型
         let default_commit_types = self.get_default_commit_types();
 
-        // 标准提交消息模板（优化版）
+        // 标准提交消息模板（两段式优化版）
         let standard_template = PromptTemplate {
             id: "standard".to_string(),
             name: "标准提交消息".to_string(),
             description: "生成符合常规规范的提交消息".to_string(),
+
+            // 原有字段（保持向后兼容）
             system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰、符合规范的提交消息。
 
 核心要求：
@@ -299,23 +328,31 @@ impl PromptManager {
 {diff}
 
 请生成一个简洁明了的提交消息。"#.to_string(),
-            language: "FOLLOW_GLOBAL".to_string(),
-            max_tokens: Some(200),
-            temperature: Some(0.3),
-            enable_emoji: Some(false),
-            enable_body: Some(true),
-            enable_merge_commit: Some(false),
-            use_recent_commits: Some(false),
-            commit_types: Some(default_commit_types.clone()),
-            is_custom: Some(false),
-            created_at: Some(chrono::Utc::now().to_rfc3339()),
-            updated_at: Some(chrono::Utc::now().to_rfc3339()),
-            version: Some(self.current_version.clone()),
-            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
-                id: "standard".to_string(),
-                name: "标准提交消息".to_string(),
-                description: "生成符合常规规范的提交消息".to_string(),
-                system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰、符合规范的提交消息。
+
+            // 新增：单文件分析阶段
+            file_analysis_system_prompt: r#"你是专业的代码变更分析助手。请分析单个文件的具体变更内容，识别变更的类型、目的和影响。
+
+分析要求：
+- 识别变更类型（新增、修改、删除、重构等）
+- 分析变更的具体内容和目的
+- 评估变更的影响范围
+- 提取关键的技术细节
+- 保持分析简洁但准确
+
+输出格式：
+直接输出对该文件变更的简洁分析，不要包含格式标记或额外说明。"#.to_string(),
+
+            file_analysis_user_prompt: r#"请分析以下文件的变更：
+
+文件路径：{staged_files}
+
+代码差异：
+{diff}
+
+请分析这个文件的具体变更内容和目的。"#.to_string(),
+
+            // 新增：总结阶段
+            summary_system_prompt: r#"你是专业的Git提交消息生成助手。基于各个文件的变更分析，生成统一的提交消息。
 
 核心要求：
 - 第一行为简短摘要（50字符以内）
@@ -330,37 +367,35 @@ impl PromptManager {
 - 不要在输出中包含三重反引号或标题格式
 
 直接输出提交消息，无需其他内容。"#.to_string(),
-                user_prompt_template: r#"请为以下代码变更生成提交消息：
 
-变更的文件：
-{staged_files}
+            summary_user_prompt: r#"基于以下文件变更分析，生成统一的提交消息：
 
-代码差异：
 {diff}
 
 请生成一个简洁明了的提交消息。"#.to_string(),
-                language: "FOLLOW_GLOBAL".to_string(),
-                max_tokens: Some(200),
-                temperature: Some(0.3),
-                enable_emoji: Some(false),
-                enable_body: Some(true),
-                enable_merge_commit: Some(false),
-                use_recent_commits: Some(false),
-                commit_types: Some(default_commit_types.clone()),
-                is_custom: Some(false),
-                created_at: Some(chrono::Utc::now().to_rfc3339()),
-                updated_at: Some(chrono::Utc::now().to_rfc3339()),
-                version: None,
-                template_hash: None,
-            })),
+            language: "FOLLOW_GLOBAL".to_string(),
+            max_tokens: Some(200),
+            temperature: Some(0.3),
+            enable_emoji: Some(false),
+            enable_body: Some(true),
+            enable_merge_commit: Some(false),
+            use_recent_commits: Some(false),
+            commit_types: Some(default_commit_types.clone()),
+            is_custom: Some(false),
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+            updated_at: Some(chrono::Utc::now().to_rfc3339()),
+            version: Some(self.current_version.clone()),
+            template_hash: None, // 简化处理，不计算hash
         };
         self.add_template(standard_template);
 
-        // 简洁提交消息模板（优化版）
+        // 简洁提交消息模板（两段式优化版）
         let chinese_template = PromptTemplate {
             id: "chinese".to_string(),
             name: "简洁提交消息".to_string(),
             description: "生成简洁明了的提交消息".to_string(),
+
+            // 原有字段（保持向后兼容）
             system_prompt:
                 r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的提交消息。
 
@@ -388,24 +423,34 @@ impl PromptManager {
 
 请生成一个简洁明了的中文提交消息。"#
                 .to_string(),
-            language: "FOLLOW_GLOBAL".to_string(),
-            max_tokens: Some(150),
-            temperature: Some(0.3),
-            enable_emoji: Some(false),
-            enable_body: Some(true),
-            enable_merge_commit: Some(false),
-            use_recent_commits: Some(false),
-            commit_types: Some(default_commit_types.clone()),
-            is_custom: Some(false),
-            created_at: Some(chrono::Utc::now().to_rfc3339()),
-            updated_at: Some(chrono::Utc::now().to_rfc3339()),
-            version: Some(self.current_version.clone()),
-            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
-                id: "chinese".to_string(),
-                name: "简洁提交消息".to_string(),
-                description: "生成简洁明了的提交消息".to_string(),
-                system_prompt:
-                    r#"你是专业的Git提交消息生成助手。请根据代码变更生成简洁、清晰的提交消息。
+
+            // 新增：单文件分析阶段
+            file_analysis_system_prompt:
+                r#"你是专业的代码变更分析助手。请简洁地分析单个文件的变更内容。
+
+分析要求：
+- 识别变更类型（添加、修改、删除、重构等）
+- 简述变更的核心内容
+- 用词简洁，避免冗余
+- 表达自然流畅
+
+输出格式：
+直接输出对该文件变更的简洁分析，不超过30字。"#
+                    .to_string(),
+
+            file_analysis_user_prompt: r#"请简洁分析以下文件的变更：
+
+文件路径：{staged_files}
+
+代码差异：
+{diff}
+
+请用简洁的中文描述这个文件的变更内容。"#
+                .to_string(),
+
+            // 新增：总结阶段
+            summary_system_prompt:
+                r#"你是专业的Git提交消息生成助手。基于文件变更分析，生成简洁的中文提交消息。
 
 核心要求：
 - 第一行为简短摘要（25字以内）
@@ -420,39 +465,37 @@ impl PromptManager {
 - 不要在输出中包含三重反引号或标题格式
 
 直接输出提交消息，无需其他内容。"#
-                        .to_string(),
-                user_prompt_template: r#"请为以下代码变更生成中文提交消息：
+                    .to_string(),
 
-变更的文件：
-{staged_files}
+            summary_user_prompt: r#"基于以下文件变更分析，生成简洁的中文提交消息：
 
-代码差异：
 {diff}
 
 请生成一个简洁明了的中文提交消息。"#
-                    .to_string(),
-                language: "FOLLOW_GLOBAL".to_string(),
-                max_tokens: Some(150),
-                temperature: Some(0.3),
-                enable_emoji: Some(false),
-                enable_body: Some(true),
-                enable_merge_commit: Some(false),
-                use_recent_commits: Some(false),
-                commit_types: Some(default_commit_types.clone()),
-                is_custom: Some(false),
-                created_at: Some(chrono::Utc::now().to_rfc3339()),
-                updated_at: Some(chrono::Utc::now().to_rfc3339()),
-                version: None,
-                template_hash: None,
-            })),
+                .to_string(),
+            language: "FOLLOW_GLOBAL".to_string(),
+            max_tokens: Some(150),
+            temperature: Some(0.3),
+            enable_emoji: Some(false),
+            enable_body: Some(true),
+            enable_merge_commit: Some(false),
+            use_recent_commits: Some(false),
+            commit_types: Some(default_commit_types.clone()),
+            is_custom: Some(false),
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+            updated_at: Some(chrono::Utc::now().to_rfc3339()),
+            version: Some(self.current_version.clone()),
+            template_hash: None, // 简化处理，不计算hash
         };
         self.add_template(chinese_template);
 
-        // 详细提交消息模板（优化版）
+        // 详细提交消息模板（两段式优化版）
         let detailed_template = PromptTemplate {
             id: "detailed".to_string(),
             name: "详细提交消息".to_string(),
             description: "生成包含详细描述的提交消息".to_string(),
+
+            // 原有字段（保持向后兼容）
             system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成详细的提交消息，包括摘要和详细描述。
 
 核心要求：
@@ -480,23 +523,31 @@ impl PromptManager {
 {diff}
 
 请生成包含摘要和详细描述的提交消息。"#.to_string(),
-            language: "FOLLOW_GLOBAL".to_string(),
-            max_tokens: Some(400),
-            temperature: Some(0.4),
-            enable_emoji: Some(false),
-            enable_body: Some(true),
-            enable_merge_commit: Some(false),
-            use_recent_commits: Some(true),
-            commit_types: Some(default_commit_types.clone()),
-            is_custom: Some(false),
-            created_at: Some(chrono::Utc::now().to_rfc3339()),
-            updated_at: Some(chrono::Utc::now().to_rfc3339()),
-            version: Some(self.current_version.clone()),
-            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
-                id: "detailed".to_string(),
-                name: "详细提交消息".to_string(),
-                description: "生成包含详细描述的提交消息".to_string(),
-                system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成详细的提交消息，包括摘要和详细描述。
+
+            // 新增：单文件分析阶段
+            file_analysis_system_prompt: r#"你是专业的代码变更分析助手。请详细分析单个文件的变更内容，为后续生成详细提交消息提供基础。
+
+分析要求：
+- 识别变更类型和具体内容
+- 分析变更的目的和影响
+- 识别关键的技术细节
+- 评估是否有破坏性变更
+- 提供充分的上下文信息
+
+输出格式：
+提供该文件变更的详细分析，包括变更类型、具体内容、目的和影响。"#.to_string(),
+
+            file_analysis_user_prompt: r#"请详细分析以下文件的变更：
+
+文件路径：{staged_files}
+
+代码差异：
+{diff}
+
+请提供这个文件变更的详细分析，包括变更类型、具体内容、目的和可能的影响。"#.to_string(),
+
+            // 新增：总结阶段
+            summary_system_prompt: r#"你是专业的Git提交消息生成助手。基于详细的文件变更分析，生成包含摘要和详细描述的提交消息。
 
 核心要求：
 - 第一行：简短摘要（50字符以内）
@@ -513,38 +564,35 @@ impl PromptManager {
 - 不要在输出中包含三重反引号或标题格式
 
 直接输出提交消息，无需其他内容。"#.to_string(),
-                user_prompt_template: r#"请为以下代码变更生成详细的提交消息：
 
-分支：{branch_name}
-变更的文件：
-{staged_files}
+            summary_user_prompt: r#"基于以下详细的文件变更分析，生成包含摘要和详细描述的提交消息：
 
-代码差异：
 {diff}
 
 请生成包含摘要和详细描述的提交消息。"#.to_string(),
-                language: "FOLLOW_GLOBAL".to_string(),
-                max_tokens: Some(400),
-                temperature: Some(0.4),
-                enable_emoji: Some(false),
-                enable_body: Some(true),
-                enable_merge_commit: Some(false),
-                use_recent_commits: Some(true),
-                commit_types: Some(default_commit_types.clone()),
-                is_custom: Some(false),
-                created_at: Some(chrono::Utc::now().to_rfc3339()),
-                updated_at: Some(chrono::Utc::now().to_rfc3339()),
-                version: None,
-                template_hash: None,
-            })),
+            language: "FOLLOW_GLOBAL".to_string(),
+            max_tokens: Some(400),
+            temperature: Some(0.4),
+            enable_emoji: Some(false),
+            enable_body: Some(true),
+            enable_merge_commit: Some(false),
+            use_recent_commits: Some(true),
+            commit_types: Some(default_commit_types.clone()),
+            is_custom: Some(false),
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+            updated_at: Some(chrono::Utc::now().to_rfc3339()),
+            version: Some(self.current_version.clone()),
+            template_hash: None, // 简化处理，不计算hash
         };
         self.add_template(detailed_template);
 
-        // 约定式提交模板（优化版）
+        // 约定式提交模板（两段式优化版）
         let conventional_template = PromptTemplate {
             id: "conventional".to_string(),
             name: "约定式提交".to_string(),
             description: "生成符合约定式提交规范的消息".to_string(),
+
+            // 原有字段（保持向后兼容）
             system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成符合约定式提交规范的消息。
 
 核心要求：
@@ -569,23 +617,30 @@ impl PromptManager {
 {diff}
 
 请分析变更类型并生成符合约定式提交规范的消息。"#.to_string(),
-            language: "FOLLOW_GLOBAL".to_string(),
-            max_tokens: Some(150),
-            temperature: Some(0.2),
-            enable_emoji: Some(true),
-            enable_body: Some(false),
-            enable_merge_commit: Some(false),
-            use_recent_commits: Some(false),
-            commit_types: Some(default_commit_types.clone()),
-            is_custom: Some(false),
-            created_at: Some(chrono::Utc::now().to_rfc3339()),
-            updated_at: Some(chrono::Utc::now().to_rfc3339()),
-            version: Some(self.current_version.clone()),
-            template_hash: Some(Self::calculate_template_hash(&PromptTemplate {
-                id: "conventional".to_string(),
-                name: "约定式提交".to_string(),
-                description: "生成符合约定式提交规范的消息".to_string(),
-                system_prompt: r#"你是专业的Git提交消息生成助手。请根据代码变更生成符合约定式提交规范的消息。
+
+            // 新增：单文件分析阶段
+            file_analysis_system_prompt: r#"你是专业的代码变更分析助手。请分析单个文件的变更，识别约定式提交的类型和范围。
+
+分析要求：
+- 识别变更类型：feat, fix, docs, style, refactor, test, chore
+- 确定变更范围（如果适用）
+- 分析变更的具体内容
+- 评估变更的影响
+
+输出格式：
+输出该文件的变更类型分析和具体内容描述。"#.to_string(),
+
+            file_analysis_user_prompt: r#"请分析以下文件的变更类型：
+
+文件路径：{staged_files}
+
+代码差异：
+{diff}
+
+请识别这个文件变更的约定式提交类型和具体内容。"#.to_string(),
+
+            // 新增：总结阶段
+            summary_system_prompt: r#"你是专业的Git提交消息生成助手。基于文件变更分析，生成符合约定式提交规范的消息。
 
 核心要求：
 - 格式：<type>[optional scope]: <description>
@@ -600,29 +655,25 @@ impl PromptManager {
 - 不要在输出中包含三重反引号或标题格式
 
 直接输出提交消息，无需其他内容。"#.to_string(),
-                user_prompt_template: r#"请为以下代码变更生成约定式提交消息：
 
-变更的文件：
-{staged_files}
+            summary_user_prompt: r#"基于以下文件变更分析，生成符合约定式提交规范的消息：
 
-代码差异：
 {diff}
 
 请分析变更类型并生成符合约定式提交规范的消息。"#.to_string(),
-                language: "FOLLOW_GLOBAL".to_string(),
-                max_tokens: Some(150),
-                temperature: Some(0.2),
-                enable_emoji: Some(true),
-                enable_body: Some(false),
-                enable_merge_commit: Some(false),
-                use_recent_commits: Some(false),
-                commit_types: Some(default_commit_types.clone()),
-                is_custom: Some(false),
-                created_at: Some(chrono::Utc::now().to_rfc3339()),
-                updated_at: Some(chrono::Utc::now().to_rfc3339()),
-                version: None,
-                template_hash: None,
-            })),
+            language: "FOLLOW_GLOBAL".to_string(),
+            max_tokens: Some(150),
+            temperature: Some(0.2),
+            enable_emoji: Some(true),
+            enable_body: Some(false),
+            enable_merge_commit: Some(false),
+            use_recent_commits: Some(false),
+            commit_types: Some(default_commit_types.clone()),
+            is_custom: Some(false),
+            created_at: Some(chrono::Utc::now().to_rfc3339()),
+            updated_at: Some(chrono::Utc::now().to_rfc3339()),
+            version: Some(self.current_version.clone()),
+            template_hash: None, // 简化处理，不计算hash
         };
         self.add_template(conventional_template);
     }
@@ -639,13 +690,28 @@ impl PromptManager {
         self.templates.values().collect()
     }
 
-    /// 生成AI消息，根据语言配置调整提示词
+    /// 生成AI消息，根据语言配置调整提示词（兼容接口，内部使用两段式处理）
     /// 作者：Evilek
     /// 编写日期：2025-07-28
-    /// 更新日期：2025-01-29 (使用动态系统提示词)
+    /// 更新日期：2025-08-08 (重构为两段式处理)
     pub fn generate_messages(
         &self,
         template_id: &str,
+        context: &CommitContext,
+    ) -> Result<Vec<ChatMessage>> {
+        // 为了保持向后兼容，这里使用总结阶段的提示词
+        // 实际的两段式处理应该使用 execute_two_phase_commit 方法
+        self.generate_summary_messages(template_id, context, &[])
+    }
+
+    /// 生成单文件分析阶段的AI消息
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    pub fn generate_file_analysis_messages(
+        &self,
+        template_id: &str,
+        file_path: &str,
+        file_diff: &str,
         context: &CommitContext,
     ) -> Result<Vec<ChatMessage>> {
         let template = self
@@ -654,8 +720,20 @@ impl PromptManager {
 
         let mut messages = Vec::new();
 
+        // 使用单文件分析的系统提示词，如果为空则回退到原有的系统提示词
+        let system_prompt_base = if !template.file_analysis_system_prompt.is_empty() {
+            &template.file_analysis_system_prompt
+        } else {
+            &template.system_prompt
+        };
+
         // 使用动态系统提示词生成
-        let system_prompt = self.generate_dynamic_system_prompt(template, context);
+        let system_prompt = self.generate_dynamic_system_prompt_for_phase(
+            system_prompt_base,
+            template,
+            context,
+            "file_analysis",
+        );
 
         // 添加系统消息
         messages.push(ChatMessage {
@@ -663,14 +741,169 @@ impl PromptManager {
             content: system_prompt,
         });
 
-        // 生成用户消息
-        let user_content = self.render_template(&template.user_prompt_template, context)?;
+        // 生成用户消息 - 使用单文件分析的用户提示词
+        let user_prompt_template = if !template.file_analysis_user_prompt.is_empty() {
+            &template.file_analysis_user_prompt
+        } else {
+            &template.user_prompt_template
+        };
+
+        // 创建单文件上下文
+        let file_context = CommitContext {
+            diff: file_diff.to_string(),
+            staged_files: vec![file_path.to_string()],
+            branch_name: context.branch_name.clone(),
+            commit_type: context.commit_type.clone(),
+            max_length: context.max_length,
+            language: context.language.clone(),
+        };
+
+        let user_content = self.render_template(user_prompt_template, &file_context)?;
         messages.push(ChatMessage {
             role: "user".to_string(),
             content: user_content,
         });
 
         Ok(messages)
+    }
+
+    /// 生成总结阶段的AI消息
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    pub fn generate_summary_messages(
+        &self,
+        template_id: &str,
+        context: &CommitContext,
+        file_summaries: &[&str],
+    ) -> Result<Vec<ChatMessage>> {
+        let template = self
+            .get_template(template_id)
+            .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", template_id))?;
+
+        let mut messages = Vec::new();
+
+        // 使用总结阶段的系统提示词，如果为空则回退到原有的系统提示词
+        let system_prompt_base = if !template.summary_system_prompt.is_empty() {
+            &template.summary_system_prompt
+        } else {
+            &template.system_prompt
+        };
+
+        // 使用动态系统提示词生成
+        let system_prompt = self.generate_dynamic_system_prompt_for_phase(
+            system_prompt_base,
+            template,
+            context,
+            "summary",
+        );
+
+        // 添加系统消息
+        messages.push(ChatMessage {
+            role: "system".to_string(),
+            content: system_prompt,
+        });
+
+        // 生成用户消息 - 使用总结阶段的用户提示词
+        let user_prompt_template = if !template.summary_user_prompt.is_empty() {
+            &template.summary_user_prompt
+        } else {
+            &template.user_prompt_template
+        };
+
+        // 如果有文件摘要，则构建包含摘要的上下文
+        let summary_context = if !file_summaries.is_empty() {
+            let summaries_text = file_summaries.join("\n\n");
+            CommitContext {
+                diff: format!(
+                    "文件分析摘要:\n{}\n\n原始差异:\n{}",
+                    summaries_text, context.diff
+                ),
+                staged_files: context.staged_files.clone(),
+                branch_name: context.branch_name.clone(),
+                commit_type: context.commit_type.clone(),
+                max_length: context.max_length,
+                language: context.language.clone(),
+            }
+        } else {
+            context.clone()
+        };
+
+        let user_content = self.render_template(user_prompt_template, &summary_context)?;
+        messages.push(ChatMessage {
+            role: "user".to_string(),
+            content: user_content,
+        });
+
+        Ok(messages)
+    }
+
+    /// 执行完整的两段式提交流程（新的核心方法）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    pub async fn execute_two_phase_commit<F>(
+        &self,
+        template_id: &str,
+        staged_files: &[String],
+        context: &CommitContext,
+        ai_generate_fn: F,
+    ) -> Result<String>
+    where
+        F: Fn(Vec<ChatMessage>) -> Result<String> + Copy,
+    {
+        let mut file_summaries = Vec::new();
+
+        // 第一阶段：对每个文件进行单独分析
+        for file_path in staged_files {
+            // 这里需要获取单个文件的diff，暂时使用整体diff作为占位符
+            // 实际使用时需要从外部传入单文件diff获取函数
+            let file_diff = context.diff.clone(); // 占位符，实际应该是单文件diff
+
+            let messages = self.generate_file_analysis_messages(
+                template_id,
+                file_path,
+                &file_diff,
+                context,
+            )?;
+
+            let analysis_result = ai_generate_fn(messages)?;
+            file_summaries.push(analysis_result);
+        }
+
+        // 第二阶段：基于所有文件分析结果生成最终提交消息
+        let summary_messages = self.generate_summary_messages(
+            template_id,
+            context,
+            &file_summaries.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+        )?;
+
+        let final_commit_message = ai_generate_fn(summary_messages)?;
+        Ok(final_commit_message)
+    }
+
+    /// 检查模板是否支持两段式处理
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    pub fn supports_two_phase(&self, template_id: &str) -> bool {
+        if let Some(template) = self.get_template(template_id) {
+            !template.file_analysis_system_prompt.is_empty()
+                && !template.summary_system_prompt.is_empty()
+        } else {
+            false
+        }
+    }
+
+    /// 获取模板的两段式配置状态
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    pub fn get_two_phase_status(&self, template_id: &str) -> Option<(bool, bool)> {
+        if let Some(template) = self.get_template(template_id) {
+            Some((
+                !template.file_analysis_system_prompt.is_empty(),
+                !template.summary_system_prompt.is_empty(),
+            ))
+        } else {
+            None
+        }
     }
 
     fn render_template(&self, template: &str, context: &CommitContext) -> Result<String> {
@@ -811,13 +1044,49 @@ impl PromptManager {
     /// 根据配置动态生成系统提示词（参考dish-ai-commit）
     /// 作者：Evilek
     /// 编写日期：2025-01-29
-    /// 更新日期：2025-08-05 (支持跟随全局和完整语言声明)
+    /// 更新日期：2025-08-08 (支持两段式处理)
     pub fn generate_dynamic_system_prompt(
         &self,
         template: &PromptTemplate,
         context: &CommitContext,
     ) -> String {
-        let mut system_prompt = template.system_prompt.clone();
+        // 为了保持向后兼容，使用原有的系统提示词
+        self.generate_dynamic_system_prompt_for_phase(
+            &template.system_prompt,
+            template,
+            context,
+            "legacy",
+        )
+    }
+
+    /// 为特定阶段生成动态系统提示词
+    /// 作者：Evilek
+    /// 编写日期：2025-08-08
+    pub fn generate_dynamic_system_prompt_for_phase(
+        &self,
+        base_system_prompt: &str,
+        template: &PromptTemplate,
+        context: &CommitContext,
+        phase: &str,
+    ) -> String {
+        let mut system_prompt = base_system_prompt.to_string();
+
+        // 根据阶段添加特定的指导
+        match phase {
+            "file_analysis" => {
+                system_prompt.push_str(
+                    "\n\n阶段说明：这是单文件分析阶段，请专注于分析当前文件的具体变更内容和意图。",
+                );
+            }
+            "summary" => {
+                system_prompt.push_str(
+                    "\n\n阶段说明：这是总结阶段，请基于所有文件的分析结果生成统一的提交消息。",
+                );
+            }
+            _ => {
+                // legacy 模式或其他，不添加特殊说明
+            }
+        }
 
         // 根据配置添加额外的指导
         if template.enable_emoji == Some(true) {
@@ -830,7 +1099,8 @@ impl PromptManager {
 
         if template.enable_merge_commit == Some(true) {
             system_prompt.push_str("\n\n重要：如果有多个文件变更，请将它们合并为一个提交消息。");
-        } else {
+        } else if phase != "file_analysis" {
+            // 单文件分析阶段不需要这个指导
             system_prompt
                 .push_str("\n\n重要：如果有多个文件变更，请为每个主要变更生成单独的提交消息。");
         }
