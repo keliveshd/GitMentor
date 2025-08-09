@@ -1388,6 +1388,7 @@ dependencies = [
  "dirs 5.0.1",
  "git2",
  "handlebars",
+ "once_cell",
  "reqwest 0.11.27",
  "serde",
  "serde_json",

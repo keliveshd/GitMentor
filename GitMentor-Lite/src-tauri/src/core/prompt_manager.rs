@@ -337,10 +337,10 @@ impl PromptManager {
 - 分析变更的具体内容和目的
 - 评估变更的影响范围
 - 提取关键的技术细节
-- 保持分析简洁但准确
+- 保持分析简洁但准确，限制在80字以内
 
 输出格式：
-直接输出对该文件变更的简洁分析，不要包含格式标记或额外说明。"#.to_string(),
+直接输出对该文件变更的简洁分析（80字以内），不要包含格式标记或额外说明。"#.to_string(),
 
             file_analysis_user_prompt: r#"请分析以下文件的变更：
 
@@ -349,17 +349,22 @@ impl PromptManager {
 代码差异：
 {diff}
 
-请分析这个文件的具体变更内容和目的。"#.to_string(),
+请用80字以内简洁分析这个文件的具体变更内容和目的。"#.to_string(),
 
             // 新增：总结阶段
             summary_system_prompt: r#"你是专业的Git提交消息生成助手。基于各个文件的变更分析，生成统一的提交消息。
 
-核心要求：
-- 第一行为简短摘要（50字符以内）
-- 使用动词开头，如 Add, Fix, Update, Remove 等
-- 描述做了什么，而不是为什么做
-- 不要以句号结尾
-- 如果需要，可以添加详细描述（空行后）
+输出格式要求：
+第一行：简短的总结（50字符以内，使用动词开头如 Add, Fix, Update, Remove）
+空行
+后续行：每个文件修改的简介（每行一个文件，格式：文件名: 变更描述）
+
+示例格式：
+Fix user authentication and improve error handling
+
+auth.js: 修复登录验证逻辑
+error.js: 添加错误处理机制
+config.js: 更新配置参数
 
 严格禁止：
 - 不要包含任何解释、问候或额外文本
@@ -372,9 +377,9 @@ impl PromptManager {
 
 {diff}
 
-请生成一个简洁明了的提交消息。"#.to_string(),
+请按照指定格式生成提交消息：第一行简短总结，空行后每个文件一行简介。"#.to_string(),
             language: "FOLLOW_GLOBAL".to_string(),
-            max_tokens: Some(200),
+            max_tokens: Some(2000), // 修复：增加到2000 tokens，避免总结阶段超限 - Author: Evilek, Date: 2025-01-09
             temperature: Some(0.3),
             enable_emoji: Some(false),
             enable_body: Some(true),

@@ -40,10 +40,10 @@
             </button>
           </div>
           <div v-if="showSummaries" class="summaries-list">
-            <div v-for="summary in fileSummaries" :key="summary.file_path" class="summary-item">
-              <div class="summary-file">{{ getFileName(summary.file_path) }}</div>
+            <div v-for="summary in fileSummaries" :key="summary.filePath" class="summary-item">
+              <div class="summary-file">{{ getFileName(summary.filePath) }}</div>
               <div class="summary-text">{{ summary.summary }}</div>
-              <div class="summary-meta">{{ summary.tokens_used }} tokens</div>
+              <div class="summary-meta">{{ summary.tokensUsed }} tokens</div>
             </div>
           </div>
         </div>
@@ -69,9 +69,9 @@ import { computed, ref } from 'vue'
  */
 
 interface FileSummary {
-  file_path: string
+  filePath: string  // 修复：与后端serde重命名保持一致 - Author: Evilek, Date: 2025-01-09
   summary: string
-  tokens_used: number
+  tokensUsed: number  // 修复：与后端serde重命名保持一致 - Author: Evilek, Date: 2025-01-09
 }
 
 interface Props {

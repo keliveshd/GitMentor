@@ -511,6 +511,15 @@ pub async fn should_use_layered_commit(
         .map_err(|e| format!("检查分层提交失败: {}", e))
 }
 
+/// 全局分层提交管理器实例，用于任务取消
+/// Author: Evilek, Date: 2025-01-09
+use std::sync::Mutex as StdMutex;
+use std::sync::Arc as StdArc;
+use once_cell::sync::Lazy;
+
+static LAYERED_COMMIT_MANAGER: Lazy<StdMutex<Option<StdArc<crate::core::layered_commit_manager::LayeredCommitManager>>>> =
+    Lazy::new(|| StdMutex::new(None));
+
 /// 执行分层提交
 /// 作者：Evilek
 /// 编写日期：2025-08-04
@@ -539,7 +548,13 @@ pub async fn execute_layered_commit(
     // 创建LayeredCommitManager实例
     let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
     let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
-    let manager = LayeredCommitManager::new(ai_manager_arc, git_engine_arc);
+    let manager = StdArc::new(LayeredCommitManager::new(ai_manager_arc, git_engine_arc));
+
+    // 保存管理器实例到全局变量，用于任务取消 - Author: Evilek, Date: 2025-01-09
+    {
+        let mut global_manager = LAYERED_COMMIT_MANAGER.lock().unwrap();
+        *global_manager = Some(manager.clone());
+    }
 
     // 创建进度回调函数，用于发送进度事件到前端
     let app_handle_clone = app_handle.clone();
@@ -557,13 +572,21 @@ pub async fn execute_layered_commit(
     };
 
     // 调用真正的分层提交逻辑
-    match manager.execute_layered_commit(
+    let result = manager.execute_layered_commit(
         &templateId,
         stagedFiles,
         branchName,
         repository_path,
         progress_callback,
-    ).await {
+    ).await;
+
+    // 清理全局管理器实例 - Author: Evilek, Date: 2025-01-09
+    {
+        let mut global_manager = LAYERED_COMMIT_MANAGER.lock().unwrap();
+        *global_manager = None;
+    }
+
+    match result {
         Ok(result) => {
             Ok(result)
         },
@@ -576,6 +599,19 @@ pub async fn execute_layered_commit(
 
 
 
+
+/// 取消分层提交
+/// Author: Evilek, Date: 2025-01-09
+#[tauri::command]
+pub async fn cancel_layered_commit() -> Result<(), String> {
+    let global_manager = LAYERED_COMMIT_MANAGER.lock().unwrap();
+    if let Some(manager) = global_manager.as_ref() {
+        manager.cancel();
+        Ok(())
+    } else {
+        Err("没有正在执行的分层提交任务".to_string())
+    }
+}
 
 /// 获取分层提交会话列表
 /// 作者：Evilek
@@ -772,13 +808,15 @@ pub async fn check_and_process_file_tokens(
     // Author: Evilek, Date: 2025-01-09 - 移除批量合并逻辑，改为单文件独立处理
     for (file_path, _, file_tokens) in normal_files {
         // 获取模板的max_tokens配置作为分割依据
+        // Author: Evilek, Date: 2025-01-09 - 修复PromptManager实例化问题，使用AI管理器中的实例
         let template_max_tokens = if let Some(ref template_id_str) = template_id {
-            let prompt_manager = crate::core::prompt_manager::PromptManager::new();
+            let ai_manager_guard = ai_manager_arc.read().await;
+            let prompt_manager = ai_manager_guard.get_prompt_manager().await;
             prompt_manager.get_template_config(template_id_str)
                 .and_then(|(max_tokens, _)| max_tokens)
-                .unwrap_or(200) // 默认200 tokens
+                .unwrap_or(1000) // 修复：增加默认值到1000 tokens，避免过度分割
         } else {
-            200 // 默认值
+            1000 // 修复：增加默认值
         };
 
         // 使用模板的max_tokens作为分割的安全限制（保留30%余量给文件名和格式）

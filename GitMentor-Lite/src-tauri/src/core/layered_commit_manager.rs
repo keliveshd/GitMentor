@@ -1,6 +1,7 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
@@ -53,6 +54,7 @@ pub struct LayeredCommitResult {
 pub struct LayeredCommitManager {
     ai_manager: Arc<RwLock<AIManager>>,
     git_engine: Arc<RwLock<GitEngine>>,
+    cancelled: Arc<AtomicBool>, // 任务取消标志
 }
 
 impl LayeredCommitManager {
@@ -63,7 +65,20 @@ impl LayeredCommitManager {
         Self {
             ai_manager,
             git_engine,
+            cancelled: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    /// 取消当前任务
+    /// Author: Evilek, Date: 2025-01-09
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Relaxed);
+    }
+
+    /// 检查任务是否被取消
+    /// Author: Evilek, Date: 2025-01-09
+    fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Relaxed)
     }
 
     /// 检查是否需要启用分层提交
@@ -148,6 +163,11 @@ impl LayeredCommitManager {
         let mut conversation_records = Vec::new();
 
         for (index, (file_path, diff_content)) in files_with_diffs.iter().enumerate() {
+            // 检查任务是否被取消 - Author: Evilek, Date: 2025-01-09
+            if self.is_cancelled() {
+                return Err(anyhow::anyhow!("分层提交已被用户取消"));
+            }
+
             progress.current_step = (index + 1) as u32;
             progress.current_file = Some(file_path.clone());
             progress.status = format!("分析文件 {}/{}: {}", index + 1, total_files, file_path);
@@ -437,10 +457,12 @@ impl LayeredCommitManager {
     /// 根据模板的max_tokens限制截取新增文件的前面部分，并包含文件名上下文
     async fn truncate_new_file_content_with_template(&self, file_path: &str, diff_content: &str, template_id: &str) -> Result<String> {
         // 获取模板的max_tokens配置作为截取依据
-        let prompt_manager = PromptManager::new();
+        // Author: Evilek, Date: 2025-01-09 - 修复PromptManager实例化问题，使用AI管理器中的实例
+        let ai_manager = self.ai_manager.read().await;
+        let prompt_manager = ai_manager.get_prompt_manager().await;
         let template_max_tokens = prompt_manager.get_template_config(template_id)
             .and_then(|(max_tokens, _)| max_tokens)
-            .unwrap_or(200); // 默认200 tokens
+            .unwrap_or(1000); // 修复：增加默认值到1000 tokens，避免过度截取
 
         // 使用模板的max_tokens作为截取的安全限制（保留30%余量给文件名和格式）
         let safe_limit = (template_max_tokens as f32 * 0.7) as u32;
@@ -520,13 +542,19 @@ impl LayeredCommitManager {
     /// 根据模板的max_tokens配置将大文件内容分割成多个部分，每个部分都包含文件名上下文
     async fn split_file_content_with_template(&self, file_path: &str, diff_content: &str, template_id: &str) -> Result<Vec<String>> {
         // 获取模板的max_tokens配置作为分割依据
-        let prompt_manager = PromptManager::new();
+        // Author: Evilek, Date: 2025-01-09 - 修复PromptManager实例化问题，使用AI管理器中的实例
+        let ai_manager = self.ai_manager.read().await;
+        let prompt_manager = ai_manager.get_prompt_manager().await;
         let template_max_tokens = prompt_manager.get_template_config(template_id)
             .and_then(|(max_tokens, _)| max_tokens)
-            .unwrap_or(200); // 默认200 tokens
+            .unwrap_or(1000); // 修复：增加默认值到1000 tokens，避免过度分割
+
+        println!("🔍 [split_file_content_with_template] 模板 {} 的max_tokens: {}", template_id, template_max_tokens);
 
         // 使用模板的max_tokens作为分割的安全限制（保留30%余量给文件名和格式）
         let safe_limit = (template_max_tokens as f32 * 0.7) as u32;
+
+        println!("🔍 [split_file_content_with_template] 分割安全限制: {} tokens", safe_limit);
 
         let lines: Vec<&str> = diff_content.lines().collect();
         let mut split_contents = Vec::new();

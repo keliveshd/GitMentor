@@ -901,7 +901,9 @@ const executeLayeredCommit = async (stagedFiles: string[], branchName: string | 
     // 监听进度更新事件
     const unlisten = await listen('layered-commit-progress', (event: any) => {
       const progress = event.payload
-      layeredProgress.value = {
+      // 修复Vue响应式更新问题 - Author: Evilek, Date: 2025-01-09
+      // 使用Object.assign避免直接替换整个对象导致的Vue内部错误
+      Object.assign(layeredProgress.value, {
         visible: true,
         sessionId: progress.session_id,
         currentStep: progress.current_step,
@@ -909,7 +911,7 @@ const executeLayeredCommit = async (stagedFiles: string[], branchName: string | 
         currentStatus: progress.status,
         currentFile: progress.current_file || '',
         fileSummaries: progress.file_summaries || []
-      }
+      })
     })
 
     // 执行分层提交
@@ -949,16 +951,29 @@ const executeLayeredCommit = async (stagedFiles: string[], branchName: string | 
  * 取消分层提交
  * 作者：Evilek
  * 编写日期：2025-08-04
+ * 更新日期：2025-01-09 - 添加真正的任务取消机制
  */
-const cancelLayeredCommit = () => {
-  layeredProgress.value.visible = false
-  loading.value = false
-  isGenerating.value = false
-  generationProgress.value = '分层提交已取消'
-  setTimeout(() => {
-    generationProgress.value = ''
-  }, 1000)
-  toast.info('分层提交已取消', '操作取消')
+const cancelLayeredCommit = async () => {
+  try {
+    // 调用后端取消命令，真正中断任务 - Author: Evilek, Date: 2025-01-09
+    await invoke('cancel_layered_commit')
+
+    layeredProgress.value.visible = false
+    loading.value = false
+    isGenerating.value = false
+    generationProgress.value = '分层提交已取消'
+    setTimeout(() => {
+      generationProgress.value = ''
+    }, 1000)
+    toast.info('分层提交已取消', '操作取消')
+  } catch (error) {
+    console.error('取消分层提交失败:', error)
+    // 即使取消失败，也要关闭UI
+    layeredProgress.value.visible = false
+    loading.value = false
+    isGenerating.value = false
+    toast.warning('取消操作可能未完全生效', '操作警告')
+  }
 }
 
 // 批量操作相关方法
