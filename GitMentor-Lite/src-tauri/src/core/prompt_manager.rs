@@ -800,7 +800,7 @@ impl PromptManager {
         // 添加系统消息
         messages.push(ChatMessage {
             role: "system".to_string(),
-            content: system_prompt,
+            content: system_prompt.clone(),
         });
 
         // 生成用户消息 - 使用总结阶段的用户提示词
@@ -828,7 +828,15 @@ impl PromptManager {
             context.clone()
         };
 
-        let user_content = self.render_template(user_prompt_template, &summary_context)?;
+        let mut user_content = self.render_template(user_prompt_template, &summary_context)?;
+
+        // 提取配置指导部分并添加到用户提示末尾（避免AI失忆）
+        // Author: Evilek, Date: 2025-01-08
+        let config_guidance = extract_config_guidance_from_system_prompt(&system_prompt);
+        if !config_guidance.is_empty() {
+            user_content.push_str(&config_guidance);
+        }
+
         messages.push(ChatMessage {
             role: "user".to_string(),
             content: user_content,
@@ -1187,4 +1195,38 @@ impl PromptManager {
             _ => "\n\nImportant: Please generate commit messages in English, ensure natural and fluent language.".to_string(),
         }
     }
+}
+
+/// 从系统提示词中提取配置指导部分，避免AI失忆
+/// Author: Evilek, Date: 2025-01-08
+fn extract_config_guidance_from_system_prompt(system_prompt: &str) -> String {
+    let mut guidance_parts = Vec::new();
+
+    // 查找重要的配置指导
+    if system_prompt.contains("重要：请在提交类型前添加对应的emoji表情符号") {
+        guidance_parts.push("\n\n重要提醒：请在提交类型前添加对应的emoji表情符号。");
+    }
+
+    if system_prompt.contains("重要：只生成提交消息的标题行，不要包含详细描述") {
+        guidance_parts.push("\n\n重要提醒：只生成提交消息的标题行，不要包含详细描述。");
+    }
+
+    if system_prompt.contains("重要：如果有多个文件变更，请将它们合并为一个提交消息") {
+        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请将它们合并为一个提交消息。");
+    }
+
+    if system_prompt.contains("重要：如果有多个文件变更，请为每个主要变更生成单独的提交消息") {
+        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请为每个主要变更生成单独的提交消息。");
+    }
+
+    // 查找语言指导
+    if system_prompt.contains("请使用中文生成提交消息") {
+        guidance_parts.push("\n\n重要提醒：请使用中文生成提交消息。");
+    } else if system_prompt.contains("Please generate commit messages in English") {
+        guidance_parts.push("\n\n重要提醒：Please generate commit messages in English.");
+    } else if system_prompt.contains("请使用日语生成提交消息") {
+        guidance_parts.push("\n\n重要提醒：请使用日语生成提交消息。");
+    }
+
+    guidance_parts.join("")
 }

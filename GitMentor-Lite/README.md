@@ -14,3 +14,15 @@ Since TypeScript cannot handle type information for `.vue` imports, they are shi
 2. Reload the VS Code window by running `Developer: Reload Window` from the command palette.
 
 You can learn more about Take Over mode [here](https://github.com/johnsoncodehk/volar/discussions/471).
+
+## 项目进度记录
+
+### 2025-01-08 - Tab 页功能实现
+
+- ✅ 在 GitPanel.vue 中添加了 Tab 页导航功能
+- ✅ 将现有的主窗体功能包装到"消息生成"Tab 页中
+- ✅ 添加了 Tab 页状态管理和切换方法
+- ✅ 实现了 Tab 导航栏的 UI 和样式
+- ✅ 编译测试通过，无语法错误
+- 📝 Tab 页标题：消息生成 (💬)
+- 🔧 作者：Evilek

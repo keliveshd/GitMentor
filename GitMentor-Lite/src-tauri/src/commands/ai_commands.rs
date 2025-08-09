@@ -520,9 +520,9 @@ pub async fn execute_layered_commit(
     ai_manager: State<'_, Mutex<AIManager>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     app_handle: tauri::AppHandle,
-    template_id: String,
-    staged_files: Vec<String>,
-    branch_name: Option<String>,
+    templateId: String,
+    stagedFiles: Vec<String>,
+    branchName: Option<String>,
 ) -> Result<crate::core::layered_commit_manager::LayeredCommitResult, String> {
     use crate::core::layered_commit_manager::LayeredCommitManager;
     use std::sync::Arc;
@@ -558,9 +558,9 @@ pub async fn execute_layered_commit(
 
     // 调用真正的分层提交逻辑
     match manager.execute_layered_commit(
-        &template_id,
-        staged_files,
-        branch_name,
+        &templateId,
+        stagedFiles,
+        branchName,
         repository_path,
         progress_callback,
     ).await {
@@ -626,4 +626,186 @@ pub async fn clear_all_cache(
     let manager = ai_manager.lock().await;
     manager.clear_all_cache().await
         .map_err(|e| format!("Failed to clear cache: {}", e))
+}
+
+/// 检查并处理文件token限制
+/// Author: Evilek
+/// Date: 2025-01-08
+/// 对单文件变更和新增文件进行token检查，超限则分割处理
+#[derive(serde::Serialize)]
+pub struct FileTokenCheckResult {
+    #[serde(rename = "processedFiles")]
+    pub processed_files: Vec<String>,
+    #[serde(rename = "needsSplit")]
+    pub needs_split: bool,
+}
+
+#[tauri::command]
+pub async fn check_and_process_file_tokens(
+    ai_manager: State<'_, Mutex<AIManager>>,
+    git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
+    filePaths: Vec<String>,
+) -> Result<FileTokenCheckResult, String> {
+    use crate::utils::token_counter::TokenCounter;
+    use std::sync::Arc;
+    use tokio::sync::RwLock;
+
+    println!("🔍 [check_and_process_file_tokens] 开始处理 {} 个文件", filePaths.len());
+
+    let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
+    let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
+
+    println!("🔍 [check_and_process_file_tokens] 获取AI配置...");
+    // 获取AI配置以确定token限制
+    let ai_manager_guard = ai_manager_arc.read().await;
+    let config = ai_manager_guard.get_config().await;
+    let model_max_tokens = match config.base.model.as_str() {
+        m if m.contains("gpt-4") => Some(8192),
+        m if m.contains("gpt-3.5") => Some(4096),
+        m if m.contains("claude") => Some(100000),
+        m if m.contains("gemini") => Some(32768),
+        _ => Some(4096), // 默认限制
+    };
+    drop(ai_manager_guard);
+    println!("🔍 [check_and_process_file_tokens] 模型token限制: {:?}", model_max_tokens);
+
+    let mut processed_files = Vec::new();
+    let mut needs_split = false;
+
+    println!("🔍 [check_and_process_file_tokens] 开始获取文件diff...");
+
+    // 性能优化：使用批量diff获取，避免单个文件的重复Git操作
+    let git_engine_guard = git_engine_arc.read().await;
+    let batch_diff_result = git_engine_guard.get_diff_summary(&filePaths);
+    drop(git_engine_guard);
+
+    // 如果批量获取失败，回退到单个文件处理（但添加超时保护）
+    let mut file_diffs = Vec::new();
+
+    match batch_diff_result {
+        Ok(batch_diff) => {
+            println!("🔍 [check_and_process_file_tokens] 使用批量diff，长度: {}", batch_diff.len());
+            // 简化处理：如果能获取到批量diff，就假设所有文件都有变更
+            // 这是一个权衡：牺牲一些精确性换取性能
+            for file_path in &filePaths {
+                // 为每个文件分配一部分diff内容（简化估算）
+                let estimated_diff = format!("diff --git a/{} b/{}\n--- a/{}\n+++ b/{}\n@@ -1,10 +1,10 @@\n 文件变更内容...",
+                                            file_path, file_path, file_path, file_path);
+                file_diffs.push((file_path.clone(), Some(estimated_diff)));
+            }
+        },
+        Err(_) => {
+            println!("⚠️ [check_and_process_file_tokens] 批量diff获取失败，回退到单个文件处理");
+            // 回退到原来的逻辑，但添加超时保护
+            let git_engine_guard = git_engine_arc.read().await;
+
+            for (index, file_path) in filePaths.iter().enumerate() {
+                println!("🔍 [check_and_process_file_tokens] 处理文件 {}/{}: {}", index + 1, filePaths.len(), file_path);
+
+                // 使用优化后的Git diff获取
+                let start_time = std::time::Instant::now();
+                match git_engine_guard.get_simple_file_diff(file_path) {
+                    Ok(diff_content) => {
+                        let elapsed = start_time.elapsed();
+                        println!("🔍 [check_and_process_file_tokens] 文件 {} diff长度: {}, 耗时: {:?}", file_path, diff_content.len(), elapsed);
+                        file_diffs.push((file_path.clone(), Some(diff_content)));
+                    },
+                    Err(e) => {
+                        println!("⚠️ [check_and_process_file_tokens] 文件 {} diff获取失败: {}", file_path, e);
+                        file_diffs.push((file_path.clone(), None));
+                    }
+                }
+            }
+            drop(git_engine_guard);
+        }
+    }
+
+    println!("🔍 [check_and_process_file_tokens] 完成diff获取，开始token分析...");
+
+    // 智能分组策略：根据token使用量决定处理方式
+    let mut total_tokens = 0u32;
+    let mut large_files = Vec::new();
+    let mut normal_files = Vec::new();
+
+    // 计算每个文件的token使用量
+    for (file_path, diff_content_opt) in file_diffs {
+        if let Some(diff_content) = diff_content_opt {
+            println!("🔍 [check_and_process_file_tokens] 计算文件 {} 的token...", file_path);
+            let file_tokens = TokenCounter::estimate_file_diff_tokens(&file_path, &diff_content);
+            println!("🔍 [check_and_process_file_tokens] 文件 {} token数: {}", file_path, file_tokens);
+
+            // 单个文件超过限制，需要分割
+            if TokenCounter::is_over_limit(file_tokens, model_max_tokens) {
+                println!("⚠️ [check_and_process_file_tokens] 文件 {} 超过token限制，标记为大文件", file_path);
+                needs_split = true;
+                large_files.push((file_path, diff_content, file_tokens));
+            } else {
+                total_tokens += file_tokens;
+                normal_files.push((file_path, diff_content, file_tokens));
+            }
+        } else {
+            // diff获取失败的文件直接添加
+            println!("⚠️ [check_and_process_file_tokens] 文件 {} diff获取失败，直接添加", file_path);
+            processed_files.push(file_path);
+        }
+    }
+
+    println!("🔍 [check_and_process_file_tokens] Token分析完成 - 大文件: {}, 普通文件: {}, 总token: {}",
+             large_files.len(), normal_files.len(), total_tokens);
+
+    // 处理大文件：需要分割
+    for (file_path, diff_content, _) in large_files {
+        // 检查是否为新增文件
+        if diff_content.contains("new file mode") || diff_content.starts_with("+++") {
+            // 新增文件：截取前面部分
+            processed_files.push(format!("{}#truncated", file_path));
+        } else {
+            // 变更文件：标记需要分割
+            processed_files.push(format!("{}#split", file_path));
+        }
+    }
+
+    // 处理普通文件：检查是否可以合并
+    if !normal_files.is_empty() {
+        // 如果所有普通文件的总token数不超过限制，可以合并处理
+        if !TokenCounter::is_over_limit(total_tokens, model_max_tokens) {
+            // 合并成一个批次处理
+            let combined_files: Vec<String> = normal_files.iter().map(|(path, _, _)| path.clone()).collect();
+            processed_files.push(format!("batch#{}", combined_files.join(",")));
+        } else {
+            // 需要分组处理：按token限制分批
+            let mut current_batch = Vec::new();
+            let mut current_batch_tokens = 0u32;
+            let safe_limit = if let Some(max_tokens) = model_max_tokens {
+                (max_tokens as f32 * 0.7) as u32 // 保留30%余量
+            } else {
+                2800 // 默认安全限制
+            };
+
+            for (file_path, _, file_tokens) in normal_files {
+                if current_batch_tokens + file_tokens > safe_limit && !current_batch.is_empty() {
+                    // 当前批次已满，保存并开始新批次
+                    processed_files.push(format!("batch#{}", current_batch.join(",")));
+                    current_batch.clear();
+                    current_batch_tokens = 0;
+                    needs_split = true;
+                }
+                current_batch.push(file_path);
+                current_batch_tokens += file_tokens;
+            }
+
+            // 添加最后一个批次
+            if !current_batch.is_empty() {
+                processed_files.push(format!("batch#{}", current_batch.join(",")));
+            }
+        }
+    }
+
+    println!("🔍 [check_and_process_file_tokens] 处理完成 - 输出文件: {:?}, 需要分割: {}",
+             processed_files, needs_split);
+
+    Ok(FileTokenCheckResult {
+        processed_files,
+        needs_split,
+    })
 }

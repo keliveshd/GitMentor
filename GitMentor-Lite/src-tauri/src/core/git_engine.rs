@@ -26,17 +26,24 @@ pub struct GitEngine {
     repo_path: Option<String>,
     git_method: GitMethod,
     git_config: GitConfig,
+    git_path: Option<String>, // 缓存检测到的Git路径
 }
 
 impl GitEngine {
     pub fn new() -> Self {
         let git_config = GitConfig::default();
         let git_method = Self::determine_git_method(&git_config);
-        debug_log!("[DEBUG] 检测到Git执行方式: {:?}", git_method);
+        let git_path = Self::detect_git_path();
+        debug_log!(
+            "[DEBUG] 检测到Git执行方式: {:?}, Git路径: {:?}",
+            git_method,
+            git_path
+        );
         Self {
             repo_path: None,
             git_method,
             git_config,
+            git_path,
         }
     }
 
@@ -45,11 +52,17 @@ impl GitEngine {
     /// 编写日期：2025-08-07
     pub fn new_with_config(git_config: GitConfig) -> Self {
         let git_method = Self::determine_git_method(&git_config);
-        debug_log!("[DEBUG] 使用配置创建GitEngine，执行方式: {:?}", git_method);
+        let git_path = Self::detect_git_path();
+        debug_log!(
+            "[DEBUG] 使用配置创建GitEngine，执行方式: {:?}, Git路径: {:?}",
+            git_method,
+            git_path
+        );
         Self {
             repo_path: None,
             git_method,
             git_config,
+            git_path,
         }
     }
 
@@ -92,6 +105,62 @@ impl GitEngine {
                 GitMethod::Git2Api
             }
         }
+    }
+
+    /// 检测Git路径
+    /// Author: Evilek, Date: 2025-01-08
+    /// 复用系统启动时的Git检测逻辑
+    fn detect_git_path() -> Option<String> {
+        // 尝试不同的git命令名称（Windows兼容性）
+        let git_commands = if cfg!(windows) {
+            vec!["git.exe", "git"]
+        } else {
+            vec!["git"]
+        };
+
+        // 首先尝试直接执行git命令
+        for git_cmd in &git_commands {
+            if let Ok(output) = Command::new(git_cmd).arg("--version").output() {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout);
+                    if !version.trim().is_empty() {
+                        debug_log!("[DEBUG] 找到系统Git: {}", git_cmd);
+                        return Some(git_cmd.to_string());
+                    }
+                }
+            }
+        }
+
+        // 如果直接执行失败，尝试常见的Git安装路径
+        let common_paths = if cfg!(windows) {
+            vec![
+                "C:\\Program Files\\Git\\bin\\git.exe",
+                "C:\\Program Files (x86)\\Git\\bin\\git.exe",
+                "D:\\Soft\\Git\\bin\\git.exe", // 用户的Git路径
+                "C:\\Git\\bin\\git.exe",
+            ]
+        } else {
+            vec![
+                "/usr/bin/git",
+                "/usr/local/bin/git",
+                "/opt/homebrew/bin/git",
+            ]
+        };
+
+        for path in common_paths {
+            if let Ok(output) = Command::new(path).arg("--version").output() {
+                if output.status.success() {
+                    let version = String::from_utf8_lossy(&output.stdout);
+                    if !version.trim().is_empty() {
+                        debug_log!("[DEBUG] 找到Git路径: {}", path);
+                        return Some(path.to_string());
+                    }
+                }
+            }
+        }
+
+        debug_log!("[WARN] 未找到可用的Git路径");
+        None
     }
 
     /// 检测最佳的Git执行方式（自动模式）
@@ -657,13 +726,41 @@ impl GitEngine {
     /// 作者：Evilek
     /// 编写日期：2025-08-05
     pub fn get_simple_file_diff(&self, file_path: &str) -> Result<String> {
+        println!("🔍 [get_simple_file_diff] 开始处理文件: {}", file_path);
+        let start_time = std::time::Instant::now();
+
         let repo_path = self
             .repo_path
             .as_ref()
             .ok_or_else(|| anyhow::anyhow!("No repository opened"))?;
 
+        println!("🔍 [get_simple_file_diff] 打开Git仓库: {}", repo_path);
         let repo = Repository::open(repo_path)
             .map_err(|e| anyhow::anyhow!("无法打开Git仓库 {}: {}", repo_path, e))?;
+        println!(
+            "🔍 [get_simple_file_diff] 仓库打开耗时: {:?}",
+            start_time.elapsed()
+        );
+
+        // 性能优化：使用git命令行工具，比libgit2更快
+        let git_diff_start = std::time::Instant::now();
+        let result = self.get_file_diff_via_command(repo_path, file_path);
+        println!(
+            "🔍 [get_simple_file_diff] Git命令耗时: {:?}",
+            git_diff_start.elapsed()
+        );
+
+        if result.is_ok() {
+            println!(
+                "🔍 [get_simple_file_diff] 文件 {} 处理完成，总耗时: {:?}",
+                file_path,
+                start_time.elapsed()
+            );
+            return result;
+        }
+
+        println!("⚠️ [get_simple_file_diff] Git命令失败，回退到libgit2方法");
+        let libgit2_start = std::time::Instant::now();
 
         let head = repo
             .head()
@@ -784,7 +881,145 @@ impl GitEngine {
             return self.get_simple_file_diff_fallback(file_path);
         }
 
+        println!(
+            "🔍 [get_simple_file_diff] 文件 {} libgit2处理完成，libgit2耗时: {:?}, 总耗时: {:?}",
+            file_path,
+            libgit2_start.elapsed(),
+            start_time.elapsed()
+        );
         Ok(file_diff)
+    }
+
+    /// 使用Git命令行工具获取文件diff（性能优化）
+    /// Author: Evilek, Date: 2025-01-08
+    fn get_file_diff_via_command(&self, repo_path: &str, file_path: &str) -> Result<String> {
+        use std::process::Command;
+
+        // 使用缓存的Git路径，如果没有则回退到检测
+        let git_cmd = if let Some(ref git_path) = self.git_path {
+            git_path.clone()
+        } else {
+            // 回退到简单检测
+            if cfg!(windows) {
+                "git.exe".to_string()
+            } else {
+                "git".to_string()
+            }
+        };
+
+        println!(
+            "🔍 [get_file_diff_via_command] 使用缓存的Git路径: {} diff HEAD -- {}",
+            git_cmd, file_path
+        );
+
+        // 首先尝试获取工作目录相对于HEAD的diff
+        let output = Command::new(&git_cmd)
+            .arg("diff")
+            .arg("HEAD")
+            .arg("--")
+            .arg(file_path)
+            .current_dir(repo_path)
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行git命令失败: {}", e))?;
+
+        println!(
+            "🔍 [get_file_diff_via_command] git diff HEAD 状态: {}, stdout长度: {}, stderr: {}",
+            output.status.success(),
+            output.stdout.len(),
+            String::from_utf8_lossy(&output.stderr)
+        );
+
+        if output.status.success() {
+            let diff_content = String::from_utf8_lossy(&output.stdout);
+            if !diff_content.trim().is_empty() {
+                println!(
+                    "✅ [get_file_diff_via_command] 成功获取diff，长度: {}",
+                    diff_content.len()
+                );
+                return Ok(diff_content.to_string());
+            }
+        }
+
+        // 如果HEAD diff为空，尝试获取staged diff
+        println!("🔍 [get_file_diff_via_command] 尝试staged diff");
+        let staged_output = Command::new(&git_cmd)
+            .arg("diff")
+            .arg("--cached")
+            .arg("--")
+            .arg(file_path)
+            .current_dir(repo_path)
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行git diff --cached失败: {}", e))?;
+
+        println!(
+            "🔍 [get_file_diff_via_command] git diff --cached 状态: {}, stdout长度: {}",
+            staged_output.status.success(),
+            staged_output.stdout.len()
+        );
+
+        if staged_output.status.success() {
+            let diff_content = String::from_utf8_lossy(&staged_output.stdout);
+            if !diff_content.trim().is_empty() {
+                println!(
+                    "✅ [get_file_diff_via_command] 成功获取staged diff，长度: {}",
+                    diff_content.len()
+                );
+                return Ok(diff_content.to_string());
+            }
+        }
+
+        // 最后尝试获取工作目录的变更（不与HEAD比较）
+        println!("🔍 [get_file_diff_via_command] 尝试工作目录diff");
+        let workdir_output = Command::new(&git_cmd)
+            .arg("diff")
+            .arg("--")
+            .arg(file_path)
+            .current_dir(repo_path)
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行git diff工作目录失败: {}", e))?;
+
+        println!(
+            "🔍 [get_file_diff_via_command] git diff 状态: {}, stdout长度: {}",
+            workdir_output.status.success(),
+            workdir_output.stdout.len()
+        );
+
+        if workdir_output.status.success() {
+            let diff_content = String::from_utf8_lossy(&workdir_output.stdout);
+            if !diff_content.trim().is_empty() {
+                println!(
+                    "✅ [get_file_diff_via_command] 成功获取工作目录diff，长度: {}",
+                    diff_content.len()
+                );
+                return Ok(diff_content.to_string());
+            }
+        }
+
+        // 尝试检查文件状态
+        println!("🔍 [get_file_diff_via_command] 检查文件状态");
+        let status_output = Command::new(&git_cmd)
+            .arg("status")
+            .arg("--porcelain")
+            .arg("--")
+            .arg(file_path)
+            .current_dir(repo_path)
+            .output()
+            .map_err(|e| anyhow::anyhow!("执行git status失败: {}", e))?;
+
+        let status_content = String::from_utf8_lossy(&status_output.stdout);
+        println!(
+            "🔍 [get_file_diff_via_command] 文件状态: '{}'",
+            status_content.trim()
+        );
+
+        if status_content.trim().is_empty() {
+            return Err(anyhow::anyhow!("文件无变更"));
+        } else {
+            return Err(anyhow::anyhow!(
+                "Git命令无法获取diff，但文件有状态变更: {}",
+                status_content.trim()
+            ));
+        }
     }
 
     /// 备用的文件diff获取方法

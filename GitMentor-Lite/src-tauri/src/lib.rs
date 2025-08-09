@@ -56,9 +56,9 @@ fn greet(name: &str) -> String {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     // 过滤PNG警告和其他不必要的日志
-    std::env::set_var("RUST_LOG", "warn,libpng=off,image=off");
-
-    // Initialize configuration directory
+    //std::env::set_var("RUST_LOG", "warn,libpng=off,image=off");
+    std::env::set_var("RUST_LOG", "error"); // 只显示错误日志
+                                            // Initialize configuration directory
     let config_dir = std::env::current_dir().unwrap().join(".config");
 
     // Initialize Git configuration
@@ -137,10 +137,9 @@ pub fn run() {
             ai_commands::get_repository_paths,
             ai_commands::should_use_layered_commit,
             ai_commands::execute_layered_commit,
-            ai_commands::should_use_layered_commit,
-            ai_commands::execute_layered_commit,
             ai_commands::get_layered_sessions,
             ai_commands::get_conversation_records_by_session,
+            ai_commands::check_and_process_file_tokens,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

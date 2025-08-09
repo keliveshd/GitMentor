@@ -28,17 +28,24 @@ pub struct LayeredCommitProgress {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FileSummary {
+    #[serde(rename = "filePath")]
     pub file_path: String,
     pub summary: String,
+    #[serde(rename = "tokensUsed")]
     pub tokens_used: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LayeredCommitResult {
+    #[serde(rename = "sessionId")]
     pub session_id: String,
+    #[serde(rename = "finalMessage")]
     pub final_message: String,
+    #[serde(rename = "fileSummaries")]
     pub file_summaries: Vec<FileSummary>,
+    #[serde(rename = "totalProcessingTimeMs")]
     pub total_processing_time_ms: u64,
+    #[serde(rename = "conversationRecords")]
     pub conversation_records: Vec<String>, // 记录ID列表
 }
 
@@ -187,17 +194,75 @@ impl LayeredCommitManager {
     }
 
     /// 获取文件及其diff内容
+    /// Author: Evilek, Date: 2025-01-08
+    /// 支持处理带有特殊标记的文件（#truncated, #split）
     async fn get_files_with_diffs(&self, staged_files: &[String]) -> Result<Vec<(String, String)>> {
         let git_engine = self.git_engine.read().await;
         let mut files_with_diffs = Vec::new();
 
         for file_path in staged_files {
-            match git_engine.get_simple_file_diff(file_path) {
-                Ok(diff_content) => {
-                    files_with_diffs.push((file_path.clone(), diff_content));
-                },
-                Err(e) => {
-                    return Err(anyhow::anyhow!("获取文件diff失败 {}: {}", file_path, e));
+            // 检查文件是否有特殊标记
+            if file_path.contains("#truncated") {
+                // 新增文件截取处理
+                let actual_path = file_path.replace("#truncated", "");
+                match git_engine.get_simple_file_diff(&actual_path) {
+                    Ok(diff_content) => {
+                        // 截取文件内容的前面部分（根据token限制）
+                        let truncated_content = self.truncate_new_file_content(&diff_content).await?;
+                        files_with_diffs.push((actual_path, truncated_content));
+                    },
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("获取新增文件diff失败 {}: {}", actual_path, e));
+                    }
+                }
+            } else if file_path.contains("#split") {
+                // 变更文件分割处理
+                let actual_path = file_path.replace("#split", "");
+                match git_engine.get_simple_file_diff(&actual_path) {
+                    Ok(diff_content) => {
+                        // 分割大文件内容
+                        let split_contents = self.split_file_content(&diff_content).await?;
+                        for (index, content) in split_contents.into_iter().enumerate() {
+                            let split_path = format!("{}#part{}", actual_path, index + 1);
+                            files_with_diffs.push((split_path, content));
+                        }
+                    },
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("获取分割文件diff失败 {}: {}", actual_path, e));
+                    }
+                }
+            } else if file_path.starts_with("batch#") {
+                // 批量文件处理：多个文件合并成一个请求
+                let batch_files_str = file_path.replace("batch#", "");
+                let batch_files: Vec<&str> = batch_files_str.split(',').collect();
+
+                let mut combined_diff = String::new();
+                combined_diff.push_str("# 批量文件变更分析\n\n");
+
+                for (index, actual_path) in batch_files.iter().enumerate() {
+                    match git_engine.get_simple_file_diff(actual_path) {
+                        Ok(diff_content) => {
+                            combined_diff.push_str(&format!("## 文件 {}: {}\n", index + 1, actual_path));
+                            combined_diff.push_str(&diff_content);
+                            combined_diff.push_str("\n\n");
+                        },
+                        Err(e) => {
+                            combined_diff.push_str(&format!("## 文件 {}: {} (获取diff失败: {})\n\n", index + 1, actual_path, e));
+                        }
+                    }
+                }
+
+                let batch_name = format!("batch_{}files", batch_files.len());
+                files_with_diffs.push((batch_name, combined_diff));
+            } else {
+                // 普通文件处理
+                match git_engine.get_simple_file_diff(file_path) {
+                    Ok(diff_content) => {
+                        files_with_diffs.push((file_path.clone(), diff_content));
+                    },
+                    Err(e) => {
+                        return Err(anyhow::anyhow!("获取文件diff失败 {}: {}", file_path, e));
+                    }
                 }
             }
         }
@@ -340,15 +405,20 @@ impl LayeredCommitManager {
         };
 
         // 使用动态系统提示词生成，确保语言声明正确应用
+        let dynamic_system_prompt = prompt_manager.generate_dynamic_system_prompt(template, &temp_context);
         let mut system_prompt = String::from("你现在正在处理分层提交的最终总结阶段,下面的部分为提示词模板:\n\n");
-        system_prompt.push_str(&prompt_manager.generate_dynamic_system_prompt(template, &temp_context));
+        system_prompt.push_str(&dynamic_system_prompt);
 
         // 添加分层提交的特定说明
         system_prompt.push_str("\n\n特别说明：你现在正在处理分层提交的最终总结阶段。以下是各个文件的AI分析摘要，请基于这些摘要使用上述模板生成一个统一的提交消息。");
 
+        // 提取配置指导部分（避免AI失忆）
+        let config_guidance = extract_config_guidance(&dynamic_system_prompt);
+
         let user_prompt = format!(
-            "以下是各个文件的变更摘要:\n\n{}\n\n请生成一个简洁、准确的提交消息：",
-            summary_content
+            "以下是各个文件的变更摘要:\n\n{}\n\n请生成一个简洁、准确的提交消息：{}",
+            summary_content,
+            config_guidance
         );
 
         let request = AIRequest {
@@ -411,6 +481,132 @@ impl LayeredCommitManager {
 
         Ok(max_tokens)
     }
+
+    /// 截取新增文件内容
+    /// Author: Evilek, Date: 2025-01-08
+    /// 根据token限制截取新增文件的前面部分
+    async fn truncate_new_file_content(&self, diff_content: &str) -> Result<String> {
+        let ai_manager = self.ai_manager.read().await;
+        let config = ai_manager.get_config().await;
+        let model_max_tokens = self.get_model_max_tokens(&config.base.model).await?;
+
+        // 计算安全的token限制（保留30%余量）
+        let safe_limit = if let Some(max_tokens) = model_max_tokens {
+            (max_tokens as f32 * 0.7) as u32
+        } else {
+            2800 // 默认安全限制
+        };
+
+        let lines: Vec<&str> = diff_content.lines().collect();
+        let total_lines = lines.len();
+        let mut truncated_lines = Vec::new();
+        let mut current_tokens = 0u32;
+
+        for line in &lines {
+            let line_tokens = TokenCounter::estimate_tokens(line);
+            if current_tokens + line_tokens > safe_limit {
+                break;
+            }
+            truncated_lines.push(*line);
+            current_tokens += line_tokens;
+        }
+
+        // 添加截取说明
+        let mut result = truncated_lines.join("\n");
+        if truncated_lines.len() < total_lines {
+            result.push_str("\n...");
+            result.push_str(&format!("\n# 文件内容已截取，显示前{}行（共{}行）", truncated_lines.len(), total_lines));
+        }
+
+        Ok(result)
+    }
+
+    /// 分割文件内容
+    /// Author: Evilek, Date: 2025-01-08
+    /// 将大文件内容分割成多个部分
+    async fn split_file_content(&self, diff_content: &str) -> Result<Vec<String>> {
+        let ai_manager = self.ai_manager.read().await;
+        let config = ai_manager.get_config().await;
+        let model_max_tokens = self.get_model_max_tokens(&config.base.model).await?;
+
+        // 计算每个分片的安全token限制
+        let safe_limit = if let Some(max_tokens) = model_max_tokens {
+            (max_tokens as f32 * 0.6) as u32 // 更保守的限制
+        } else {
+            2400 // 默认安全限制
+        };
+
+        let lines: Vec<&str> = diff_content.lines().collect();
+        let mut split_contents = Vec::new();
+        let mut current_chunk = Vec::new();
+        let mut current_tokens = 0u32;
+
+        for line in &lines {
+            let line_tokens = TokenCounter::estimate_tokens(line);
+
+            // 如果添加这一行会超过限制，保存当前块并开始新块
+            if current_tokens + line_tokens > safe_limit && !current_chunk.is_empty() {
+                split_contents.push(current_chunk.join("\n"));
+                current_chunk.clear();
+                current_tokens = 0;
+            }
+
+            current_chunk.push(*line);
+            current_tokens += line_tokens;
+        }
+
+        // 添加最后一个块
+        if !current_chunk.is_empty() {
+            split_contents.push(current_chunk.join("\n"));
+        }
+
+        // 如果只有一个块，说明不需要分割
+        if split_contents.len() == 1 {
+            return Ok(split_contents);
+        }
+
+        // 为每个分片添加说明
+        let total_parts = split_contents.len();
+        for (index, content) in split_contents.iter_mut().enumerate() {
+            content.push_str(&format!("\n# 这是文件的第{}部分（共{}部分）", index + 1, total_parts));
+        }
+
+        Ok(split_contents)
+    }
+}
+
+/// 提取配置指导部分，避免AI失忆
+/// Author: Evilek, Date: 2025-01-08
+fn extract_config_guidance(system_prompt: &str) -> String {
+    let mut guidance_parts = Vec::new();
+
+    // 查找重要的配置指导
+    if system_prompt.contains("重要：请在提交类型前添加对应的emoji表情符号") {
+        guidance_parts.push("\n\n重要提醒：请在提交类型前添加对应的emoji表情符号。");
+    }
+
+    if system_prompt.contains("重要：只生成提交消息的标题行，不要包含详细描述") {
+        guidance_parts.push("\n\n重要提醒：只生成提交消息的标题行，不要包含详细描述。");
+    }
+
+    if system_prompt.contains("重要：如果有多个文件变更，请将它们合并为一个提交消息") {
+        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请将它们合并为一个提交消息。");
+    }
+
+    if system_prompt.contains("重要：如果有多个文件变更，请为每个主要变更生成单独的提交消息") {
+        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请为每个主要变更生成单独的提交消息。");
+    }
+
+    // 查找语言指导
+    if system_prompt.contains("请使用中文生成提交消息") {
+        guidance_parts.push("\n\n重要提醒：请使用中文生成提交消息。");
+    } else if system_prompt.contains("Please generate commit messages in English") {
+        guidance_parts.push("\n\n重要提醒：Please generate commit messages in English.");
+    } else if system_prompt.contains("请使用日语生成提交消息") {
+        guidance_parts.push("\n\n重要提醒：请使用日语生成提交消息。");
+    }
+
+    guidance_parts.join("")
 }
 
 #[derive(Debug)]
