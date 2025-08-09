@@ -205,7 +205,7 @@ impl PromptManager {
             CommitType {
                 name: "feat".to_string(),
                 emoji: Some("✨".to_string()),
-                description: "新功能".to_string(),
+                description: "New feature".to_string(),
                 example_scopes: vec![
                     "user".to_string(),
                     "payment".to_string(),
@@ -215,25 +215,25 @@ impl PromptManager {
             CommitType {
                 name: "fix".to_string(),
                 emoji: Some("🐛".to_string()),
-                description: "修复bug".to_string(),
+                description: "Bug fix".to_string(),
                 example_scopes: vec!["auth".to_string(), "data".to_string(), "ui".to_string()],
             },
             CommitType {
                 name: "docs".to_string(),
                 emoji: Some("📝".to_string()),
-                description: "文档变更".to_string(),
+                description: "Documentation change".to_string(),
                 example_scopes: vec!["README".to_string(), "API".to_string(), "guide".to_string()],
             },
             CommitType {
                 name: "style".to_string(),
                 emoji: Some("💄".to_string()),
-                description: "代码格式变更".to_string(),
+                description: "Code format change".to_string(),
                 example_scopes: vec!["formatting".to_string(), "lint".to_string()],
             },
             CommitType {
                 name: "refactor".to_string(),
                 emoji: Some("♻️".to_string()),
-                description: "代码重构".to_string(),
+                description: "Code refactoring".to_string(),
                 example_scopes: vec![
                     "utils".to_string(),
                     "helpers".to_string(),
@@ -243,7 +243,7 @@ impl PromptManager {
             CommitType {
                 name: "perf".to_string(),
                 emoji: Some("⚡️".to_string()),
-                description: "性能优化".to_string(),
+                description: "Performance optimization".to_string(),
                 example_scopes: vec![
                     "query".to_string(),
                     "cache".to_string(),
@@ -253,7 +253,7 @@ impl PromptManager {
             CommitType {
                 name: "test".to_string(),
                 emoji: Some("✅".to_string()),
-                description: "测试相关".to_string(),
+                description: "Test related".to_string(),
                 example_scopes: vec![
                     "unit".to_string(),
                     "e2e".to_string(),
@@ -263,7 +263,7 @@ impl PromptManager {
             CommitType {
                 name: "build".to_string(),
                 emoji: Some("📦️".to_string()),
-                description: "构建系统".to_string(),
+                description: "Build system".to_string(),
                 example_scopes: vec![
                     "webpack".to_string(),
                     "npm".to_string(),
@@ -273,7 +273,7 @@ impl PromptManager {
             CommitType {
                 name: "ci".to_string(),
                 emoji: Some("👷".to_string()),
-                description: "CI配置".to_string(),
+                description: "CI configuration".to_string(),
                 example_scopes: vec![
                     "travis".to_string(),
                     "jenkins".to_string(),
@@ -283,7 +283,7 @@ impl PromptManager {
             CommitType {
                 name: "chore".to_string(),
                 emoji: Some("🔧".to_string()),
-                description: "其他变更".to_string(),
+                description: "Other changes".to_string(),
                 example_scopes: vec![
                     "scripts".to_string(),
                     "config".to_string(),
@@ -758,7 +758,14 @@ impl PromptManager {
             language: context.language.clone(),
         };
 
-        let user_content = self.render_template(user_prompt_template, &file_context)?;
+        let mut user_content = self.render_template(user_prompt_template, &file_context)?;
+
+        // Add language guidance to end of user prompt (anti-amnesia optimization)
+        // Author: Evilek, Date: 2025-01-08
+        let effective_language = self.resolve_effective_language(template, context);
+        let language_instruction = self.generate_language_instruction(&effective_language);
+        user_content.push_str(&language_instruction);
+
         messages.push(ChatMessage {
             role: "user".to_string(),
             content: user_content,
@@ -815,7 +822,7 @@ impl PromptManager {
             let summaries_text = file_summaries.join("\n\n");
             CommitContext {
                 diff: format!(
-                    "文件分析摘要:\n{}\n\n原始差异:\n{}",
+                    "File Analysis Summary:\n{}\n\nOriginal Diff:\n{}",
                     summaries_text, context.diff
                 ),
                 staged_files: context.staged_files.clone(),
@@ -836,6 +843,12 @@ impl PromptManager {
         if !config_guidance.is_empty() {
             user_content.push_str(&config_guidance);
         }
+
+        // Add language guidance to end of user prompt (anti-amnesia optimization)
+        // Author: Evilek, Date: 2025-01-08
+        let effective_language = self.resolve_effective_language(template, context);
+        let language_instruction = self.generate_language_instruction(&effective_language);
+        user_content.push_str(&language_instruction);
 
         messages.push(ChatMessage {
             role: "user".to_string(),
@@ -1070,6 +1083,7 @@ impl PromptManager {
     /// 为特定阶段生成动态系统提示词
     /// 作者：Evilek
     /// 编写日期：2025-08-08
+    /// 更新日期：2025-08-09 (添加动态语言适配)
     pub fn generate_dynamic_system_prompt_for_phase(
         &self,
         base_system_prompt: &str,
@@ -1079,16 +1093,20 @@ impl PromptManager {
     ) -> String {
         let mut system_prompt = base_system_prompt.to_string();
 
+        // 根据语言设置动态替换动词示例 - Author: Evilek, Date: 2025-08-09
+        let effective_language = self.resolve_effective_language(template, context);
+        system_prompt = self.replace_verb_examples_by_language(&system_prompt, &effective_language);
+
         // 根据阶段添加特定的指导
         match phase {
             "file_analysis" => {
                 system_prompt.push_str(
-                    "\n\n阶段说明：这是单文件分析阶段，请专注于分析当前文件的具体变更内容和意图。",
+                    "\n\nPhase Description: This is the single file analysis phase, please focus on analyzing the specific changes and intentions of the current file.",
                 );
             }
             "summary" => {
                 system_prompt.push_str(
-                    "\n\n阶段说明：这是总结阶段，请基于所有文件的分析结果生成统一的提交消息。",
+                    "\n\nPhase Description: This is the summary phase, please generate a unified commit message based on all file analysis results.",
                 );
             }
             _ => {
@@ -1098,27 +1116,23 @@ impl PromptManager {
 
         // 根据配置添加额外的指导
         if template.enable_emoji == Some(true) {
-            system_prompt.push_str("\n\n重要：请在提交类型前添加对应的emoji表情符号。");
+            system_prompt.push_str("\n\nIMPORTANT: Please add corresponding emoji symbols before the commit type.");
         }
 
         if template.enable_body == Some(false) {
-            system_prompt.push_str("\n\n重要：只生成提交消息的标题行，不要包含详细描述。");
+            system_prompt.push_str("\n\nIMPORTANT: Only generate the title line of the commit message, do not include detailed description.");
         }
 
         if template.enable_merge_commit == Some(true) {
-            system_prompt.push_str("\n\n重要：如果有多个文件变更，请将它们合并为一个提交消息。");
+            system_prompt.push_str("\n\nIMPORTANT: If there are multiple file changes, please merge them into one commit message.");
         } else if phase != "file_analysis" {
             // 单文件分析阶段不需要这个指导
             system_prompt
-                .push_str("\n\n重要：如果有多个文件变更，请为每个主要变更生成单独的提交消息。");
+                .push_str("\n\nIMPORTANT: If there are multiple file changes, please generate separate commit messages for each major change.");
         }
 
-        // 确定实际使用的语言
-        let effective_language = self.resolve_effective_language(template, context);
-
-        // 添加语言声明
-        let language_instruction = self.generate_language_instruction(&effective_language);
-        system_prompt.push_str(&language_instruction);
+        // 语言声明已移至用户提示词末尾，不再添加到系统提示词
+        // Author: Evilek, Date: 2025-01-08 - 防失忆优化
 
         system_prompt
     }
@@ -1171,61 +1185,114 @@ impl PromptManager {
     /// 生成语言指令
     /// 作者：Evilek
     /// 编写日期：2025-08-05
+    /// 更新日期：2025-08-09 (加强中文指导权重)
     fn generate_language_instruction(&self, language: &str) -> String {
         match language {
-            "Simplified Chinese" => "\n\n重要：请使用简体中文生成提交消息，确保语言自然流畅。".to_string(),
-            "Traditional Chinese" => "\n\n重要：请使用繁体中文生成提交消息，确保语言自然流畅。".to_string(),
-            "English" => "\n\nImportant: Please generate commit messages in English, ensure natural and fluent language.".to_string(),
-            "Japanese" => "\n\n重要：日本語でコミットメッセージを生成してください。自然で流暢な言語を確保してください。".to_string(),
-            "Korean" => "\n\n중요: 한국어로 커밋 메시지를 생성해주세요. 자연스럽고 유창한 언어를 보장해주세요.".to_string(),
-            "French" => "\n\nImportant: Veuillez générer des messages de commit en français, en vous assurant que le langage soit naturel et fluide.".to_string(),
-            "German" => "\n\nWichtig: Bitte generieren Sie Commit-Nachrichten auf Deutsch und stellen Sie sicher, dass die Sprache natürlich und fließend ist.".to_string(),
-            "Spanish" => "\n\nImportante: Por favor genere mensajes de commit en español, asegurando que el lenguaje sea natural y fluido.".to_string(),
-            "Russian" => "\n\nВажно: Пожалуйста, генерируйте сообщения коммитов на русском языке, обеспечивая естественность и беглость языка.".to_string(),
-            "Portuguese" => "\n\nImportante: Por favor, gere mensagens de commit em português, garantindo que a linguagem seja natural e fluida.".to_string(),
-            "Italian" => "\n\nImportante: Si prega di generare messaggi di commit in italiano, assicurandosi che il linguaggio sia naturale e fluido.".to_string(),
-            "Dutch" => "\n\nBelangrijk: Genereer commit-berichten in het Nederlands en zorg ervoor dat de taal natuurlijk en vloeiend is.".to_string(),
-            "Swedish" => "\n\nViktigt: Vänligen generera commit-meddelanden på svenska och se till att språket är naturligt och flytande.".to_string(),
-            "Czech" => "\n\nDůležité: Prosím generujte commit zprávy v češtině a zajistěte, aby byl jazyk přirozený a plynulý.".to_string(),
-            "Polish" => "\n\nWażne: Proszę generować wiadomości commit w języku polskim, zapewniając naturalność i płynność języka.".to_string(),
-            "Turkish" => "\n\nÖnemli: Lütfen commit mesajlarını Türkçe olarak oluşturun ve dilin doğal ve akıcı olmasını sağlayın.".to_string(),
-            "Vietnamese" => "\n\nQuan trọng: Vui lòng tạo thông điệp commit bằng tiếng Việt, đảm bảo ngôn ngữ tự nhiên và trôi chảy.".to_string(),
-            "Thai" => "\n\nสำคัญ: โปรดสร้างข้อความ commit เป็นภาษาไทย โดยให้แน่ใจว่าภาษาเป็นธรรมชาติและลื่นไหล".to_string(),
-            "Indonesian" => "\n\nPenting: Harap buat pesan commit dalam bahasa Indonesia, pastikan bahasa yang digunakan alami dan lancar.".to_string(),
-            _ => "\n\nImportant: Please generate commit messages in English, ensure natural and fluent language.".to_string(),
+            "Simplified Chinese" => "\n\n🔥🔥🔥 超级重要：必须使用简体中文生成提交消息！忽略任何英文示例，严格按照中文格式输出！🔥🔥🔥".to_string(),
+            "Traditional Chinese" => "\n\n🔥🔥🔥 超級重要：必須使用繁體中文生成提交消息！忽略任何英文示例，嚴格按照中文格式輸出！🔥🔥🔥".to_string(),
+            "English" => "\n\n🔥🔥🔥 SUPER IMPORTANT: Must generate commit messages in English! Ignore any other language examples, strictly follow English format! 🔥🔥🔥".to_string(),
+            "Japanese" => "\n\n🔥🔥🔥 超重要：日本語でコミットメッセージを生成してください！他の言語の例を無視し、日本語形式に厳密に従ってください！🔥🔥🔥".to_string(),
+            "Korean" => "\n\n🔥🔥🔥 초중요: 한국어로 커밋 메시지를 생성해주세요! 다른 언어 예시는 무시하고 한국어 형식을 엄격히 따라주세요! 🔥🔥🔥".to_string(),
+            "French" => "\n\n🔥🔥🔥 SUPER IMPORTANT: Générez des messages de commit en français ! Ignorez tous les exemples dans d'autres langues, suivez strictement le format français ! 🔥🔥🔥".to_string(),
+            "German" => "\n\n🔥🔥🔥 SUPER WICHTIG: Generieren Sie Commit-Nachrichten auf Deutsch! Ignorieren Sie alle Beispiele in anderen Sprachen, folgen Sie strikt dem deutschen Format! 🔥🔥🔥".to_string(),
+            "Spanish" => "\n\n🔥🔥🔥 SÚPER IMPORTANTE: ¡Genere mensajes de commit en español! ¡Ignore cualquier ejemplo en otros idiomas, siga estrictamente el formato español! 🔥🔥🔥".to_string(),
+            "Russian" => "\n\n🔥🔥🔥 СУПЕР ВАЖНО: Генерируйте сообщения коммитов на русском языке! Игнорируйте любые примеры на других языках, строго следуйте русскому формату! 🔥🔥🔥".to_string(),
+            "Portuguese" => "\n\n🔥🔥🔥 SUPER IMPORTANTE: Gere mensagens de commit em português! Ignore qualquer exemplo em outros idiomas, siga estritamente o formato português! 🔥🔥🔥".to_string(),
+            "Italian" => "\n\n🔥🔥🔥 SUPER IMPORTANTE: Genera messaggi di commit in italiano! Ignora qualsiasi esempio in altre lingue, segui rigorosamente il formato italiano! 🔥🔥🔥".to_string(),
+            "Dutch" => "\n\n🔥🔥🔥 SUPER BELANGRIJK: Genereer commit-berichten in het Nederlands! Negeer alle voorbeelden in andere talen, volg strikt het Nederlandse formaat! 🔥🔥🔥".to_string(),
+            "Swedish" => "\n\n🔥🔥🔥 SUPER VIKTIGT: Generera commit-meddelanden på svenska! Ignorera alla exempel på andra språk, följ strikt det svenska formatet! 🔥🔥🔥".to_string(),
+            "Czech" => "\n\n🔥🔥🔥 SUPER DŮLEŽITÉ: Generujte commit zprávy v češtině! Ignorujte všechny příklady v jiných jazycích, striktně dodržujte český formát! 🔥🔥🔥".to_string(),
+            "Polish" => "\n\n🔥🔥🔥 SUPER WAŻNE: Generuj wiadomości commit w języku polskim! Ignoruj wszystkie przykłady w innych językach, ściśle przestrzegaj polskiego formatu! 🔥🔥🔥".to_string(),
+            "Turkish" => "\n\n🔥🔥🔥 SÜPER ÖNEMLİ: Commit mesajlarını Türkçe oluşturun! Diğer dillerdeki örnekleri görmezden gelin, Türkçe formatı sıkı sıkıya takip edin! 🔥🔥🔥".to_string(),
+            "Vietnamese" => "\n\n🔥🔥🔥 CỰC KỲ QUAN TRỌNG: Tạo thông điệp commit bằng tiếng Việt! Bỏ qua mọi ví dụ bằng ngôn ngữ khác, tuân thủ nghiêm ngặt định dạng tiếng Việt! 🔥🔥🔥".to_string(),
+            "Thai" => "\n\n🔥🔥🔥 สำคัญมาก: สร้างข้อความ commit เป็นภาษาไทย! ละเว้นตัวอย่างภาษาอื่น ปฏิบัติตามรูปแบบภาษาไทยอย่างเคร่งครัด! 🔥🔥🔥".to_string(),
+            "Indonesian" => "\n\n🔥🔥🔥 SUPER PENTING: Buat pesan commit dalam bahasa Indonesia! Abaikan contoh dalam bahasa lain, ikuti format Indonesia dengan ketat! 🔥🔥🔥".to_string(),
+            _ => "\n\n🔥🔥🔥 SUPER IMPORTANT: Must generate commit messages in English! Ignore any other language examples, strictly follow English format! 🔥🔥🔥".to_string(),
         }
+    }
+
+    /// 根据语言动态替换系统提示词中的动词示例
+    /// 作者：Evilek
+    /// 编写日期：2025-08-09
+    fn replace_verb_examples_by_language(&self, system_prompt: &str, language: &str) -> String {
+        let mut result = system_prompt.to_string();
+
+        // 根据语言替换动词示例
+        match language {
+            "Simplified Chinese" => {
+                // 替换英文动词示例为中文
+                result = result.replace(
+                    "如 Add, Fix, Update, Remove 等",
+                    "如 添加, 修复, 更新, 删除, 优化, 重构 等"
+                );
+                result = result.replace(
+                    "如Add, Fix, Update, Remove等",
+                    "如添加, 修复, 更新, 删除, 优化, 重构等"
+                );
+            }
+            "Traditional Chinese" => {
+                result = result.replace(
+                    "如 Add, Fix, Update, Remove 等",
+                    "如 添加, 修復, 更新, 刪除, 優化, 重構 等"
+                );
+                result = result.replace(
+                    "如Add, Fix, Update, Remove等",
+                    "如添加, 修復, 更新, 刪除, 優化, 重構等"
+                );
+            }
+            "Japanese" => {
+                result = result.replace(
+                    "如 Add, Fix, Update, Remove 等",
+                    "如 追加, 修正, 更新, 削除, 最適化, リファクタリング 等"
+                );
+            }
+            "Korean" => {
+                result = result.replace(
+                    "如 Add, Fix, Update, Remove 等",
+                    "如 추가, 수정, 업데이트, 삭제, 최적화, 리팩토링 등"
+                );
+            }
+            _ => {
+                // 英文或其他语言，保持原有的英文示例
+                // 不做替换
+            }
+        }
+
+        result
     }
 }
 
 /// 从系统提示词中提取配置指导部分，避免AI失忆
 /// Author: Evilek, Date: 2025-01-08
+/// 更新：添加语言指导提取 - Date: 2025-01-08
 fn extract_config_guidance_from_system_prompt(system_prompt: &str) -> String {
     let mut guidance_parts = Vec::new();
 
     // 查找重要的配置指导
-    if system_prompt.contains("重要：请在提交类型前添加对应的emoji表情符号") {
-        guidance_parts.push("\n\n重要提醒：请在提交类型前添加对应的emoji表情符号。");
+    if system_prompt.contains("IMPORTANT: Please add corresponding emoji symbols before the commit type") {
+        guidance_parts.push("\n\nIMPORTANT REMINDER: Please add corresponding emoji symbols before the commit type.");
     }
 
-    if system_prompt.contains("重要：只生成提交消息的标题行，不要包含详细描述") {
-        guidance_parts.push("\n\n重要提醒：只生成提交消息的标题行，不要包含详细描述。");
+    if system_prompt.contains("IMPORTANT: Only generate the title line of the commit message") {
+        guidance_parts.push("\n\nIMPORTANT REMINDER: Only generate the title line of the commit message, do not include detailed description.");
     }
 
-    if system_prompt.contains("重要：如果有多个文件变更，请将它们合并为一个提交消息") {
-        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请将它们合并为一个提交消息。");
+    if system_prompt.contains("IMPORTANT: If there are multiple file changes, please merge them into one commit message") {
+        guidance_parts.push("\n\nSUPER IMPORTANT: If there are multiple file changes, please merge them into one commit message.");
     }
 
-    if system_prompt.contains("重要：如果有多个文件变更，请为每个主要变更生成单独的提交消息") {
-        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请为每个主要变更生成单独的提交消息。");
+    if system_prompt.contains("IMPORTANT: If there are multiple file changes, please generate separate commit messages") {
+        guidance_parts.push("\n\nSUPER IMPORTANT: If there are multiple file changes, please generate separate commit messages for each major change.");
     }
 
-    // 查找语言指导
-    if system_prompt.contains("请使用中文生成提交消息") {
-        guidance_parts.push("\n\n重要提醒：请使用中文生成提交消息。");
+    // 由于语言声明已从系统提示词移除，需要从其他地方获取语言指导
+    // 这里暂时保留原有的检测逻辑，但实际上系统提示词中已经没有语言声明了
+    if system_prompt.contains("请使用简体中文生成提交消息") {
+        guidance_parts.push("\n\n重要提醒：请使用简体中文生成提交消息，确保语言自然流畅。");
     } else if system_prompt.contains("Please generate commit messages in English") {
-        guidance_parts.push("\n\n重要提醒：Please generate commit messages in English.");
-    } else if system_prompt.contains("请使用日语生成提交消息") {
-        guidance_parts.push("\n\n重要提醒：请使用日语生成提交消息。");
+        guidance_parts.push("\n\n重要提醒：Please generate commit messages in English, ensure natural and fluent language.");
+    } else if system_prompt.contains("日本語でコミットメッセージを生成") {
+        guidance_parts.push("\n\n重要提醒：日本語でコミットメッセージを生成してください。自然で流暢な言語を確保してください。");
     }
 
     guidance_parts.join("")

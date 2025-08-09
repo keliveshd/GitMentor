@@ -8,6 +8,7 @@ use crate::core::ai_manager::AIManager;
 use crate::core::git_engine::GitEngine;
 use crate::core::conversation_logger::StepInfo;
 use crate::core::ai_provider::{AIRequest, ChatMessage};
+use crate::core::prompt_manager::{PromptManager, CommitContext};
 use crate::utils::token_counter::TokenCounter;
 
 /**
@@ -155,6 +156,7 @@ impl LayeredCommitManager {
             let summary_result = self.analyze_single_file(
                 file_path,
                 diff_content,
+                template_id,
                 &session_id,
                 index as u32 + 1,
                 total_files as u32,
@@ -275,6 +277,7 @@ impl LayeredCommitManager {
         &self,
         file_path: &str,
         diff_content: &str,
+        template_id: &str,
         session_id: &str,
         step_index: u32,
         total_steps: u32,
@@ -283,24 +286,26 @@ impl LayeredCommitManager {
         let ai_manager = self.ai_manager.read().await;
         let config = ai_manager.get_config().await;
 
-        // 构建单文件分析的提示词
-        let system_prompt = "你是一个专业的代码审查助手。请分析给定文件的变更内容，生成简洁的变更摘要（50-100字）。";
-        let user_prompt = format!(
-            "文件路径: {}\n\n变更内容:\n{}\n\n请生成这个文件变更的简洁摘要：",
-            file_path, diff_content
-        );
+        // 使用统一的模板系统生成提示词（重构优化）
+        // Author: Evilek, Date: 2025-01-08
+        let context = CommitContext {
+            diff: diff_content.to_string(),
+            staged_files: vec![file_path.to_string()],
+            branch_name: None,
+            commit_type: None,
+            max_length: None,
+            language: Self::convert_ai_language_to_code(&config.base.language),
+        };
 
+        // 使用PromptManager生成消息，统一模板系统
+        let prompt_manager = PromptManager::new();
+        let messages = prompt_manager
+            .generate_file_analysis_messages(template_id, file_path, diff_content, &context)
+            .map_err(|e| anyhow::anyhow!("生成文件分析消息失败: {}", e))?;
+
+        // 转换为AIRequest格式
         let request = AIRequest {
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: system_prompt.to_string(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: user_prompt,
-                },
-            ],
+            messages,
             model: config.base.model.clone(),
             temperature: Some(0.3),
             max_tokens: Some(200),
@@ -366,7 +371,7 @@ impl LayeredCommitManager {
 
         // 获取模板内容并构建最终总结的提示词
         let prompt_manager = ai_manager.get_prompt_manager().await;
-        let template = prompt_manager.get_template(template_id)
+        let _template = prompt_manager.get_template(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", template_id))?;
 
         // 构建临时的CommitContext用于语言处理
@@ -379,59 +384,20 @@ impl LayeredCommitManager {
             language: {
                 // 从AI配置中获取语言设置
                 let config = ai_manager.get_config().await;
-                match config.base.language.as_str() {
-                    "Simplified Chinese" => "zh-CN",
-                    "Traditional Chinese" => "zh-TW",
-                    "English" => "en",
-                    "Japanese" => "ja",
-                    "Korean" => "ko",
-                    "French" => "fr",
-                    "German" => "de",
-                    "Spanish" => "es",
-                    "Russian" => "ru",
-                    "Portuguese" => "pt",
-                    "Italian" => "it",
-                    "Dutch" => "nl",
-                    "Swedish" => "sv",
-                    "Czech" => "cs",
-                    "Polish" => "pl",
-                    "Turkish" => "tr",
-                    "Vietnamese" => "vi",
-                    "Thai" => "th",
-                    "Indonesian" => "id",
-                    _ => "en", // 默认英文
-                }.to_string()
+                Self::convert_ai_language_to_code(&config.base.language)
             },
         };
 
-        // 使用动态系统提示词生成，确保语言声明正确应用
-        let dynamic_system_prompt = prompt_manager.generate_dynamic_system_prompt(template, &temp_context);
-        let mut system_prompt = String::from("你现在正在处理分层提交的最终总结阶段,下面的部分为提示词模板:\n\n");
-        system_prompt.push_str(&dynamic_system_prompt);
+        // 使用统一的总结消息生成系统（重构优化）
+        // Author: Evilek, Date: 2025-01-08
+        let file_summaries: Vec<&str> = file_summaries.iter().map(|s| s.summary.as_str()).collect();
+        let messages = prompt_manager
+            .generate_summary_messages(template_id, &temp_context, &file_summaries)
+            .map_err(|e| anyhow::anyhow!("生成总结消息失败: {}", e))?;
 
-        // 添加分层提交的特定说明
-        system_prompt.push_str("\n\n特别说明：你现在正在处理分层提交的最终总结阶段。以下是各个文件的AI分析摘要，请基于这些摘要使用上述模板生成一个统一的提交消息。");
-
-        // 提取配置指导部分（避免AI失忆）
-        let config_guidance = extract_config_guidance(&dynamic_system_prompt);
-
-        let user_prompt = format!(
-            "以下是各个文件的变更摘要:\n\n{}\n\n请生成一个简洁、准确的提交消息：{}",
-            summary_content,
-            config_guidance
-        );
-
+        // 使用统一生成的消息（重构优化）
         let request = AIRequest {
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: system_prompt,
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: user_prompt,
-                },
-            ],
+            messages,
             model: ai_manager.get_config().await.base.model.clone(),
             temperature: Some(0.3),
             max_tokens: Some(500),
@@ -573,41 +539,37 @@ impl LayeredCommitManager {
 
         Ok(split_contents)
     }
+
+    /// 将AI配置中的语言名称转换为语言代码
+    /// Author: Evilek, Date: 2025-01-08
+    /// 统一语言转换逻辑，避免代码重复
+    fn convert_ai_language_to_code(language_name: &str) -> String {
+        match language_name {
+            "Simplified Chinese" => "zh-CN",
+            "Traditional Chinese" => "zh-TW",
+            "English" => "en",
+            "Japanese" => "ja",
+            "Korean" => "ko",
+            "French" => "fr",
+            "German" => "de",
+            "Spanish" => "es",
+            "Russian" => "ru",
+            "Portuguese" => "pt",
+            "Italian" => "it",
+            "Dutch" => "nl",
+            "Swedish" => "sv",
+            "Czech" => "cs",
+            "Polish" => "pl",
+            "Turkish" => "tr",
+            "Vietnamese" => "vi",
+            "Thai" => "th",
+            "Indonesian" => "id",
+            _ => "en", // 默认英文
+        }.to_string()
+    }
 }
 
-/// 提取配置指导部分，避免AI失忆
-/// Author: Evilek, Date: 2025-01-08
-fn extract_config_guidance(system_prompt: &str) -> String {
-    let mut guidance_parts = Vec::new();
 
-    // 查找重要的配置指导
-    if system_prompt.contains("重要：请在提交类型前添加对应的emoji表情符号") {
-        guidance_parts.push("\n\n重要提醒：请在提交类型前添加对应的emoji表情符号。");
-    }
-
-    if system_prompt.contains("重要：只生成提交消息的标题行，不要包含详细描述") {
-        guidance_parts.push("\n\n重要提醒：只生成提交消息的标题行，不要包含详细描述。");
-    }
-
-    if system_prompt.contains("重要：如果有多个文件变更，请将它们合并为一个提交消息") {
-        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请将它们合并为一个提交消息。");
-    }
-
-    if system_prompt.contains("重要：如果有多个文件变更，请为每个主要变更生成单独的提交消息") {
-        guidance_parts.push("\n\n重要提醒：如果有多个文件变更，请为每个主要变更生成单独的提交消息。");
-    }
-
-    // 查找语言指导
-    if system_prompt.contains("请使用中文生成提交消息") {
-        guidance_parts.push("\n\n重要提醒：请使用中文生成提交消息。");
-    } else if system_prompt.contains("Please generate commit messages in English") {
-        guidance_parts.push("\n\n重要提醒：Please generate commit messages in English.");
-    } else if system_prompt.contains("请使用日语生成提交消息") {
-        guidance_parts.push("\n\n重要提醒：请使用日语生成提交消息。");
-    }
-
-    guidance_parts.join("")
-}
 
 #[derive(Debug)]
 struct SingleFileResult {
