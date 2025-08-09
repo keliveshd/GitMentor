@@ -103,7 +103,7 @@ impl LayeredCommitManager {
             messages,
             model: config.base.model.clone(),
             temperature: Some(0.3),
-            max_tokens: Some(500),
+            max_tokens: Some(config.advanced.max_tokens), // 使用系统全局配置的max_tokens，而不是硬编码
             stream: Some(false),
         };
 
@@ -129,7 +129,7 @@ impl LayeredCommitManager {
         let start_time = std::time::Instant::now();
 
         // 第一步：获取每个文件的diff
-        let files_with_diffs = self.get_files_with_diffs(&staged_files).await?;
+        let files_with_diffs = self.get_files_with_diffs(&staged_files, template_id).await?;
         let total_files = files_with_diffs.len();
 
         // 初始化进度
@@ -198,7 +198,8 @@ impl LayeredCommitManager {
     /// 获取文件及其diff内容
     /// Author: Evilek, Date: 2025-01-08
     /// 支持处理带有特殊标记的文件（#truncated, #split）
-    async fn get_files_with_diffs(&self, staged_files: &[String]) -> Result<Vec<(String, String)>> {
+    /// Updated: Evilek, Date: 2025-01-09 - 添加template_id参数用于文件分割控制
+    async fn get_files_with_diffs(&self, staged_files: &[String], template_id: &str) -> Result<Vec<(String, String)>> {
         let git_engine = self.git_engine.read().await;
         let mut files_with_diffs = Vec::new();
 
@@ -209,8 +210,8 @@ impl LayeredCommitManager {
                 let actual_path = file_path.replace("#truncated", "");
                 match git_engine.get_simple_file_diff(&actual_path) {
                     Ok(diff_content) => {
-                        // 截取文件内容的前面部分（根据token限制）
-                        let truncated_content = self.truncate_new_file_content(&diff_content).await?;
+                        // 截取文件内容的前面部分（根据模板的max_tokens限制）
+                        let truncated_content = self.truncate_new_file_content_with_template(&actual_path, &diff_content, template_id).await?;
                         files_with_diffs.push((actual_path, truncated_content));
                     },
                     Err(e) => {
@@ -222,8 +223,8 @@ impl LayeredCommitManager {
                 let actual_path = file_path.replace("#split", "");
                 match git_engine.get_simple_file_diff(&actual_path) {
                     Ok(diff_content) => {
-                        // 分割大文件内容
-                        let split_contents = self.split_file_content(&diff_content).await?;
+                        // 分割大文件内容，使用模板的max_tokens作为分割依据
+                        let split_contents = self.split_file_content_with_template(&actual_path, &diff_content, template_id).await?;
                         for (index, content) in split_contents.into_iter().enumerate() {
                             let split_path = format!("{}#part{}", actual_path, index + 1);
                             files_with_diffs.push((split_path, content));
@@ -233,29 +234,7 @@ impl LayeredCommitManager {
                         return Err(anyhow::anyhow!("获取分割文件diff失败 {}: {}", actual_path, e));
                     }
                 }
-            } else if file_path.starts_with("batch#") {
-                // 批量文件处理：多个文件合并成一个请求
-                let batch_files_str = file_path.replace("batch#", "");
-                let batch_files: Vec<&str> = batch_files_str.split(',').collect();
 
-                let mut combined_diff = String::new();
-                combined_diff.push_str("# 批量文件变更分析\n\n");
-
-                for (index, actual_path) in batch_files.iter().enumerate() {
-                    match git_engine.get_simple_file_diff(actual_path) {
-                        Ok(diff_content) => {
-                            combined_diff.push_str(&format!("## 文件 {}: {}\n", index + 1, actual_path));
-                            combined_diff.push_str(&diff_content);
-                            combined_diff.push_str("\n\n");
-                        },
-                        Err(e) => {
-                            combined_diff.push_str(&format!("## 文件 {}: {} (获取diff失败: {})\n\n", index + 1, actual_path, e));
-                        }
-                    }
-                }
-
-                let batch_name = format!("batch_{}files", batch_files.len());
-                files_with_diffs.push((batch_name, combined_diff));
             } else {
                 // 普通文件处理
                 match git_engine.get_simple_file_diff(file_path) {
@@ -288,6 +267,7 @@ impl LayeredCommitManager {
 
         // 使用统一的模板系统生成提示词（重构优化）
         // Author: Evilek, Date: 2025-01-08
+        // 移除批量文件处理逻辑，改为单文件独立处理 - Author: Evilek, Date: 2025-01-09
         let context = CommitContext {
             diff: diff_content.to_string(),
             staged_files: vec![file_path.to_string()],
@@ -308,7 +288,7 @@ impl LayeredCommitManager {
             messages,
             model: config.base.model.clone(),
             temperature: Some(0.3),
-            max_tokens: Some(200),
+            max_tokens: Some(config.advanced.max_tokens), // 使用系统全局配置的max_tokens，而不是硬编码
             stream: Some(false),
         };
 
@@ -396,11 +376,12 @@ impl LayeredCommitManager {
             .map_err(|e| anyhow::anyhow!("生成总结消息失败: {}", e))?;
 
         // 使用统一生成的消息（重构优化）
+        let config = ai_manager.get_config().await;
         let request = AIRequest {
             messages,
-            model: ai_manager.get_config().await.base.model.clone(),
+            model: config.base.model.clone(),
             temperature: Some(0.3),
-            max_tokens: Some(500),
+            max_tokens: Some(config.advanced.max_tokens), // 使用系统全局配置的max_tokens，而不是硬编码
             stream: Some(false),
         };
 
@@ -437,18 +418,65 @@ impl LayeredCommitManager {
     /// 获取模型的最大token限制
     async fn get_model_max_tokens(&self, model_id: &str) -> Result<Option<u32>> {
         // 简化实现，返回常见模型的token限制
+        // Author: Evilek, Date: 2025-01-09 - 添加qwen模型支持
         let max_tokens = match model_id {
             m if m.contains("gpt-4") => Some(8192),
             m if m.contains("gpt-3.5") => Some(4096),
             m if m.contains("claude") => Some(100000),
             m if m.contains("gemini") => Some(32768),
+            m if m.contains("qwen2.5:32b") => Some(32768), // qwen2.5:32b 支持32k上下文
+            m if m.contains("qwen") => Some(8192), // 其他qwen模型默认8k
             _ => Some(4096), // 默认限制
         };
 
         Ok(max_tokens)
     }
 
-    /// 截取新增文件内容
+    /// 截取新增文件内容（使用模板配置）
+    /// Author: Evilek, Date: 2025-01-09
+    /// 根据模板的max_tokens限制截取新增文件的前面部分，并包含文件名上下文
+    async fn truncate_new_file_content_with_template(&self, file_path: &str, diff_content: &str, template_id: &str) -> Result<String> {
+        // 获取模板的max_tokens配置作为截取依据
+        let prompt_manager = PromptManager::new();
+        let template_max_tokens = prompt_manager.get_template_config(template_id)
+            .and_then(|(max_tokens, _)| max_tokens)
+            .unwrap_or(200); // 默认200 tokens
+
+        // 使用模板的max_tokens作为截取的安全限制（保留30%余量给文件名和格式）
+        let safe_limit = (template_max_tokens as f32 * 0.7) as u32;
+
+        // 预估文件名和格式开销的token数
+        let file_context_tokens = TokenCounter::estimate_tokens(&format!("文件: {}\n\n", file_path)) + 50;
+
+        let lines: Vec<&str> = diff_content.lines().collect();
+        let total_lines = lines.len();
+        let mut truncated_lines = Vec::new();
+        let mut current_tokens = file_context_tokens;
+
+        for line in &lines {
+            let line_tokens = TokenCounter::estimate_tokens(line);
+            if current_tokens + line_tokens > safe_limit {
+                break;
+            }
+            truncated_lines.push(*line);
+            current_tokens += line_tokens;
+        }
+
+        let truncated_content = truncated_lines.join("\n");
+        let truncated_line_count = truncated_lines.len();
+
+        // 添加文件名上下文和截取说明
+        let result = if truncated_line_count < total_lines {
+            format!("文件: {}\n\n{}\n\n# 文件内容已截取，显示前{}行（共{}行）",
+                file_path, truncated_content, truncated_line_count, total_lines)
+        } else {
+            format!("文件: {}\n\n{}", file_path, truncated_content)
+        };
+
+        Ok(result)
+    }
+
+    /// 截取新增文件内容（保留原方法用于向后兼容）
     /// Author: Evilek, Date: 2025-01-08
     /// 根据token限制截取新增文件的前面部分
     async fn truncate_new_file_content(&self, diff_content: &str) -> Result<String> {
@@ -487,7 +515,61 @@ impl LayeredCommitManager {
         Ok(result)
     }
 
-    /// 分割文件内容
+    /// 分割文件内容（使用模板配置）
+    /// Author: Evilek, Date: 2025-01-09
+    /// 根据模板的max_tokens配置将大文件内容分割成多个部分，每个部分都包含文件名上下文
+    async fn split_file_content_with_template(&self, file_path: &str, diff_content: &str, template_id: &str) -> Result<Vec<String>> {
+        // 获取模板的max_tokens配置作为分割依据
+        let prompt_manager = PromptManager::new();
+        let template_max_tokens = prompt_manager.get_template_config(template_id)
+            .and_then(|(max_tokens, _)| max_tokens)
+            .unwrap_or(200); // 默认200 tokens
+
+        // 使用模板的max_tokens作为分割的安全限制（保留30%余量给文件名和格式）
+        let safe_limit = (template_max_tokens as f32 * 0.7) as u32;
+
+        let lines: Vec<&str> = diff_content.lines().collect();
+        let mut split_contents = Vec::new();
+        let mut current_chunk = Vec::new();
+        let mut current_tokens = 0u32;
+
+        // 预估文件名和格式开销的token数
+        let file_context_tokens = TokenCounter::estimate_tokens(&format!("文件: {}\n\n", file_path)) + 50;
+
+        for line in &lines {
+            let line_tokens = TokenCounter::estimate_tokens(line);
+
+            // 如果添加这一行会超过限制，保存当前块并开始新块
+            if current_tokens + line_tokens + file_context_tokens > safe_limit && !current_chunk.is_empty() {
+                // 为每个分割部分添加文件名上下文
+                let chunk_with_context = format!("文件: {}\n\n{}", file_path, current_chunk.join("\n"));
+                split_contents.push(chunk_with_context);
+                current_chunk.clear();
+                current_tokens = 0;
+            }
+
+            current_chunk.push(*line);
+            current_tokens += line_tokens;
+        }
+
+        // 添加最后一个块
+        if !current_chunk.is_empty() {
+            let chunk_with_context = format!("文件: {}\n\n{}", file_path, current_chunk.join("\n"));
+            split_contents.push(chunk_with_context);
+        }
+
+        // 如果有多个分片，为每个分片添加分片说明
+        if split_contents.len() > 1 {
+            let total_parts = split_contents.len();
+            for (index, content) in split_contents.iter_mut().enumerate() {
+                content.push_str(&format!("\n\n# 这是文件 {} 的第{}部分（共{}部分）", file_path, index + 1, total_parts));
+            }
+        }
+
+        Ok(split_contents)
+    }
+
+    /// 分割文件内容（保留原方法用于向后兼容）
     /// Author: Evilek, Date: 2025-01-08
     /// 将大文件内容分割成多个部分
     async fn split_file_content(&self, diff_content: &str) -> Result<Vec<String>> {

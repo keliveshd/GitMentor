@@ -748,17 +748,10 @@ impl PromptManager {
             &template.user_prompt_template
         };
 
-        // 创建单文件上下文
-        let file_context = CommitContext {
-            diff: file_diff.to_string(),
-            staged_files: vec![file_path.to_string()],
-            branch_name: context.branch_name.clone(),
-            commit_type: context.commit_type.clone(),
-            max_length: context.max_length,
-            language: context.language.clone(),
-        };
-
-        let mut user_content = self.render_template(user_prompt_template, &file_context)?;
+        // 修复批量文件路径显示问题：直接使用传入的context，不再创建新的file_context
+        // Author: Evilek, Date: 2025-01-09
+        // 这样可以保持analyze_single_file中设置的正确的staged_files列表
+        let mut user_content = self.render_template(user_prompt_template, context)?;
 
         // Add language guidance to end of user prompt (anti-amnesia optimization)
         // Author: Evilek, Date: 2025-01-08

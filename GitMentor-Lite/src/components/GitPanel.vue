@@ -867,7 +867,8 @@ const checkAndProcessFileTokens = async (filePaths: string[]): Promise<string[]>
 
     // 调用后端检查文件token限制
     const result = await invoke('check_and_process_file_tokens', {
-      filePaths: filePaths
+      filePaths: filePaths,
+      template_id: selectedTemplate.value
     }) as { processedFiles: string[], needsSplit: boolean }
 
     if (result.needsSplit) {

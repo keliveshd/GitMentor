@@ -136,9 +136,13 @@ impl AIManager {
         let prompt_manager = self.prompt_manager.read().await;
         let messages = prompt_manager.generate_messages(template_id, &context)?;
 
-        // 获取模板配置
-        let (max_tokens, temperature) = prompt_manager.get_template_config(template_id)
+        // 获取模板配置，但优先使用系统全局的max_tokens配置
+        let (_template_max_tokens, temperature) = prompt_manager.get_template_config(template_id)
             .unwrap_or((Some(200), Some(0.3)));
+
+        // 使用系统全局配置的max_tokens，而不是模板中的小数值，避免响应被截断
+        // Author: Evilek, Date: 2025-01-09
+        let max_tokens = Some(config.advanced.max_tokens);
 
         let request = AIRequest {
             messages,

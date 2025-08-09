@@ -645,6 +645,7 @@ pub async fn check_and_process_file_tokens(
     ai_manager: State<'_, Mutex<AIManager>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     filePaths: Vec<String>,
+    template_id: Option<String>,
 ) -> Result<FileTokenCheckResult, String> {
     use crate::utils::token_counter::TokenCounter;
     use std::sync::Arc;
@@ -664,6 +665,8 @@ pub async fn check_and_process_file_tokens(
         m if m.contains("gpt-3.5") => Some(4096),
         m if m.contains("claude") => Some(100000),
         m if m.contains("gemini") => Some(32768),
+        m if m.contains("qwen2.5:32b") => Some(32768), // qwen2.5:32b 支持32k上下文
+        m if m.contains("qwen") => Some(8192), // 其他qwen模型默认8k
         _ => Some(4096), // 默认限制
     };
     drop(ai_manager_guard);
@@ -765,39 +768,29 @@ pub async fn check_and_process_file_tokens(
         }
     }
 
-    // 处理普通文件：检查是否可以合并
-    if !normal_files.is_empty() {
-        // 如果所有普通文件的总token数不超过限制，可以合并处理
-        if !TokenCounter::is_over_limit(total_tokens, model_max_tokens) {
-            // 合并成一个批次处理
-            let combined_files: Vec<String> = normal_files.iter().map(|(path, _, _)| path.clone()).collect();
-            processed_files.push(format!("batch#{}", combined_files.join(",")));
+    // 处理普通文件：每个文件单独处理，超过token限制时自动分割
+    // Author: Evilek, Date: 2025-01-09 - 移除批量合并逻辑，改为单文件独立处理
+    for (file_path, _, file_tokens) in normal_files {
+        // 获取模板的max_tokens配置作为分割依据
+        let template_max_tokens = if let Some(ref template_id_str) = template_id {
+            let prompt_manager = crate::core::prompt_manager::PromptManager::new();
+            prompt_manager.get_template_config(template_id_str)
+                .and_then(|(max_tokens, _)| max_tokens)
+                .unwrap_or(200) // 默认200 tokens
         } else {
-            // 需要分组处理：按token限制分批
-            let mut current_batch = Vec::new();
-            let mut current_batch_tokens = 0u32;
-            let safe_limit = if let Some(max_tokens) = model_max_tokens {
-                (max_tokens as f32 * 0.7) as u32 // 保留30%余量
-            } else {
-                2800 // 默认安全限制
-            };
+            200 // 默认值
+        };
 
-            for (file_path, _, file_tokens) in normal_files {
-                if current_batch_tokens + file_tokens > safe_limit && !current_batch.is_empty() {
-                    // 当前批次已满，保存并开始新批次
-                    processed_files.push(format!("batch#{}", current_batch.join(",")));
-                    current_batch.clear();
-                    current_batch_tokens = 0;
-                    needs_split = true;
-                }
-                current_batch.push(file_path);
-                current_batch_tokens += file_tokens;
-            }
+        // 使用模板的max_tokens作为分割的安全限制（保留30%余量给文件名和格式）
+        let safe_limit = (template_max_tokens as f32 * 0.7) as u32;
 
-            // 添加最后一个批次
-            if !current_batch.is_empty() {
-                processed_files.push(format!("batch#{}", current_batch.join(",")));
-            }
+        if file_tokens > safe_limit {
+            // 文件超过限制，标记为需要分割
+            processed_files.push(format!("{}#split", file_path));
+            needs_split = true;
+        } else {
+            // 文件大小合适，直接处理
+            processed_files.push(file_path);
         }
     }
 
