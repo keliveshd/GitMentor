@@ -29,8 +29,8 @@ mkdir "%TEMP_DIR%"
 echo.
 echo Backing up 12 required AI provider icons...
 
-:: 12 AI provider icons to keep
-set "KEEP_FILES=openai.webp ollama.webp anthropic.webp zhipu.webp deepseek.webp gemini.webp alibaba.webp doubao.webp siliconcloud.webp openrouter.webp together.webp groq.webp"
+:: 12 AI provider icons to keep (updated with qwen.webp)
+set "KEEP_FILES=openai.webp ollama.webp anthropic.webp zhipu.webp deepseek.webp gemini.webp qwen.webp doubao.webp siliconcloud.webp openrouter.webp together.webp groq.webp"
 
 set "KEPT_COUNT=0"
 for %%f in (%KEEP_FILES%) do (

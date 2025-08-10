@@ -775,7 +775,7 @@ const generateCommitMessage = async () => {
 
       // 获取暂存文件的差异摘要
       generationProgress.value = '正在获取差异信息...'
-      const diffContent = await invoke('get_staged_diff_summary') as string
+      // const diffContent = await invoke('get_staged_diff_summary') as string
 
       // 统一使用分层提交逻辑 - 移除普通提交分支
       // Author: Evilek, Date: 2025-01-08

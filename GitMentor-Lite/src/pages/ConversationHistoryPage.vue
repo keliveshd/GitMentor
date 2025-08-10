@@ -278,24 +278,24 @@ const getStepTypeName = (stepType: string) => {
 }
 
 // 获取步骤图标
-const getStepIcon = (stepType: string) => {
-  switch (stepType) {
-    case 'file_analysis':
-      return '📄'
-    case 'final_summary':
-      return '📝'
-    default:
-      return '🔧'
-  }
-}
+// const getStepIcon = (stepType: string) => {
+//   switch (stepType) {
+//     case 'file_analysis':
+//       return '📄'
+//     case 'final_summary':
+//       return '📝'
+//     default:
+//       return '🔧'
+//   }
+// }
 
 const refreshHistory = async () => {
   await loadConversationHistory()
 }
 
-const reloadPage = () => {
-  window.location.reload()
-}
+// const reloadPage = () => {
+//   window.location.reload()
+// }
 
 const clearHistory = async () => {
   if (!confirm('确定要清空所有对话记录吗？此操作不可恢复。')) return

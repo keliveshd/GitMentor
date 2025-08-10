@@ -216,89 +216,89 @@ const apiConfig = ref({
   groq: { api_key: '' },
 })
 
-// 热门AI提供商 - 使用本地静态图标 Author: Evilek, Date: 2025-01-09
+// 热门AI提供商 - 使用public目录静态图标 Author: Evilek, Date: 2025-01-09
 const popularProviders = [
   {
     id: 'OpenAI',
     name: 'OpenAI',
-    icon: '/src/assets/static-webp/light/openai.webp',
+    icon: '/icons/openai.webp',
     description: 'GPT-4, GPT-3.5等模型',
     price: '付费服务'
   },
   {
     id: 'Ollama',
     name: 'Ollama',
-    icon: '/src/assets/static-webp/light/ollama.webp',
+    icon: '/icons/ollama.webp',
     description: '本地AI模型服务',
     price: '免费本地'
   },
   {
     id: 'Anthropic',
     name: 'Anthropic',
-    icon: '/src/assets/static-webp/light/anthropic.webp',
+    icon: '/icons/anthropic.webp',
     description: 'Claude系列模型',
     price: '付费服务'
   },
   {
     id: 'Zhipu',
     name: '智谱AI',
-    icon: '/src/assets/static-webp/light/zhipu.webp',
+    icon: '/icons/zhipu.webp',
     description: 'GLM系列模型',
     price: '付费服务'
   },
   {
     id: 'Deepseek',
     name: 'Deepseek',
-    icon: '/src/assets/static-webp/light/deepseek.webp',
+    icon: '/icons/deepseek.webp',
     description: 'Deepseek系列模型',
     price: '付费服务'
   },
   {
     id: 'Gemini',
     name: 'Google Gemini',
-    icon: '/src/assets/static-webp/light/gemini.webp',
+    icon: '/icons/gemini.webp',
     description: 'Gemini Pro/Ultra模型',
     price: '付费服务'
   },
   {
     id: 'DashScope',
     name: '阿里云DashScope',
-    icon: '/src/assets/static-webp/light/qwen.webp',
+    icon: '/icons/qwen.webp',
     description: '通义千问系列模型',
     price: '付费服务'
   },
   {
     id: 'Doubao',
     name: '豆包AI',
-    icon: '/src/assets/static-webp/light/doubao.webp',
+    icon: '/icons/doubao.webp',
     description: '字节跳动AI模型',
     price: '付费服务'
   },
   {
     id: 'Siliconflow',
     name: 'SiliconFlow',
-    icon: '/src/assets/static-webp/light/siliconcloud.webp',
+    icon: '/icons/siliconcloud.webp',
     description: '硅基流动AI平台',
     price: '付费服务'
   },
   {
     id: 'OpenRouter',
     name: 'OpenRouter',
-    icon: '/src/assets/static-webp/light/openrouter.webp',
+    icon: '/icons/openrouter.webp',
     description: '多模型聚合平台',
     price: '付费服务'
   },
   {
     id: 'Together',
     name: 'Together AI',
-    icon: '/src/assets/static-webp/light/together.webp',
+    icon: '/icons/together.webp',
     description: '开源模型托管平台',
     price: '付费服务'
   },
   {
     id: 'Groq',
     name: 'Groq',
-    icon: '/src/assets/static-webp/light/groq.webp',
+    icon: '/icons/groq.webp',
     description: '超高速推理平台',
     price: '付费服务'
   }
