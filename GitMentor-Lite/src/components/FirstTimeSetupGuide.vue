@@ -263,7 +263,7 @@ const popularProviders = [
   {
     id: 'DashScope',
     name: '阿里云DashScope',
-    icon: '/src/assets/static-webp/light/alibaba.webp',
+    icon: '/src/assets/static-webp/light/qwen.webp',
     description: '通义千问系列模型',
     price: '付费服务'
   },
