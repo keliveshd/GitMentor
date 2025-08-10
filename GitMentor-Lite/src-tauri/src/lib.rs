@@ -140,6 +140,9 @@ pub fn run() {
             ai_commands::get_layered_sessions,
             ai_commands::get_conversation_records_by_session,
             ai_commands::check_and_process_file_tokens,
+            ai_commands::cancel_layered_commit,
+            ai_commands::check_first_time_setup,
+            ai_commands::test_ai_connection,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

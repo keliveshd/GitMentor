@@ -613,6 +613,78 @@ pub async fn cancel_layered_commit() -> Result<(), String> {
     }
 }
 
+/// 检查是否需要首次启动引导
+/// Author: Evilek, Date: 2025-01-09
+#[tauri::command]
+pub async fn check_first_time_setup(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<bool, String> {
+    let manager = ai_manager.lock().await;
+    let config = manager.get_config().await;
+
+    // 检查当前选择的提供商是否配置了API密钥
+    let needs_setup = match config.base.provider.as_str() {
+        "OpenAI" => config.providers.openai.api_key.is_empty(),
+        "Ollama" => false, // Ollama通常不需要API密钥
+        "Zhipu" => config.providers.zhipu.api_key.is_empty(),
+        "Anthropic" => config.providers.anthropic.api_key.is_empty(),
+        "DashScope" => config.providers.dashscope.api_key.is_empty(),
+        "Doubao" => config.providers.doubao.api_key.is_empty(),
+        "Gemini" => config.providers.gemini.api_key.is_empty(),
+        "Deepseek" => config.providers.deepseek.api_key.is_empty(),
+        "Siliconflow" => config.providers.siliconflow.api_key.is_empty(),
+        "OpenRouter" => config.providers.openrouter.api_key.is_empty(),
+        "Together" => config.providers.together.api_key.is_empty(),
+        "Mistral" => config.providers.mistral.api_key.is_empty(),
+        "BaiduQianfan" => config.providers.baidu_qianfan.api_key.is_empty() || config.providers.baidu_qianfan.secret_key.is_empty(),
+        "AzureOpenAI" => config.providers.azure_openai.api_key.is_empty() || config.providers.azure_openai.endpoint.is_empty(),
+        "Cloudflare" => config.providers.cloudflare.api_key.is_empty() || config.providers.cloudflare.account_id.is_empty(),
+        "VertexAI" => config.providers.vertexai.project_id.is_empty() || config.providers.vertexai.credentials_path.is_empty(),
+        "Groq" => config.providers.groq.api_key.is_empty(),
+        _ => true, // 未知提供商，需要设置
+    };
+
+    Ok(needs_setup)
+}
+
+/// 测试AI连接
+/// Author: Evilek, Date: 2025-01-09
+#[tauri::command]
+pub async fn test_ai_connection(
+    ai_manager: State<'_, Mutex<AIManager>>,
+) -> Result<String, String> {
+    let manager = ai_manager.lock().await;
+    let config = manager.get_config().await;
+
+    // 构建简单的测试请求
+    let test_request = crate::core::ai_provider::AIRequest {
+        messages: vec![
+            crate::core::ai_provider::ChatMessage {
+                role: "user".to_string(),
+                content: "Hello, please respond with 'Connection test successful'".to_string(),
+            }
+        ],
+        model: config.base.model.clone(), // 修复：添加model字段
+        temperature: Some(0.1),
+        max_tokens: Some(50),
+        stream: Some(false),
+    };
+
+    // 尝试发送请求，使用正确的方法名
+    match manager.generate_commit_message(test_request).await {
+        Ok(response) => {
+            if response.content.contains("successful") || response.content.contains("成功") {
+                Ok("AI连接测试成功".to_string())
+            } else {
+                Ok(format!("AI响应正常，返回内容: {}", response.content))
+            }
+        },
+        Err(e) => {
+            Err(format!("AI连接测试失败: {}", e))
+        }
+    }
+}
+
 /// 获取分层提交会话列表
 /// 作者：Evilek
 /// 编写日期：2025-08-04

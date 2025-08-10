@@ -263,15 +263,63 @@
               </div>
             </div>
           </div>
+
+          <!-- 引导设置 -->
+          <div v-if="selectedMenu === 'guide'" class="settings-section">
+            <div class="section-card">
+              <h3>🚀 首次启动引导</h3>
+              <p class="section-description">
+                如果您是新用户或想重新配置AI服务，可以使用首次启动引导来快速设置。
+              </p>
+
+              <div class="guide-actions">
+                <button @click="openFirstTimeGuide" class="btn btn-primary guide-btn">
+                  🎯 重新进入引导设置
+                </button>
+                <p class="guide-note">
+                  💡 引导将帮助您选择AI提供商、配置API密钥并测试连接
+                </p>
+              </div>
+            </div>
+
+            <div class="section-card">
+              <h3>📚 快速配置指南</h3>
+              <div class="guide-tips">
+                <div class="tip-item">
+                  <h4>🤖 OpenAI</h4>
+                  <p>访问 <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI API Keys</a> 获取API密钥</p>
+                </div>
+                <div class="tip-item">
+                  <h4>🦙 Ollama</h4>
+                  <p>本地安装Ollama后，默认地址为 http://localhost:11434</p>
+                </div>
+                <div class="tip-item">
+                  <h4>🧠 Anthropic</h4>
+                  <p>访问 <a href="https://console.anthropic.com/" target="_blank">Anthropic Console</a> 获取API密钥</p>
+                </div>
+                <div class="tip-item">
+                  <h4>🇨🇳 智谱AI</h4>
+                  <p>访问 <a href="https://open.bigmodel.cn/" target="_blank">智谱AI开放平台</a> 获取API密钥</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
+
+    <!-- 首次启动引导 -->
+    <FirstTimeSetupGuide
+      v-if="showFirstTimeGuide"
+      @complete="completeFirstTimeGuide"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import FirstTimeSetupGuide from '../components/FirstTimeSetupGuide.vue'
 
 /**
  * AI设置页面组件
@@ -405,7 +453,8 @@ const availableModels = ref<AIModel[]>([])
 const menuItems = ref([
   { key: 'basic', icon: '🏠', label: '基础设置' },
   { key: 'features', icon: '⚙️', label: '功能设置' },
-  { key: 'advanced', icon: '🎛️', label: '高级选项' }
+  { key: 'advanced', icon: '🎛️', label: '高级选项' },
+  { key: 'guide', icon: '🚀', label: '引导设置' } // 新增引导设置菜单 - Author: Evilek, Date: 2025-01-09
 ])
 
 // 支持的AI提供商列表
@@ -689,6 +738,31 @@ const onProviderChange = () => {
   }
 }
 
+// 引导设置相关 - Author: Evilek, Date: 2025-01-09
+const showFirstTimeGuide = ref(false)
+
+/**
+ * 打开首次启动引导
+ * Author: Evilek, Date: 2025-01-09
+ */
+const openFirstTimeGuide = () => {
+  showFirstTimeGuide.value = true
+}
+
+/**
+ * 完成引导设置
+ * Author: Evilek, Date: 2025-01-09
+ */
+const completeFirstTimeGuide = async () => {
+  showFirstTimeGuide.value = false
+  // 重新加载设置，获取引导中配置的最新设置
+  await loadSettings()
+  // 如果配置了新的提供商，自动刷新模型列表
+  if (canTestConnection()) {
+    await refreshModels()
+  }
+}
+
 // 生命周期
 onMounted(async () => {
   await loadSettings()
@@ -969,5 +1043,57 @@ onMounted(async () => {
 .config-notice p {
   margin: 0;
   font-size: 14px;
+}
+
+/* 引导设置样式 - Author: Evilek, Date: 2025-01-09 */
+.guide-actions {
+  text-align: center;
+  padding: 24px 0;
+}
+
+.guide-btn {
+  font-size: 16px;
+  padding: 12px 24px;
+  margin-bottom: 16px;
+}
+
+.guide-note {
+  color: #6c757d;
+  font-size: 14px;
+  margin: 0;
+}
+
+.guide-tips {
+  display: grid;
+  gap: 16px;
+}
+
+.tip-item {
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border-left: 4px solid #007bff;
+}
+
+.tip-item h4 {
+  margin: 0 0 8px 0;
+  color: #495057;
+  font-size: 14px;
+}
+
+.tip-item p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.tip-item a {
+  color: #007bff;
+  text-decoration: none;
+}
+
+.tip-item a:hover {
+  text-decoration: underline;
 }
 </style>

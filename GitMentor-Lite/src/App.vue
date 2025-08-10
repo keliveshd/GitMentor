@@ -1,50 +1,102 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { ref, onMounted } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import GitPanel from "./components/GitPanel.vue";
+import FirstTimeSetupGuide from "./components/FirstTimeSetupGuide.vue";
 
 const greetMsg = ref("");
 const name = ref("");
 const showTestSection = ref(false);
+const showFirstTimeSetup = ref(false);
+const appReady = ref(false);
 
 async function greet() {
   greetMsg.value = await invoke("greet", { name: name.value });
 }
+
+/**
+ * 检查是否需要首次启动引导
+ * Author: Evilek, Date: 2025-01-09
+ */
+const checkFirstTimeSetup = async () => {
+  try {
+    const needsSetup = await invoke('check_first_time_setup') as boolean;
+    showFirstTimeSetup.value = needsSetup;
+    appReady.value = true;
+  } catch (error) {
+    console.error('检查首次启动状态失败:', error);
+    // 如果检查失败，直接显示主界面
+    showFirstTimeSetup.value = false;
+    appReady.value = true;
+  }
+}
+
+/**
+ * 完成首次设置引导
+ * Author: Evilek, Date: 2025-01-09
+ */
+const completeFirstTimeSetup = () => {
+  showFirstTimeSetup.value = false;
+}
+
+// 生命周期
+onMounted(async () => {
+  // 等待Tauri初始化
+  await new Promise(resolve => setTimeout(resolve, 100));
+  await checkFirstTimeSetup();
+});
 </script>
 
 <template>
-  <!-- 路由视图 - 支持多页面 -->
-  <router-view v-slot="{ Component }">
-    <component :is="Component" v-if="Component" />
-    <!-- 默认主页面 -->
-    <div v-else class="app">
-      <!-- 主要内容区域 -->
-      <main class="main-content">
-        <!-- Git面板 -->
-        <div class="git-panel-container">
-          <GitPanel />
-        </div>
+  <!-- 首次启动引导 -->
+  <FirstTimeSetupGuide
+    v-if="showFirstTimeSetup && appReady"
+    @complete="completeFirstTimeSetup"
+  />
 
-        <!-- 测试区域（可选） -->
-        <div class="test-section" v-if="showTestSection">
-          <h3>🧪 Tauri连接测试</h3>
-          <form class="test-form" @submit.prevent="greet">
-            <input id="greet-input" v-model="name" placeholder="输入名称进行测试..." class="test-input" />
-            <button type="submit" class="test-button">测试连接</button>
-          </form>
-          <p v-if="greetMsg" class="test-result">{{ greetMsg }}</p>
-        </div>
-      </main>
+  <!-- 主应用界面 -->
+  <div v-if="appReady && !showFirstTimeSetup">
+    <!-- 路由视图 - 支持多页面 -->
+    <router-view v-slot="{ Component }">
+      <component :is="Component" v-if="Component" />
+      <!-- 默认主页面 -->
+      <div v-else class="app">
+        <!-- 主要内容区域 -->
+        <main class="main-content">
+          <!-- Git面板 -->
+          <div class="git-panel-container">
+            <GitPanel />
+          </div>
 
-      <!-- 页脚 -->
-      <footer class="app-footer">
-        <p>GitMentor MVP v2.0 - 作者：Evilek | 基于 Tauri + Vue 3 + Rust</p>
-        <button @click="showTestSection = !showTestSection" class="toggle-test-btn">
-          {{ showTestSection ? '隐藏' : '显示' }}测试区域
-        </button>
-      </footer>
+          <!-- 测试区域（可选） -->
+          <div class="test-section" v-if="showTestSection">
+            <h3>🧪 Tauri连接测试</h3>
+            <form class="test-form" @submit.prevent="greet">
+              <input id="greet-input" v-model="name" placeholder="输入名称进行测试..." class="test-input" />
+              <button type="submit" class="test-button">测试连接</button>
+            </form>
+            <p v-if="greetMsg" class="test-result">{{ greetMsg }}</p>
+          </div>
+        </main>
+
+        <!-- 页脚 -->
+        <footer class="app-footer">
+          <p>GitMentor MVP v2.0 - 作者：Evilek | 基于 Tauri + Vue 3 + Rust</p>
+          <button @click="showTestSection = !showTestSection" class="toggle-test-btn">
+            {{ showTestSection ? '隐藏' : '显示' }}测试区域
+          </button>
+        </footer>
+      </div>
+    </router-view>
+  </div>
+
+  <!-- 加载状态 -->
+  <div v-if="!appReady" class="loading-screen">
+    <div class="loading-content">
+      <div class="loading-spinner"></div>
+      <p>正在初始化 GitMentor...</p>
     </div>
-  </router-view>
+  </div>
 </template>
 
 <style scoped>
@@ -188,6 +240,45 @@ async function greet() {
 .toggle-test-btn:hover {
   background: #667eea;
   color: white;
+}
+
+/* 加载屏幕样式 - Author: Evilek, Date: 2025-01-09 */
+.loading-screen {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.loading-content {
+  text-align: center;
+  color: white;
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.3);
+  border-top: 4px solid white;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.loading-content p {
+  font-size: 16px;
+  margin: 0;
 }
 </style>
 

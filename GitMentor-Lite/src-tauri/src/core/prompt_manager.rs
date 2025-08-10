@@ -715,8 +715,8 @@ config.js: 更新配置参数
     pub fn generate_file_analysis_messages(
         &self,
         template_id: &str,
-        file_path: &str,
-        file_diff: &str,
+        _file_path: &str, // 修复编译警告 - Author: Evilek, Date: 2025-01-09
+        _file_diff: &str, // 修复编译警告 - Author: Evilek, Date: 2025-01-09
         context: &CommitContext,
     ) -> Result<Vec<ChatMessage>> {
         let template = self
