@@ -1,4 +1,8 @@
 use tauri::{State, Emitter};
+// AI 命令集合：读取配置、拼提示词、调度 AIManager
+// Author: Evilek, Date: 2025-08-11
+// 别在这里写业务判断洪水，复杂逻辑下沉到 core 层
+
 use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
 
@@ -81,7 +85,7 @@ pub async fn get_providers_info(
 ) -> Result<ProvidersInfoResponse, String> {
     let manager = ai_manager.lock().await;
     let providers_info = manager.get_providers_info().await;
-    
+
     let mut providers = Vec::new();
     for (id, name) in providers_info {
         let available = manager.is_provider_available(&id).await;
@@ -91,7 +95,7 @@ pub async fn get_providers_info(
             available,
         });
     }
-    
+
     Ok(ProvidersInfoResponse { providers })
 }
 
@@ -168,26 +172,26 @@ pub async fn generate_commit_message_ai(
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
 ) -> Result<GenerateCommitResponse, String> {
     use std::time::Instant;
-    
+
     let start_time = Instant::now();
-    
+
     // 获取Git状态和差异信息
     let git_status = {
         let engine = git_engine.lock().await;
         engine.get_status()
             .map_err(|e| format!("Failed to get git status: {}", e))?
     };
-    
+
     let diff_summary = {
         let engine = git_engine.lock().await;
         engine.get_diff_summary(&request.selected_files)
             .map_err(|e| format!("Failed to get diff summary: {}", e))?
     };
-    
+
     // 获取AI配置
     let manager = ai_manager.lock().await;
     let config = manager.get_config().await;
-    
+
     // 构建提示词（参考Dish AI Commit的提示词模板）
     let system_prompt = create_commit_system_prompt(&config);
     let user_prompt = format!(
@@ -198,7 +202,7 @@ pub async fn generate_commit_message_ai(
         diff_summary,
         request.additional_context.unwrap_or_default()
     );
-    
+
     // 构建AI请求
     let ai_request = AIRequest {
         messages: vec![
@@ -216,13 +220,13 @@ pub async fn generate_commit_message_ai(
         max_tokens: Some(config.advanced.max_tokens),
         stream: Some(false),
     };
-    
+
     // 调用AI生成
     let response = manager.generate_commit_message(ai_request).await
         .map_err(|e| format!("Failed to generate commit message: {}", e))?;
-    
+
     let processing_time = start_time.elapsed().as_millis() as u64;
-    
+
     Ok(GenerateCommitResponse {
         message: response.content,
         confidence: 0.85, // 简化的置信度

@@ -1,4 +1,8 @@
 use tauri::State;
+// Git 命令集合：仅做参数校验与调度，核心逻辑在 GitEngine
+// Author: Evilek, Date: 2025-08-11
+// 返回值统一走 Result<.., String>，错误别往上抛屎山，格式化清楚点
+
 use tokio::sync::Mutex;
 use crate::core::git_engine::GitEngine;
 use crate::core::llm_client::LLMClient;
@@ -41,20 +45,20 @@ pub async fn generate_commit_message(
     llm_client: State<'_, LLMClient>,
 ) -> Result<CommitMessageResult, String> {
     let start_time = Instant::now();
-    
+
     // Get Git status and diff info
     let git_status = {
         let engine = git_engine.lock().await;
         engine.get_status()
             .map_err(|e| format!("Failed to get git status: {}", e))?
     };
-    
+
     let diff_summary = {
         let engine = git_engine.lock().await;
         engine.get_diff_summary(&request.selected_files)
             .map_err(|e| format!("Failed to get diff summary: {}", e))?
     };
-    
+
     // Create simple prompt for MVP
     let prompt = format!(
         "Generate a concise commit message for the following changes:\n\nBranch: {}\nFiles changed: {}\n\nFile details:\n{}\n\nDiff summary:\n{}\n\nPlease provide a clear, concise commit message following conventional commit format.",
@@ -63,13 +67,13 @@ pub async fn generate_commit_message(
         request.selected_files.join(", "),
         diff_summary
     );
-    
+
     // Call LLM to generate commit message
     let commit_message = llm_client.generate_commit_message(&prompt).await
         .map_err(|e| format!("Failed to generate commit message: {}", e))?;
-    
+
     let processing_time = start_time.elapsed().as_millis() as u64;
-    
+
     Ok(CommitMessageResult {
         message: commit_message,
         confidence: 0.85, // Simplified confidence for MVP

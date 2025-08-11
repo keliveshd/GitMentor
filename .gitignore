@@ -8,3 +8,28 @@ GitMentor-Lite/src-tauri/.config/conversation_history.json
 .augment/rules/role.md
 .augment/rules/role-new.md
 GitMentor-Lite/src-tauri/.config/ai_config.json
+
+# === Project ignores added by Evilek on 2025-08-11 ===
+# Node/Vite outputs
+GitMentor-Lite/node_modules/
+GitMentor-Lite/dist/
+
+# Rust target outputs
+GitMentor-Lite/src-tauri/target/
+
+# Generated schemas
+GitMentor-Lite/src-tauri/gen/
+
+# Local configs and logs
+GitMentor-Lite/src-tauri/.config/*.json
+GitMentor-Lite/*.log
+*.log
+startup.log
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Large vendor icon set (we use public/icons instead)
+GitMentor-Lite/src/assets/static-webp/
+

@@ -1,3 +1,12 @@
+// 核心模块聚合：职责边界说明
+// Author: Evilek, Date: 2025-08-11
+// - ai_manager / ai_provider / providers：AI 提供商与请求调度
+// - prompt_manager：提示词模板与两段式处理
+// - git_engine / git_config：Git 操作与执行模式管理
+// - layered_commit_manager：分层提交编排与取消
+// - conversation_logger：AI 请求/响应记录
+// 别tm在这里写业务，写清楚模块边界，改就加注释。
+
 pub mod ai_config;
 pub mod ai_manager;
 pub mod ai_provider;

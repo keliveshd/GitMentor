@@ -1,4 +1,8 @@
 mod commands;
+// 应用后端入口：初始化组件并注册 Tauri 命令
+// Author: Evilek, Date: 2025-08-11
+// 这个憨批入口别乱加打印，日志走 write_startup_log，调试走 debug_log!
+
 mod core;
 mod types;
 mod utils;

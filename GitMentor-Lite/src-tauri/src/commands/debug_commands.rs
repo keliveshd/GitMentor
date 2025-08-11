@@ -1,4 +1,8 @@
 use serde::{Deserialize, Serialize};
+// 调试命令：全局开关 + 前端配置面板读写
+// Author: Evilek, Date: 2025-08-11
+// 这个模块只改一个布尔状态，想加花活去前端玩
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// 全局调试日志开关
@@ -43,13 +47,13 @@ pub async fn get_debug_settings() -> Result<DebugSettings, String> {
 #[tauri::command]
 pub async fn set_debug_logs_enabled(enabled: bool) -> Result<String, String> {
     set_debug_enabled(enabled);
-    
+
     let message = if enabled {
         "调试日志已启用"
     } else {
         "调试日志已禁用"
     };
-    
+
     Ok(message.to_string())
 }
 

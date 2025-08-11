@@ -120,7 +120,10 @@ impl GitEngine {
 
         // 首先尝试直接执行git命令
         for git_cmd in &git_commands {
-            if let Ok(output) = Command::new(git_cmd).arg("--version").output() {
+            if let Ok(output) = Self::create_hidden_command(git_cmd)
+                .arg("--version")
+                .output()
+            {
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout);
                     if !version.trim().is_empty() {
@@ -148,7 +151,7 @@ impl GitEngine {
         };
 
         for path in common_paths {
-            if let Ok(output) = Command::new(path).arg("--version").output() {
+            if let Ok(output) = Self::create_hidden_command(path).arg("--version").output() {
                 if output.status.success() {
                     let version = String::from_utf8_lossy(&output.stdout);
                     if !version.trim().is_empty() {
@@ -211,7 +214,7 @@ impl GitEngine {
 
         // 先尝试直接执行git命令
         debug_log!("[DEBUG] 尝试方式1: 直接执行 'git'");
-        match Command::new("git").arg("--version").output() {
+        match Self::create_hidden_command("git").arg("--version").output() {
             Ok(output) => {
                 let version = String::from_utf8_lossy(&output.stdout);
                 let stderr = String::from_utf8_lossy(&output.stderr);
@@ -250,7 +253,10 @@ impl GitEngine {
 
         for git_path in git_paths {
             debug_log!("[DEBUG] 尝试路径: {}", git_path);
-            match Command::new(git_path).arg("--version").output() {
+            match Self::create_hidden_command(git_path)
+                .arg("--version")
+                .output()
+            {
                 Ok(output) => {
                     let version = String::from_utf8_lossy(&output.stdout);
                     let stderr = String::from_utf8_lossy(&output.stderr);
@@ -434,6 +440,27 @@ impl GitEngine {
         "unknown-target".to_string()
     }
 
+    /// 创建隐藏窗口的命令（Windows 下避免黑色 CMD 闪窗）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-11
+    /// 说明：统一封装外部 git 命令创建，Windows 使用 CREATE_NO_WINDOW 隐藏控制台窗口；其他平台保持默认
+    /// Confirmed via 寸止(ID:WIN-CMD-HIDE-20250811)
+    fn create_hidden_command(program: &str) -> Command {
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            // CREATE_NO_WINDOW 常量，避免创建控制台窗口
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            let mut cmd = Command::new(program);
+            cmd.creation_flags(CREATE_NO_WINDOW);
+            return cmd;
+        }
+        #[cfg(not(windows))]
+        {
+            Command::new(program)
+        }
+    }
+
     /// 使用Git命令获取状态（超快速）
     /// 作者：Evilek
     /// 编写日期：2025-08-06
@@ -520,7 +547,7 @@ impl GitEngine {
         );
         debug_log!("[DEBUG] 在目录: {}", repo_path);
 
-        let output = Command::new(&git_command)
+        let output = Self::create_hidden_command(&git_command)
             .current_dir(repo_path)
             .args(&["symbolic-ref", "--short", "HEAD"])
             .output()?;
@@ -538,7 +565,7 @@ impl GitEngine {
         } else {
             debug_log!("[DEBUG] symbolic-ref失败，尝试rev-parse");
             // 可能是detached HEAD，尝试获取commit hash
-            let output = Command::new(&git_command)
+            let output = Self::create_hidden_command(&git_command)
                 .current_dir(repo_path)
                 .args(&["rev-parse", "--short", "HEAD"])
                 .output()?;
@@ -613,7 +640,7 @@ impl GitEngine {
     /// 使用Git命令获取暂存区文件
     fn get_staged_files_with_command(&self, repo_path: &str) -> Result<Vec<FileStatus>> {
         let git_command = self.get_git_command();
-        let output = Command::new(&git_command)
+        let output = Self::create_hidden_command(&git_command)
             .current_dir(repo_path)
             .args(&["diff", "--cached", "--name-status"])
             .output()?;
@@ -650,7 +677,7 @@ impl GitEngine {
     /// 使用Git命令获取工作区修改文件
     fn get_unstaged_files_with_command(&self, repo_path: &str) -> Result<Vec<FileStatus>> {
         let git_command = self.get_git_command();
-        let output = Command::new(&git_command)
+        let output = Self::create_hidden_command(&git_command)
             .current_dir(repo_path)
             .args(&["diff", "--name-status"])
             .output()?;
@@ -684,7 +711,7 @@ impl GitEngine {
     /// 使用Git命令获取未跟踪文件
     fn get_untracked_files_with_command(&self, repo_path: &str) -> Result<Vec<FileStatus>> {
         let git_command = self.get_git_command();
-        let output = Command::new(&git_command)
+        let output = Self::create_hidden_command(&git_command)
             .current_dir(repo_path)
             .args(&["ls-files", "--others", "--exclude-standard"])
             .output()?;
@@ -913,7 +940,7 @@ impl GitEngine {
         );
 
         // 首先尝试获取工作目录相对于HEAD的diff
-        let output = Command::new(&git_cmd)
+        let output = Self::create_hidden_command(&git_cmd)
             .arg("diff")
             .arg("HEAD")
             .arg("--")
@@ -942,7 +969,7 @@ impl GitEngine {
 
         // 如果HEAD diff为空，尝试获取staged diff
         println!("🔍 [get_file_diff_via_command] 尝试staged diff");
-        let staged_output = Command::new(&git_cmd)
+        let staged_output = Self::create_hidden_command(&git_cmd)
             .arg("diff")
             .arg("--cached")
             .arg("--")
@@ -970,7 +997,7 @@ impl GitEngine {
 
         // 最后尝试获取工作目录的变更（不与HEAD比较）
         println!("🔍 [get_file_diff_via_command] 尝试工作目录diff");
-        let workdir_output = Command::new(&git_cmd)
+        let workdir_output = Self::create_hidden_command(&git_cmd)
             .arg("diff")
             .arg("--")
             .arg(file_path)
@@ -997,7 +1024,7 @@ impl GitEngine {
 
         // 尝试检查文件状态
         println!("🔍 [get_file_diff_via_command] 检查文件状态");
-        let status_output = Command::new(&git_cmd)
+        let status_output = Self::create_hidden_command(&git_cmd)
             .arg("status")
             .arg("--porcelain")
             .arg("--")
