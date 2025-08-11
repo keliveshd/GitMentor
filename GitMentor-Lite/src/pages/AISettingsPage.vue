@@ -758,6 +758,14 @@ const completeFirstTimeGuide = async () => {
   if (canTestConnection()) {
     await refreshModels()
   }
+
+  // 通知主页面刷新仓库 Author: Evilek, Date: 2025-01-10
+  try {
+    // 发送自定义事件通知主页面刷新仓库
+    window.dispatchEvent(new CustomEvent('refreshRepository'))
+  } catch (error) {
+    console.error('通知主页面刷新仓库失败:', error)
+  }
 }
 
 // 生命周期

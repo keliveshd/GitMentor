@@ -1383,6 +1383,15 @@ const autoLoadLastRepo = async () => {
   }
 }
 
+// 处理仓库刷新事件 Author: Evilek, Date: 2025-01-10
+const handleRepositoryRefresh = async () => {
+  console.log('收到仓库刷新事件，重新加载最新仓库')
+  // 重新加载最近仓库列表
+  loadRecentRepos()
+  // 自动加载最新的仓库
+  await autoLoadLastRepo()
+}
+
 // AI服务设置方法
 // 作者：Evilek
 // 编写日期：2025-07-25
@@ -1639,6 +1648,9 @@ onMounted(async () => {
   // 添加快捷键监听
   document.addEventListener('keydown', handleKeydown)
 
+  // 监听仓库刷新事件 Author: Evilek, Date: 2025-01-10
+  window.addEventListener('refreshRepository', handleRepositoryRefresh)
+
   // 初始化提交输入框高度
   nextTick(() => {
     adjustTextareaHeight()
@@ -1648,6 +1660,8 @@ onMounted(async () => {
 // 清理
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  // 移除仓库刷新事件监听器 Author: Evilek, Date: 2025-01-10
+  window.removeEventListener('refreshRepository', handleRepositoryRefresh)
   if (generateTimeout) {
     clearTimeout(generateTimeout)
   }

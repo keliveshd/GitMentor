@@ -27,16 +27,19 @@
               <span class="step-number">3</span>
               <span class="step-title">测试连接</span>
             </div>
+            <div class="step" :class="{ active: currentStep >= 4, completed: currentStep > 4 }">
+              <span class="step-number">4</span>
+              <span class="step-title">选择仓库</span>
+            </div>
           </div>
 
-          <button v-if="currentStep < 3" @click="nextStep"
-            :disabled="(currentStep === 1 && !selectedProvider) || (currentStep === 2 && !isConfigValid)"
+          <button v-if="currentStep < 4" @click="nextStep"
+            :disabled="(currentStep === 1 && !selectedProvider) || (currentStep === 2 && (!isConfigValid || !selectedModel)) || (currentStep === 3 && !testResult?.success)"
             class="nav-btn nav-next">
             <span class="nav-text">下一步</span>
             <span class="nav-icon">→</span>
           </button>
-          <button v-else-if="currentStep === 3 && testResult?.success" @click="completeSetup"
-            class="nav-btn nav-complete">
+          <button v-else-if="currentStep === 4 && selectedRepoPath" @click="completeSetup" class="nav-btn nav-complete">
             <span class="nav-text">完成设置</span>
             <span class="nav-icon">✓</span>
           </button>
@@ -151,14 +154,14 @@
                 </div>
               </div>
 
-              <!-- 模型选择区域 Author: Evilek, Date: 2025-01-09 -->
+              <!-- 模型选择区域 Author: Evilek, Date: 2025-01-10 -->
               <div v-if="isConfigValid" class="model-selection">
                 <h4>选择模型</h4>
-                <div class="model-actions">
-                  <button @click="loadModels" :disabled="loadingModels" class="load-models-btn">
-                    <span v-if="loadingModels">🔄 获取中...</span>
-                    <span v-else>🔍 获取可用模型</span>
-                  </button>
+
+                <!-- 自动获取模型状态显示 -->
+                <div v-if="loadingModels" class="model-loading">
+                  <span class="loading-icon">🔄</span>
+                  <span>正在自动获取可用模型...</span>
                 </div>
 
                 <div v-if="availableModels.length > 0" class="model-dropdown">
@@ -201,6 +204,42 @@
               </div>
             </div>
           </Transition>
+
+          <!-- 第4步：选择仓库目录 Author: Evilek, Date: 2025-01-10 -->
+          <Transition name="step" mode="out-in">
+            <div v-if="currentStep === 4" class="step-content" key="step4">
+              <div class="step-header">
+                <h3>选择仓库目录</h3>
+                <p>选择一个Git仓库目录来开始使用GitMentor</p>
+              </div>
+
+              <div class="repo-selection">
+                <div class="repo-path-display">
+                  <label>当前选择的仓库：</label>
+                  <div class="path-input-group">
+                    <input v-model="selectedRepoPath" type="text" placeholder="请选择Git仓库目录..." class="repo-path-input"
+                      readonly />
+                    <button @click="selectRepository" class="select-repo-btn" :disabled="isSelectingRepo">
+                      <span v-if="isSelectingRepo">🔄 选择中...</span>
+                      <span v-else>📁 选择目录</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div v-if="repoValidationError" class="repo-error">
+                  ⚠️ {{ repoValidationError }}
+                </div>
+
+                <div v-if="selectedRepoPath && !repoValidationError" class="repo-info">
+                  <div class="repo-success">
+                    <span class="success-icon">✅</span>
+                    <span>已选择有效的Git仓库</span>
+                  </div>
+                  <p class="repo-path">{{ selectedRepoPath }}</p>
+                </div>
+              </div>
+            </div>
+          </Transition>
         </div>
       </div>
     </div>
@@ -234,6 +273,10 @@ const loadingModels = ref(false)
 const availableModels = ref<Array<{ id: string, name: string }>>([])
 const selectedModel = ref('')
 const modelError = ref('')
+
+// 仓库选择相关 Author: Evilek, Date: 2025-01-10
+const selectedRepoPath = ref('')
+const repoValidationError = ref('')
 
 // API配置 - 完整的提供商配置 Author: Evilek, Date: 2025-01-09
 const apiConfig = ref({
@@ -396,7 +439,7 @@ const selectProvider = (providerId: string) => {
 }
 
 const nextStep = () => {
-  if (currentStep.value < 3) {
+  if (currentStep.value < 4) {
     currentStep.value++
     if (currentStep.value === 3) {
       testConnection()
@@ -575,8 +618,55 @@ const getDefaultModel = (provider: string) => {
   }
 }
 
-const completeSetup = () => {
-  emit('complete')
+// 仓库选择状态 Author: Evilek, Date: 2025-01-10
+const isSelectingRepo = ref(false)
+
+// 选择仓库目录（带防抖和状态锁） Author: Evilek, Date: 2025-01-10
+const selectRepository = async () => {
+  // 如果正在选择仓库，直接返回
+  if (isSelectingRepo.value) {
+    return
+  }
+
+  try {
+    isSelectingRepo.value = true
+    repoValidationError.value = ''
+
+    const selectedPath = await invoke('open_folder_dialog') as string | null
+    if (selectedPath) {
+      // 验证是否为有效的Git仓库
+      try {
+        await invoke('select_repository', { path: selectedPath })
+        selectedRepoPath.value = selectedPath
+        repoValidationError.value = ''
+      } catch (error) {
+        repoValidationError.value = `所选目录不是有效的Git仓库: ${error}`
+        selectedRepoPath.value = ''
+      }
+    }
+  } catch (error) {
+    console.error('选择仓库失败:', error)
+    repoValidationError.value = `选择仓库失败: ${error}`
+  } finally {
+    isSelectingRepo.value = false
+  }
+}
+
+const completeSetup = async () => {
+  try {
+    // 如果选择了仓库，将其添加到最近仓库列表（作为默认仓库） Author: Evilek, Date: 2025-01-10
+    if (selectedRepoPath.value) {
+      // 导入RecentReposManager
+      const { RecentReposManager } = await import('@/utils/RecentRepos')
+      RecentReposManager.addRecentRepo(selectedRepoPath.value)
+    }
+
+    emit('complete')
+  } catch (error) {
+    console.error('设置默认仓库失败:', error)
+    // 即使设置失败，也继续完成设置流程
+    emit('complete')
+  }
 }
 
 // 监听提供商变化，清空模型选择 Author: Evilek, Date: 2025-01-09
@@ -585,6 +675,24 @@ watch(selectedProvider, () => {
   availableModels.value = []
   modelError.value = ''
 })
+
+// 监听配置有效性变化，自动获取模型 Author: Evilek, Date: 2025-01-10
+watch(isConfigValid, (newValue) => {
+  if (newValue && selectedProvider.value) {
+    // 当配置变为有效时，自动获取模型
+    loadModels()
+  }
+})
+
+// 监听API配置变化，自动获取模型 Author: Evilek, Date: 2025-01-10
+watch(apiConfig, () => {
+  if (isConfigValid.value && selectedProvider.value) {
+    // 延迟一点时间，避免频繁调用
+    setTimeout(() => {
+      loadModels()
+    }, 500)
+  }
+}, { deep: true })
 
 onMounted(() => {
   // 组件挂载时的初始化逻辑
@@ -1193,5 +1301,132 @@ onMounted(() => {
   border-radius: 8px;
   color: #e74c3c;
   font-size: 14px;
+}
+
+/* 模型加载状态样式 - Author: Evilek, Date: 2025-01-10 */
+.model-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 8px;
+  color: #6c757d;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.loading-icon {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 仓库选择样式 - Author: Evilek, Date: 2025-01-10 */
+.repo-selection {
+  margin-top: 20px;
+}
+
+.repo-path-display label {
+  display: block;
+  margin-bottom: 8px;
+  color: #2c3e50;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.path-input-group {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.repo-path-input {
+  flex: 1;
+  padding: 12px 16px;
+  border: 2px solid #e1e8ed;
+  border-radius: 8px;
+  font-size: 14px;
+  background: #f8f9fa;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+.select-repo-btn {
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(40, 167, 69, 0.25);
+  white-space: nowrap;
+}
+
+.select-repo-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.35);
+}
+
+.select-repo-btn:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.repo-error {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.2);
+  border-radius: 8px;
+  color: #e74c3c;
+  font-size: 14px;
+}
+
+.repo-info {
+  margin-top: 16px;
+}
+
+.repo-success {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  background: rgba(40, 167, 69, 0.1);
+  border: 1px solid rgba(40, 167, 69, 0.2);
+  border-radius: 8px;
+  color: #28a745;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.success-icon {
+  font-size: 16px;
+}
+
+.repo-path {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 13px;
+  color: #495057;
+  word-break: break-all;
 }
 </style>

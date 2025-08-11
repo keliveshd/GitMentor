@@ -1,9 +1,14 @@
 [package]
-name = "gitmentor-lite"
+name = "gitmentorlite"
 version = "0.1.0"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
+
+# 指定二进制文件名 - Author: Evilek, Date: 2025-01-10
+[[bin]]
+name = "GitMentorLite"
+path = "src/main.rs"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
