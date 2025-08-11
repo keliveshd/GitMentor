@@ -58,10 +58,10 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     pub fn new(config: AnthropicConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(300))  // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
-        
+
         Self { client, config }
     }
     
@@ -142,7 +142,7 @@ impl AIProvider for AnthropicProvider {
                 role: msg.role.clone(),
                 content: msg.content.clone(),
             }).collect(),
-            max_tokens: request.max_tokens.unwrap_or(1024),
+            max_tokens: request.max_tokens.unwrap_or(4096),  // 增加默认值，避免响应被截断 - Author: Evilek, Date: 2025-01-10
             temperature: request.temperature,
             stream: Some(false),
         };

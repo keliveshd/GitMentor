@@ -570,7 +570,8 @@ pub async fn execute_layered_commit(
             "total_steps": progress.total_steps,
             "status": progress.status,
             "current_file": progress.current_file,
-            "file_summaries": progress.file_summaries
+            "file_summaries": progress.file_summaries,
+            "ai_stream_content": progress.ai_stream_content  // AI实时输出内容 - Author: Evilek, Date: 2025-01-10
         });
 
         let _ = app_handle_clone.emit("layered-commit-progress", &progress_json);

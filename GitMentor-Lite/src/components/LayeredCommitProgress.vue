@@ -29,6 +29,42 @@
           <div class="status-text">{{ currentStatus }}</div>
         </div>
 
+        <!-- AI实时输出显示区域 - Author: Evilek, Date: 2025-01-10 -->
+        <div v-if="aiStreamContent || isProcessing" class="ai-stream-section">
+          <div class="stream-header">
+            <span>🤖 AI实时反馈</span>
+            <button @click="toggleStreamExpanded" class="toggle-stream-btn">
+              {{ streamExpanded ? '收起' : '展开' }}
+            </button>
+          </div>
+          <div v-if="streamExpanded" class="stream-content">
+            <div class="stream-output" ref="streamOutputRef">
+              <div v-if="aiStreamContent" class="stream-text">
+                <div v-for="(part, index) in parsedAiContent" :key="index">
+                  <div v-if="part.type === 'text'" v-html="part.content"></div>
+                  <div v-else-if="part.type === 'think'" class="think-section">
+                    <div class="think-header" @click="toggleThinkSection(index)">
+                      <span class="think-icon">{{ part.expanded ? '▼' : '▶' }}</span>
+                      <span class="think-title">🧠 推理过程</span>
+                    </div>
+                    <div v-if="part.expanded" class="think-content">
+                      <pre>{{ part.content }}</pre>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div v-if="isProcessing && !aiStreamContent" class="stream-placeholder">
+                <div class="typing-indicator">
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </div>
+                <span class="typing-text">AI正在思考中...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
 
 
         <!-- 已完成的文件摘要 -->
@@ -60,7 +96,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 
 /**
  * 分层提交进度组件
@@ -83,6 +119,7 @@ interface Props {
   currentFile?: string
   fileSummaries: FileSummary[]
   canCancel?: boolean
+  aiStreamContent?: string  // AI实时输出内容 - Author: Evilek, Date: 2025-01-10
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -94,6 +131,9 @@ defineEmits<{
 }>()
 
 const showSummaries = ref(false)
+const streamExpanded = ref(true)  // AI流式输出默认展开 - Author: Evilek, Date: 2025-01-10
+const streamOutputRef = ref<HTMLElement | null>(null)  // 流式输出容器引用
+const thinkSections = ref<{ [key: number]: boolean }>({})  // 记录每个think区域的展开状态
 
 const overallProgressPercent = computed(() => {
   if (props.totalSteps === 0) return 0
@@ -104,14 +144,86 @@ const isProcessing = computed(() => {
   return props.currentStep < props.totalSteps
 })
 
+// 解析AI内容，分离文本和think标签 - Author: Evilek, Date: 2025-01-10
+const parsedAiContent = computed(() => {
+  if (!props.aiStreamContent) return []
+
+  const parts: Array<{ type: 'text' | 'think', content: string, expanded?: boolean }> = []
+  const content = props.aiStreamContent
+  const thinkRegex = /<think>([\s\S]*?)<\/think>/g
+
+  let lastIndex = 0
+  let match
+  let thinkIndex = 0
+
+  while ((match = thinkRegex.exec(content)) !== null) {
+    // 添加think标签前的文本
+    if (match.index > lastIndex) {
+      const textContent = content.slice(lastIndex, match.index).trim()
+      if (textContent) {
+        parts.push({
+          type: 'text',
+          content: textContent.replace(/\n/g, '<br>')
+        })
+      }
+    }
+
+    // 添加think内容，默认展开第一个think区域 - Author: Evilek, Date: 2025-01-10
+    parts.push({
+      type: 'think',
+      content: match[1].trim(),
+      expanded: thinkSections.value[thinkIndex] !== undefined ? thinkSections.value[thinkIndex] : (thinkIndex === 0)
+    })
+
+    lastIndex = match.index + match[0].length
+    thinkIndex++
+  }
+
+  // 添加最后剩余的文本
+  if (lastIndex < content.length) {
+    const textContent = content.slice(lastIndex).trim()
+    if (textContent) {
+      parts.push({
+        type: 'text',
+        content: textContent.replace(/\n/g, '<br>')
+      })
+    }
+  }
+
+  return parts
+})
+
 const toggleSummaries = () => {
   showSummaries.value = !showSummaries.value
+}
+
+const toggleStreamExpanded = () => {
+  streamExpanded.value = !streamExpanded.value
+}
+
+const toggleThinkSection = (index: number) => {
+  // 确保响应式更新 - Author: Evilek, Date: 2025-01-10
+  const currentState = thinkSections.value[index] !== undefined ? thinkSections.value[index] : (index === 0)
+  thinkSections.value = {
+    ...thinkSections.value,
+    [index]: !currentState
+  }
 }
 
 const getFileName = (filePath: string) => {
   const parts = filePath.split(/[/\\]/)
   return parts[parts.length - 1]
 }
+
+
+
+// 监听AI流式内容变化，自动滚动到底部 - Author: Evilek, Date: 2025-01-10
+watch(() => props.aiStreamContent, async () => {
+  if (streamExpanded.value && streamOutputRef.value) {
+    await nextTick()
+    streamOutputRef.value.scrollTop = streamOutputRef.value.scrollHeight
+  }
+})
 </script>
 
 <style scoped>
@@ -132,11 +244,20 @@ const getFileName = (filePath: string) => {
   background: white;
   border-radius: 12px;
   padding: 24px;
-  min-width: 500px;
-  max-width: 700px;
-  max-height: 80vh;
+  min-width: 600px;
+  /* 增加最小宽度 - Author: Evilek, Date: 2025-01-10 */
+  max-width: 900px;
+  /* 增加最大宽度，容纳更多内容 */
+  width: 85vw;
+  /* 使用视窗宽度的85% */
+  max-height: 85vh;
+  /* 增加最大高度 */
   overflow-y: auto;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+  /* 防止内容溢出导致布局问题 - Author: Evilek, Date: 2025-01-10 */
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .progress-header {
@@ -169,6 +290,179 @@ const getFileName = (filePath: string) => {
 
 .overall-progress {
   margin-bottom: 20px;
+}
+
+/* AI流式输出区域样式 - Author: Evilek, Date: 2025-01-10 */
+.ai-stream-section {
+  margin: 20px 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #f9fafb;
+  /* 确保在flex布局中正确显示 - Author: Evilek, Date: 2025-01-10 */
+  flex-shrink: 0;
+  min-height: 200px;
+}
+
+.stream-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+  border-radius: 8px 8px 0 0;
+  font-weight: 500;
+  color: #374151;
+}
+
+.toggle-stream-btn {
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: #6b7280;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.toggle-stream-btn:hover {
+  background: #f9fafb;
+  border-color: #9ca3af;
+}
+
+.stream-content {
+  padding: 16px;
+}
+
+.stream-output {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 12px;
+  min-height: 150px;
+  /* 减少最小高度，给其他内容更多空间 */
+  max-height: 300px;
+  /* 适当减少最大高度 */
+  overflow-y: auto;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  /* 防止内容变化时的布局跳动 - Author: Evilek, Date: 2025-01-10 */
+  transition: none;
+  will-change: auto;
+  /* 确保滚动条样式 */
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 #f1f5f9;
+}
+
+.stream-text {
+  color: #1f2937;
+  white-space: pre-wrap;
+  word-break: break-word;
+  /* 防止流式输出时的布局跳动 - Author: Evilek, Date: 2025-01-10 */
+  min-height: 20px;
+  display: block;
+}
+
+.stream-placeholder {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #6b7280;
+  font-style: italic;
+}
+
+.typing-indicator {
+  display: flex;
+  gap: 4px;
+}
+
+.typing-indicator span {
+  width: 6px;
+  height: 6px;
+  background: #9ca3af;
+  border-radius: 50%;
+  animation: typing 1.4s infinite ease-in-out;
+}
+
+.typing-indicator span:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator span:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes typing {
+
+  0%,
+  80%,
+  100% {
+    transform: scale(0.8);
+    opacity: 0.5;
+  }
+
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.typing-text {
+  font-size: 12px;
+}
+
+/* Think标签折叠样式 - Author: Evilek, Date: 2025-01-10 */
+.think-section {
+  margin: 12px 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  background: #f9fafb;
+}
+
+.think-header {
+  padding: 8px 12px;
+  background: #f3f4f6;
+  border-bottom: 1px solid #e5e7eb;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 6px 6px 0 0;
+  transition: background-color 0.2s;
+}
+
+.think-header:hover {
+  background: #e5e7eb;
+}
+
+.think-icon {
+  font-size: 12px;
+  color: #6b7280;
+  transition: transform 0.2s;
+}
+
+.think-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+}
+
+.think-content {
+  padding: 12px;
+  background: #ffffff;
+  border-radius: 0 0 6px 6px;
+}
+
+.think-content pre {
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #1f2937;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .progress-label {

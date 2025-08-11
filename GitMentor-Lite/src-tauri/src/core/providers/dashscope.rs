@@ -80,10 +80,10 @@ pub struct DashScopeProvider {
 impl DashScopeProvider {
     pub fn new(config: DashScopeConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(60))
+            .timeout(Duration::from_secs(300))  // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
-        
+
         Self { client, config }
     }
     

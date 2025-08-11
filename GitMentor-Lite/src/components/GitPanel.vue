@@ -336,7 +336,8 @@
   <LayeredCommitProgress :visible="layeredProgress.visible" :session-id="layeredProgress.sessionId"
     :current-step="layeredProgress.currentStep" :total-steps="layeredProgress.totalSteps"
     :current-status="layeredProgress.currentStatus" :current-file="layeredProgress.currentFile"
-    :file-summaries="layeredProgress.fileSummaries" @cancel="cancelLayeredCommit" />
+    :file-summaries="layeredProgress.fileSummaries" :ai-stream-content="layeredProgress.aiStreamContent"
+    @cancel="cancelLayeredCommit" />
 
   <!-- 调试设置弹窗 -->
   <div v-if="showDebugSettings" class="modal-overlay debug-settings-overlay" @click="closeDebugSettings">
@@ -392,7 +393,8 @@ const layeredProgress = ref({
   totalSteps: 0,
   currentStatus: '',
   currentFile: '',
-  fileSummaries: []
+  fileSummaries: [],
+  aiStreamContent: ''  // AI实时输出内容 - Author: Evilek, Date: 2025-01-10
 })
 
 // 模板相关状态
@@ -936,7 +938,8 @@ const executeLayeredCommit = async (stagedFiles: string[], branchName: string | 
         totalSteps: progress.total_steps,
         currentStatus: progress.status,
         currentFile: progress.current_file || '',
-        fileSummaries: progress.file_summaries || []
+        fileSummaries: progress.file_summaries || [],
+        aiStreamContent: progress.ai_stream_content || ''  // AI实时输出内容 - Author: Evilek, Date: 2025-01-10
       })
     })
 

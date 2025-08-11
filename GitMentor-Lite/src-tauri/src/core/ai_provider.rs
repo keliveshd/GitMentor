@@ -213,8 +213,8 @@ impl ReasoningParser {
     /// # Returns
     /// * `(actual_content, reasoning_content)` - 实际内容和推理内容的元组
     pub fn parse_content(content: &str) -> (String, Option<String>) {
-        // 使用正则表达式匹配<think>...</think>标签
-        let think_regex = Regex::new(r"<think>(.*?)</think>").unwrap();
+        // 使用正则表达式匹配<think>...</think>标签，支持多行内容 - Author: Evilek, Date: 2025-01-10
+        let think_regex = Regex::new(r"(?s)<think>(.*?)</think>").unwrap();
 
         // 提取推理内容
         let reasoning_content = if let Some(captures) = think_regex.find(content) {

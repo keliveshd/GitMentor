@@ -26,6 +26,8 @@ pub struct LayeredCommitProgress {
     pub current_file: Option<String>,
     pub status: String,
     pub file_summaries: Vec<FileSummary>,
+    /// AI实时输出内容 - Author: Evilek, Date: 2025-01-10
+    pub ai_stream_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -160,6 +162,7 @@ impl LayeredCommitManager {
             current_file: None,
             status: "开始分层提交".to_string(),
             file_summaries: Vec::new(),
+            ai_stream_content: None,  // 初始化AI流式输出内容 - Author: Evilek, Date: 2025-01-10
         };
         progress_callback(progress.clone());
 
@@ -176,9 +179,8 @@ impl LayeredCommitManager {
             progress.current_step = (index + 1) as u32;
             progress.current_file = Some(file_path.clone());
             progress.status = format!("分析文件 {}/{}: {}", index + 1, total_files, file_path);
-            progress_callback(progress.clone());
 
-            let summary_result = self.analyze_single_file(
+            let summary_result = self.analyze_single_file_with_stream(
                 file_path,
                 diff_content,
                 template_id,
@@ -186,6 +188,7 @@ impl LayeredCommitManager {
                 index as u32 + 1,
                 total_files as u32,
                 repository_path.clone(),
+                &progress_callback,
             ).await?;
 
             file_summaries.push(summary_result.summary.clone());
@@ -197,14 +200,14 @@ impl LayeredCommitManager {
         progress.current_step = total_files as u32 + 1;
         progress.current_file = None;
         progress.status = "生成最终提交消息".to_string();
-        progress_callback(progress.clone());
 
-        let final_result = self.generate_final_commit_message(
+        let final_result = self.generate_final_commit_message_with_stream(
             template_id,
             &file_summaries,
             branch_name,
             &session_id,
             repository_path.clone(),
+            &progress_callback,
         ).await?;
 
         conversation_records.push(final_result.record_id);
@@ -277,7 +280,175 @@ impl LayeredCommitManager {
         Ok(files_with_diffs)
     }
 
-    /// 分析单个文件
+    /// 分析单个文件（带流式输出支持）
+    /// Author: Evilek, Date: 2025-01-10
+    async fn analyze_single_file_with_stream<F>(
+        &self,
+        file_path: &str,
+        diff_content: &str,
+        template_id: &str,
+        session_id: &str,
+        step_index: u32,
+        total_steps: u32,
+        repository_path: Option<String>,
+        progress_callback: &F,
+    ) -> Result<SingleFileResult>
+    where
+        F: Fn(LayeredCommitProgress) + Send + Sync,
+    {
+        let ai_manager = self.ai_manager.read().await;
+        let config = ai_manager.get_config().await;
+
+        // 使用统一的模板系统生成提示词（重构优化）
+        // Author: Evilek, Date: 2025-01-08
+        // 移除批量文件处理逻辑，改为单文件独立处理 - Author: Evilek, Date: 2025-01-09
+        let context = CommitContext {
+            diff: diff_content.to_string(),
+            staged_files: vec![file_path.to_string()],
+            branch_name: None,
+            commit_type: None,
+            max_length: None,
+            language: "zh-CN".to_string(),
+        };
+
+        // 使用PromptManager生成消息，统一模板系统
+        let prompt_manager = PromptManager::new();
+        let messages = prompt_manager
+            .generate_file_analysis_messages(template_id, file_path, diff_content, &context)
+            .map_err(|e| anyhow::anyhow!("生成文件分析消息失败: {}", e))?;
+
+        // 转换为AIRequest格式，移除max_tokens限制确保完整输出 - Author: Evilek, Date: 2025-01-10
+        let request = AIRequest {
+            messages,
+            model: config.base.model.clone(),
+            temperature: Some(0.3),
+            max_tokens: None,  // 移除token限制，让AI完整输出
+            stream: Some(false),
+        };
+
+        // 显示AI分析开始状态 - Author: Evilek, Date: 2025-01-10
+        let mut progress = LayeredCommitProgress {
+            session_id: session_id.to_string(),
+            current_step: step_index,
+            total_steps,
+            current_file: Some(file_path.to_string()),
+            status: format!("分析文件 {}/{}: {}", step_index, total_steps, file_path),
+            file_summaries: Vec::new(),
+            ai_stream_content: Some(format!("🤖 正在分析文件: {}\n\n📤 发送请求到AI...", file_path)),
+        };
+        progress_callback(progress.clone());
+
+        // 在AI调用过程中提供流式更新 - Author: Evilek, Date: 2025-01-10
+        let start_time = std::time::Instant::now();
+
+        // 创建一个future来处理AI调用，并使用pin!宏固定它
+        let ai_future = ai_manager.generate_commit_message(request.clone());
+        tokio::pin!(ai_future);
+
+        // 使用tokio::select来同时处理AI调用和进度更新
+        let response = {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(1000));
+            let mut step = 0;
+
+            loop {
+                tokio::select! {
+                    result = &mut ai_future => {
+                        // AI调用完成
+                        break result?;
+                    }
+                    _ = interval.tick() => {
+                        // 更新进度
+                        step += 1;
+                        let content = match step {
+                            1 => format!("🤖 正在分析文件: {}\n\n⏳ AI正在接收和处理请求...", file_path),
+                            2 => format!("🤖 正在分析文件: {}\n\n🧠 AI正在分析代码变更...", file_path),
+                            3 => format!("🤖 正在分析文件: {}\n\n💭 AI正在生成分析结果...", file_path),
+                            _ => format!("🤖 正在分析文件: {}\n\n⏳ AI正在完成分析...", file_path),
+                        };
+
+                        progress.ai_stream_content = Some(content);
+                        progress_callback(progress.clone());
+                    }
+                }
+            }
+        };
+
+        let processing_time = start_time.elapsed().as_millis() as u64;
+
+        // 模拟流式显示AI的真实响应内容 - Author: Evilek, Date: 2025-01-10
+        let mut ai_output = String::new();
+
+        // 如果有推理内容，先流式显示推理过程
+        if let Some(reasoning) = &response.reasoning_content {
+            ai_output.push_str("🧠 AI推理过程:\n<think>\n");
+
+            // 逐字符显示推理内容，减少延迟提高响应速度
+            let reasoning_chars: Vec<char> = reasoning.chars().collect();
+            let chunk_size = 30; // 增加每次显示的字符数
+
+            for chunk in reasoning_chars.chunks(chunk_size) {
+                let chunk_str: String = chunk.iter().collect();
+                ai_output.push_str(&chunk_str);
+
+                progress.ai_stream_content = Some(format!("{}\n</think>\n\n📝 正在生成分析结果...", ai_output));
+                progress_callback(progress.clone());
+
+                // 减少延迟，提高流式输出速度 - Author: Evilek, Date: 2025-01-10
+                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+            }
+
+            ai_output.push_str("\n</think>\n\n");
+        }
+
+        // 流式显示分析结果
+        ai_output.push_str("📝 分析结果:\n");
+        let content_chars: Vec<char> = response.content.chars().collect();
+        let chunk_size = 25; // 增加每次显示的字符数
+
+        for chunk in content_chars.chunks(chunk_size) {
+            let chunk_str: String = chunk.iter().collect();
+            ai_output.push_str(&chunk_str);
+
+            progress.ai_stream_content = Some(ai_output.clone());
+            progress_callback(progress.clone());
+
+            // 减少延迟，提高流式输出速度 - Author: Evilek, Date: 2025-01-10
+            tokio::time::sleep(tokio::time::Duration::from_millis(40)).await;
+        }
+
+        // 记录对话
+        let step_info = StepInfo {
+            step_type: "file_analysis".to_string(),
+            step_index: Some(step_index),
+            total_steps: Some(total_steps),
+            file_path: Some(file_path.to_string()),
+            description: Some(format!("分析文件: {}", file_path)),
+        };
+
+        let record_id = ai_manager.log_conversation_with_session(
+            template_id.to_string(),
+            repository_path,
+            Some(session_id.to_string()),
+            Some("layered".to_string()),
+            Some(step_info),
+            request,
+            response.clone(),
+            processing_time,
+        ).await?;
+
+        let summary = FileSummary {
+            file_path: file_path.to_string(),
+            summary: response.content.clone(),
+            tokens_used: response.usage.map(|u| u.total_tokens).unwrap_or(0),
+        };
+
+        Ok(SingleFileResult {
+            summary,
+            record_id,
+        })
+    }
+
+    /// 分析单个文件（原方法，保持向后兼容）
     async fn analyze_single_file(
         &self,
         file_path: &str,
@@ -309,13 +480,13 @@ impl LayeredCommitManager {
             .generate_file_analysis_messages(template_id, file_path, diff_content, &context)
             .map_err(|e| anyhow::anyhow!("生成文件分析消息失败: {}", e))?;
 
-        // 转换为AIRequest格式
+        // 转换为AIRequest格式 - Author: Evilek, Date: 2025-01-10
         let request = AIRequest {
             messages,
             model: config.base.model.clone(),
             temperature: Some(0.3),
             max_tokens: Some(config.advanced.max_tokens), // 使用系统全局配置的max_tokens，而不是硬编码
-            stream: Some(false),
+            stream: Some(false),  // 当前提供商实现不支持流式输出，保持false
         };
 
         let start_time = std::time::Instant::now();
@@ -355,7 +526,178 @@ impl LayeredCommitManager {
         })
     }
 
-    /// 生成最终提交消息
+    /// 生成最终提交消息（带流式输出支持）
+    /// Author: Evilek, Date: 2025-01-10
+    async fn generate_final_commit_message_with_stream<F>(
+        &self,
+        template_id: &str,
+        file_summaries: &[FileSummary],
+        _branch_name: Option<String>,
+        session_id: &str,
+        repository_path: Option<String>,
+        progress_callback: &F,
+    ) -> Result<FinalCommitResult>
+    where
+        F: Fn(LayeredCommitProgress) + Send + Sync,
+    {
+        let ai_manager = self.ai_manager.read().await;
+
+        // 构建汇总的diff内容
+        let summary_content = file_summaries
+            .iter()
+            .map(|fs| format!("文件: {}\n摘要: {}", fs.file_path, fs.summary))
+            .collect::<Vec<_>>()
+            .join("\n\n");
+
+        // 获取模板内容并构建最终总结的提示词
+        let prompt_manager = ai_manager.get_prompt_manager().await;
+        let _template = prompt_manager.get_template(template_id)
+            .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", template_id))?;
+
+        // 构建上下文
+        let context = CommitContext {
+            diff: summary_content.clone(),
+            staged_files: file_summaries.iter().map(|fs| fs.file_path.clone()).collect(),
+            branch_name: None,
+            commit_type: None,
+            max_length: None,
+            language: "zh-CN".to_string(),
+        };
+
+        // 使用统一生成的消息（重构优化）
+        let file_summary_strs: Vec<&str> = file_summaries.iter().map(|fs| fs.summary.as_str()).collect();
+        let messages = prompt_manager.generate_summary_messages(template_id, &context, &file_summary_strs)
+            .map_err(|e| anyhow::anyhow!("生成总结消息失败: {}", e))?;
+
+        // 使用统一生成的消息（重构优化），移除max_tokens限制 - Author: Evilek, Date: 2025-01-10
+        let config = ai_manager.get_config().await;
+        let request = AIRequest {
+            messages: messages.clone(),
+            model: config.base.model.clone(),
+            temperature: Some(0.3),
+            max_tokens: None,  // 移除token限制，让AI完整输出最终提交消息
+            stream: Some(false),
+        };
+
+        // 显示最终提交消息生成开始状态 - Author: Evilek, Date: 2025-01-10
+        let mut progress = LayeredCommitProgress {
+            session_id: session_id.to_string(),
+            current_step: file_summaries.len() as u32 + 1,
+            total_steps: file_summaries.len() as u32 + 1,
+            current_file: None,
+            status: "生成最终提交消息".to_string(),
+            file_summaries: file_summaries.to_vec(),  // 保持已有的文件摘要 - Author: Evilek, Date: 2025-01-10
+            ai_stream_content: Some("🎯 正在生成最终提交消息...\n\n📤 发送汇总请求到AI...".to_string()),
+        };
+        progress_callback(progress.clone());
+
+        // 在AI调用过程中提供流式更新 - Author: Evilek, Date: 2025-01-10
+        let start_time = std::time::Instant::now();
+        let file_count = file_summaries.len();
+
+        // 创建一个future来处理AI调用，并使用pin!宏固定它
+        let ai_future = ai_manager.generate_commit_message(request.clone());
+        tokio::pin!(ai_future);
+
+        // 使用tokio::select来同时处理AI调用和进度更新
+        let response = {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(1200));
+            let mut step = 0;
+
+            loop {
+                tokio::select! {
+                    result = &mut ai_future => {
+                        // AI调用完成
+                        break result?;
+                    }
+                    _ = interval.tick() => {
+                        // 更新进度
+                        step += 1;
+                        let content = match step {
+                            1 => format!("🎯 正在生成最终提交消息...\n\n📊 基于 {} 个文件的分析结果\n⏳ AI正在接收和处理汇总请求...", file_count),
+                            2 => format!("🎯 正在生成最终提交消息...\n\n📊 基于 {} 个文件的分析结果\n🧠 AI正在整合所有分析结果...", file_count),
+                            3 => format!("🎯 正在生成最终提交消息...\n\n📊 基于 {} 个文件的分析结果\n🎨 AI正在生成统一的提交消息...", file_count),
+                            _ => format!("🎯 正在生成最终提交消息...\n\n📊 基于 {} 个文件的分析结果\n⏳ AI正在完成提交消息生成...", file_count),
+                        };
+
+                        progress.ai_stream_content = Some(content);
+                        progress_callback(progress.clone());
+                    }
+                }
+            }
+        };
+
+        let processing_time = start_time.elapsed().as_millis() as u64;
+
+        // 模拟流式显示AI的真实响应内容 - Author: Evilek, Date: 2025-01-10
+        let mut ai_output = String::new();
+
+        // 如果有推理内容，先流式显示推理过程
+        if let Some(reasoning) = &response.reasoning_content {
+            ai_output.push_str("🧠 AI推理过程:\n<think>\n");
+
+            // 逐字符显示推理内容，优化速度
+            let reasoning_chars: Vec<char> = reasoning.chars().collect();
+            let chunk_size = 35; // 增加每次显示的字符数
+
+            for chunk in reasoning_chars.chunks(chunk_size) {
+                let chunk_str: String = chunk.iter().collect();
+                ai_output.push_str(&chunk_str);
+
+                progress.ai_stream_content = Some(format!("{}\n</think>\n\n📝 正在生成最终提交消息...", ai_output));
+                progress_callback(progress.clone());
+
+                // 减少延迟，提高流式输出速度 - Author: Evilek, Date: 2025-01-10
+                tokio::time::sleep(tokio::time::Duration::from_millis(60)).await;
+            }
+
+            ai_output.push_str("\n</think>\n\n");
+        }
+
+        // 流式显示最终提交消息
+        ai_output.push_str("📝 最终提交消息:\n");
+        let content_chars: Vec<char> = response.content.chars().collect();
+        let chunk_size = 30; // 增加每次显示的字符数
+
+        for chunk in content_chars.chunks(chunk_size) {
+            let chunk_str: String = chunk.iter().collect();
+            ai_output.push_str(&chunk_str);
+
+            progress.ai_stream_content = Some(ai_output.clone());
+            progress_callback(progress.clone());
+
+            // 减少延迟，提高流式输出速度 - Author: Evilek, Date: 2025-01-10
+            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+        }
+
+        // 记录最终提交消息生成的对话
+        let step_info = StepInfo {
+            step_type: "final_commit_generation".to_string(),
+            step_index: None,
+            total_steps: None,
+            file_path: None,
+            description: Some("生成最终提交消息".to_string()),
+        };
+
+        let record_id = ai_manager.log_conversation_with_session(
+            template_id.to_string(),
+            repository_path,
+            Some(session_id.to_string()),
+            Some("layered".to_string()),
+            Some(step_info),
+            request,
+            response.clone(),
+            processing_time,
+        ).await?;
+
+        Ok(FinalCommitResult {
+            message: response.content,
+            record_id,
+            reasoning_content: response.reasoning_content,
+        })
+    }
+
+    /// 生成最终提交消息（原方法，保持向后兼容）
     /// 作者：Evilek
     /// 编写日期：2025-08-05
     async fn generate_final_commit_message(

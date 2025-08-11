@@ -70,10 +70,10 @@ pub struct OllamaProvider {
 impl OllamaProvider {
     pub fn new(config: OllamaConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(120)) // Ollama可能需要更长时间
+            .timeout(Duration::from_secs(600)) // 增加到10分钟，Ollama本地模型可能需要更长时间 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
-        
+
         Self { client, config }
     }
 }
