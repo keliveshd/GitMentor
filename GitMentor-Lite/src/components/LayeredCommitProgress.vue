@@ -245,19 +245,19 @@ watch(() => props.aiStreamContent, async () => {
   border-radius: 12px;
   padding: 24px;
   min-width: 600px;
-  /* 增加最小宽度 - Author: Evilek, Date: 2025-01-10 */
   max-width: 900px;
-  /* 增加最大宽度，容纳更多内容 */
   width: 85vw;
-  /* 使用视窗宽度的85% */
-  max-height: 85vh;
-  /* 增加最大高度 */
-  overflow-y: auto;
+  /* 自适应高度，移除固定的max-height - Author: Evilek, Date: 2025-01-10 */
+  min-height: 300px;
+  max-height: 90vh;
+  /* 只在内容过多时限制最大高度 */
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
-  /* 防止内容溢出导致布局问题 - Author: Evilek, Date: 2025-01-10 */
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
+  /* 让弹窗内容自适应，避免不必要的滚动条 */
+  overflow: hidden;
+  /* 主容器不滚动 */
 }
 
 .progress-header {
@@ -267,6 +267,8 @@ watch(() => props.aiStreamContent, async () => {
   margin-bottom: 20px;
   padding-bottom: 12px;
   border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+  /* 防止被压缩 - Author: Evilek, Date: 2025-01-10 */
 }
 
 .progress-header h3 {
@@ -290,6 +292,8 @@ watch(() => props.aiStreamContent, async () => {
 
 .overall-progress {
   margin-bottom: 20px;
+  flex-shrink: 0;
+  /* 防止被压缩 - Author: Evilek, Date: 2025-01-10 */
 }
 
 /* AI流式输出区域样式 - Author: Evilek, Date: 2025-01-10 */
@@ -298,9 +302,13 @@ watch(() => props.aiStreamContent, async () => {
   border: 1px solid #e5e7eb;
   border-radius: 8px;
   background: #f9fafb;
-  /* 确保在flex布局中正确显示 - Author: Evilek, Date: 2025-01-10 */
-  flex-shrink: 0;
-  min-height: 200px;
+  /* 在flex布局中自适应高度 - Author: Evilek, Date: 2025-01-10 */
+  flex: 1;
+  /* 占用剩余空间 */
+  min-height: 150px;
+  /* 减少最小高度 */
+  display: flex;
+  flex-direction: column;
 }
 
 .stream-header {
@@ -333,6 +341,10 @@ watch(() => props.aiStreamContent, async () => {
 
 .stream-content {
   padding: 16px;
+  flex: 1;
+  /* 占用剩余空间 - Author: Evilek, Date: 2025-01-10 */
+  display: flex;
+  flex-direction: column;
 }
 
 .stream-output {
@@ -340,18 +352,16 @@ watch(() => props.aiStreamContent, async () => {
   border: 1px solid #e5e7eb;
   border-radius: 6px;
   padding: 12px;
-  min-height: 150px;
-  /* 减少最小高度，给其他内容更多空间 */
-  max-height: 300px;
-  /* 适当减少最大高度 */
+  /* 自适应高度，移除固定的min/max-height - Author: Evilek, Date: 2025-01-10 */
+  flex: 1;
   overflow-y: auto;
   font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
   font-size: 13px;
   line-height: 1.5;
-  /* 防止内容变化时的布局跳动 - Author: Evilek, Date: 2025-01-10 */
+  /* 防止内容变化时的布局跳动 */
   transition: none;
   will-change: auto;
-  /* 确保滚动条样式 */
+  /* 优化滚动条样式 */
   scrollbar-width: thin;
   scrollbar-color: #cbd5e1 #f1f5f9;
 }
