@@ -32,7 +32,7 @@
         <!-- AI实时输出显示区域 - Author: Evilek, Date: 2025-01-10 -->
         <div v-if="aiStreamContent || isProcessing" class="ai-stream-section">
           <div class="stream-header">
-            <span>🤖 AI实时反馈</span>
+            <span>⚡ AI实时反馈</span>
             <button @click="toggleStreamExpanded" class="toggle-stream-btn">
               {{ streamExpanded ? '收起' : '展开' }}
             </button>

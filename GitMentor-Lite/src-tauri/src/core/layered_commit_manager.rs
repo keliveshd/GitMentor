@@ -334,7 +334,7 @@ impl LayeredCommitManager {
             current_file: Some(file_path.to_string()),
             status: format!("分析文件 {}/{}: {}", step_index, total_steps, file_path),
             file_summaries: Vec::new(),
-            ai_stream_content: Some(format!("🤖 正在分析文件: {}\n\n📤 发送请求到AI...", file_path)),
+            ai_stream_content: Some(format!("⚡ 正在分析文件: {}\n\n📤 发送请求到AI...", file_path)),
         };
         progress_callback(progress.clone());
 
@@ -360,10 +360,10 @@ impl LayeredCommitManager {
                         // 更新进度
                         step += 1;
                         let content = match step {
-                            1 => format!("🤖 正在分析文件: {}\n\n⏳ AI正在接收和处理请求...", file_path),
-                            2 => format!("🤖 正在分析文件: {}\n\n🧠 AI正在分析代码变更...", file_path),
-                            3 => format!("🤖 正在分析文件: {}\n\n💭 AI正在生成分析结果...", file_path),
-                            _ => format!("🤖 正在分析文件: {}\n\n⏳ AI正在完成分析...", file_path),
+                            1 => format!("⚡ 正在分析文件: {}\n\n⏳ AI正在接收和处理请求...", file_path),
+                            2 => format!("⚡ 正在分析文件: {}\n\n🧠 AI正在分析代码变更...", file_path),
+                            3 => format!("⚡ 正在分析文件: {}\n\n💭 AI正在生成分析结果...", file_path),
+                            _ => format!("⚡ 正在分析文件: {}\n\n⏳ AI正在完成分析...", file_path),
                         };
 
                         progress.ai_stream_content = Some(content);
