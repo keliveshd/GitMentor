@@ -173,7 +173,7 @@
                   :disabled="!availableModels.length">
                   <option value="">{{ availableModels.length ? '请选择模型' : '请先配置提供商' }}</option>
                   <option v-for="model in availableModels" :key="model.id" :value="model.id">
-                    {{ model.name }}
+                    {{ model.id }}
                   </option>
                 </select>
                 <button @click="refreshModels" class="btn btn-small btn-secondary" :disabled="refreshingModels">
@@ -309,10 +309,7 @@
     </div>
 
     <!-- 首次启动引导 -->
-    <FirstTimeSetupGuide
-      v-if="showFirstTimeGuide"
-      @complete="completeFirstTimeGuide"
-    />
+    <FirstTimeSetupGuide v-if="showFirstTimeGuide" @complete="completeFirstTimeGuide" />
   </div>
 </template>
 

@@ -150,6 +150,34 @@
                   <input v-model="apiConfig.groq.api_key" type="password" placeholder="gsk_..." class="config-input" />
                 </div>
               </div>
+
+              <!-- 模型选择区域 Author: Evilek, Date: 2025-01-09 -->
+              <div v-if="isConfigValid" class="model-selection">
+                <h4>选择模型</h4>
+                <div class="model-actions">
+                  <button @click="loadModels" :disabled="loadingModels" class="load-models-btn">
+                    <span v-if="loadingModels">🔄 获取中...</span>
+                    <span v-else>🔍 获取可用模型</span>
+                  </button>
+                </div>
+
+                <div v-if="availableModels.length > 0" class="model-dropdown">
+                  <label>选择模型：</label>
+                  <select v-model="selectedModel" class="model-select">
+                    <option value="">请选择模型</option>
+                    <option v-for="model in availableModels" :key="model.id" :value="model.id">
+                      {{ model.id }}
+                    </option>
+                  </select>
+                  <p class="model-info" v-if="selectedModel">
+                    已选择: {{ selectedModel }}
+                  </p>
+                </div>
+
+                <div v-if="modelError" class="model-error">
+                  ⚠️ {{ modelError }}
+                </div>
+              </div>
             </div>
           </Transition>
 
@@ -164,7 +192,7 @@
               <div class="test-status">
                 <div v-if="testing" class="testing">
                   <div class="spinner"></div>
-                  <span>正在测试连接...</span>
+                  <span>{{ testingStatus }}</span>
                 </div>
                 <div v-else-if="testResult" class="test-result" :class="testResult.success ? 'success' : 'error'">
                   <span class="result-icon">{{ testResult.success ? '✅' : '❌' }}</span>
@@ -180,7 +208,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
 /**
@@ -198,9 +226,16 @@ const emit = defineEmits<{
 const currentStep = ref(1)
 const selectedProvider = ref('')
 const testing = ref(false)
+const testingStatus = ref('正在测试连接...')
 const testResult = ref<{ success: boolean; message: string } | null>(null)
 
-// API配置
+// 模型选择相关 Author: Evilek, Date: 2025-01-09
+const loadingModels = ref(false)
+const availableModels = ref<Array<{ id: string, name: string }>>([])
+const selectedModel = ref('')
+const modelError = ref('')
+
+// API配置 - 完整的提供商配置 Author: Evilek, Date: 2025-01-09
 const apiConfig = ref({
   openai: { api_key: '', base_url: 'https://api.openai.com/v1' },
   ollama: { base_url: 'http://localhost:11434' },
@@ -214,6 +249,12 @@ const apiConfig = ref({
   openrouter: { api_key: '' },
   together: { api_key: '' },
   groq: { api_key: '' },
+  // 补充缺失的提供商配置
+  mistral: { api_key: '' },
+  baidu_qianfan: { api_key: '', secret_key: '' },
+  azure_openai: { api_key: '', endpoint: '', api_version: '2024-02-01' },
+  cloudflare: { api_key: '', account_id: '' },
+  vertexai: { project_id: '', location: 'us-central1', credentials_path: '' },
 })
 
 // 热门AI提供商 - 使用public目录静态图标 Author: Evilek, Date: 2025-01-09
@@ -370,17 +411,24 @@ const prevStep = () => {
   }
 }
 
-const testConnection = async () => {
-  testing.value = true
-  testResult.value = null
+// 加载可用模型列表 Author: Evilek, Date: 2025-01-09
+const loadModels = async () => {
+  if (!selectedProvider.value || !isConfigValid.value) {
+    modelError.value = '请先完成配置'
+    return
+  }
+
+  loadingModels.value = true
+  modelError.value = ''
+  availableModels.value = []
 
   try {
-    // 构建配置对象
-    const config = {
+    // 构建临时配置
+    const tempConfig = {
       base: {
         language: 'Simplified Chinese',
         provider: selectedProvider.value,
-        model: getDefaultModel(selectedProvider.value)
+        model: 'temp'
       },
       providers: apiConfig.value,
       features: {
@@ -398,28 +446,121 @@ const testConnection = async () => {
       }
     }
 
-    // 测试AI连接
+    console.log(`正在获取 ${selectedProvider.value} 的可用模型...`)
+    const models = await invoke('get_models_with_temp_config', {
+      providerId: selectedProvider.value,
+      tempConfig
+    }) as Array<{ id: string, name: string }>
+
+    availableModels.value = models || []
+
+    if (availableModels.value.length === 0) {
+      modelError.value = '未找到可用模型'
+    } else {
+      // 自动选择默认模型（如果存在）
+      const defaultModel = getDefaultModel(selectedProvider.value)
+      const defaultExists = availableModels.value.some(m => m.id === defaultModel)
+      if (defaultExists) {
+        selectedModel.value = defaultModel
+      } else if (availableModels.value.length > 0) {
+        selectedModel.value = availableModels.value[0].id
+      }
+    }
+
+    console.log(`获取到 ${availableModels.value.length} 个可用模型:`, availableModels.value)
+  } catch (error) {
+    console.error('获取模型列表失败:', error)
+    modelError.value = `获取模型失败: ${error}`
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+const testConnection = async () => {
+  testing.value = true
+  testResult.value = null
+  testingStatus.value = '正在连接AI服务...'
+
+  try {
+    // 确定要使用的模型
+    let modelToUse = selectedModel.value || getDefaultModel(selectedProvider.value)
+
+    if (!modelToUse) {
+      testResult.value = {
+        success: false,
+        message: '请先选择一个模型进行测试'
+      }
+      return
+    }
+
+    testingStatus.value = `使用模型: ${modelToUse}`
+
+    // 构建最终配置对象
+    const config = {
+      base: {
+        language: 'Simplified Chinese',
+        provider: selectedProvider.value,
+        model: modelToUse
+      },
+      providers: apiConfig.value,
+      features: {
+        enable_emoji: true,
+        enable_body: true,
+        enable_layered_commit: true,
+        use_recent_commits: true,
+        enable_streaming: true
+      },
+      advanced: {
+        temperature: 0.7,
+        max_tokens: 2048,
+        timeout: 60,
+        retry_count: 3
+      }
+    }
+
+    // 更新配置并测试AI连接
+    testingStatus.value = '正在保存配置...'
     await invoke('update_ai_config', { config })
+
+    testingStatus.value = '正在测试AI连接...'
     await invoke('test_ai_connection')
 
     testResult.value = {
       success: true,
-      message: `${getProviderName(selectedProvider.value)} 连接测试成功！`
+      message: `${getProviderName(selectedProvider.value)} 连接测试成功！使用模型: ${modelToUse}`
     }
   } catch (error) {
+    let errorMessage = `连接测试失败: ${error}`
+
+    // 针对不同错误提供友好的提示
+    const errorStr = String(error).toLowerCase()
+    if (errorStr.includes('model') && errorStr.includes('not found')) {
+      if (selectedProvider.value === 'Ollama') {
+        errorMessage = `模型未找到。请先在Ollama中拉取模型，例如运行: ollama pull llama3.2`
+      } else {
+        errorMessage = `指定的模型不存在，请检查模型名称是否正确`
+      }
+    } else if (errorStr.includes('connection') || errorStr.includes('network')) {
+      errorMessage = `网络连接失败，请检查服务地址和网络连接`
+    } else if (errorStr.includes('api_key') || errorStr.includes('unauthorized')) {
+      errorMessage = `API密钥无效，请检查密钥是否正确`
+    }
+
     testResult.value = {
       success: false,
-      message: `连接测试失败: ${error}`
+      message: errorMessage
     }
   } finally {
     testing.value = false
+    testingStatus.value = '正在测试连接...'
   }
 }
 
+// 获取默认模型 - 更新常用模型 Author: Evilek, Date: 2025-01-09
 const getDefaultModel = (provider: string) => {
   switch (provider) {
     case 'OpenAI': return 'gpt-3.5-turbo'
-    case 'Ollama': return 'llama2'
+    case 'Ollama': return 'llama3.2' // 更常见的模型
     case 'Anthropic': return 'claude-3-sonnet-20240229'
     case 'Zhipu': return 'glm-4'
     case 'Deepseek': return 'deepseek-chat'
@@ -429,7 +570,7 @@ const getDefaultModel = (provider: string) => {
     case 'Siliconflow': return 'deepseek-ai/deepseek-coder-6.7b-instruct'
     case 'OpenRouter': return 'openai/gpt-3.5-turbo'
     case 'Together': return 'meta-llama/Llama-2-7b-chat-hf'
-    case 'Groq': return 'llama2-70b-4096'
+    case 'Groq': return 'llama-3.1-70b-versatile' // 更新的模型
     default: return ''
   }
 }
@@ -437,6 +578,13 @@ const getDefaultModel = (provider: string) => {
 const completeSetup = () => {
   emit('complete')
 }
+
+// 监听提供商变化，清空模型选择 Author: Evilek, Date: 2025-01-09
+watch(selectedProvider, () => {
+  selectedModel.value = ''
+  availableModels.value = []
+  modelError.value = ''
+})
 
 onMounted(() => {
   // 组件挂载时的初始化逻辑
@@ -949,5 +1097,101 @@ onMounted(() => {
 .complete-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(39, 174, 96, 0.4);
+}
+
+/* 模型选择区域样式 Author: Evilek, Date: 2025-01-09 */
+.model-selection {
+  margin-top: 24px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  border-radius: 12px;
+  border: 1px solid #dee2e6;
+}
+
+.model-selection h4 {
+  margin: 0 0 16px 0;
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.model-actions {
+  margin-bottom: 16px;
+}
+
+.load-models-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.25);
+}
+
+.load-models-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.35);
+}
+
+.load-models-btn:disabled {
+  background: #bdc3c7;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.model-dropdown {
+  margin-top: 16px;
+}
+
+.model-dropdown label {
+  display: block;
+  margin-bottom: 8px;
+  color: #2c3e50;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.model-select {
+  width: 100%;
+  padding: 12px 16px;
+  border: 2px solid #e1e8ed;
+  border-radius: 8px;
+  font-size: 14px;
+  background: white;
+  transition: all 0.3s ease;
+}
+
+.model-select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.model-info {
+  margin-top: 8px;
+  padding: 8px 12px;
+  background: rgba(102, 126, 234, 0.1);
+  border-radius: 6px;
+  color: #667eea;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.model-error {
+  margin-top: 12px;
+  padding: 12px;
+  background: rgba(231, 76, 60, 0.1);
+  border: 1px solid rgba(231, 76, 60, 0.2);
+  border-radius: 8px;
+  color: #e74c3c;
+  font-size: 14px;
 }
 </style>

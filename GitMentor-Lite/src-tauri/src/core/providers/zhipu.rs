@@ -164,16 +164,19 @@ impl AIProvider for ZhipuProvider {
         let zhipu_response: ZhipuResponse = response.json().await?;
         
         if let Some(choice) = zhipu_response.choices.first() {
-            Ok(AIResponse {
-                content: choice.message.content.clone(),
-                model: zhipu_response.model,
-                usage: zhipu_response.usage.map(|u| TokenUsage {
+            // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
+            use crate::core::ai_provider::ReasoningParser;
+
+            Ok(ReasoningParser::create_response(
+                choice.message.content.clone(),
+                zhipu_response.model,
+                zhipu_response.usage.map(|u| TokenUsage {
                     prompt_tokens: u.prompt_tokens,
                     completion_tokens: u.completion_tokens,
                     total_tokens: u.total_tokens,
                 }),
-                finish_reason: choice.finish_reason.clone(),
-            })
+                choice.finish_reason.clone(),
+            ))
         } else {
             Err(anyhow::anyhow!("No response from Zhipu AI"))
         }

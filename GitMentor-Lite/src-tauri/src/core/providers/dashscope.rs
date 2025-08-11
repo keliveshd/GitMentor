@@ -198,16 +198,19 @@ impl AIProvider for DashScopeProvider {
             return Err(anyhow::anyhow!("No response from DashScope"));
         };
         
-        Ok(AIResponse {
+        // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
+        use crate::core::ai_provider::ReasoningParser;
+
+        Ok(ReasoningParser::create_response(
             content,
-            model: request.model.clone(),
-            usage: dashscope_response.usage.map(|u| TokenUsage {
+            request.model.clone(),
+            dashscope_response.usage.map(|u| TokenUsage {
                 prompt_tokens: u.input_tokens,
                 completion_tokens: u.output_tokens,
                 total_tokens: u.total_tokens,
             }),
-            finish_reason: dashscope_response.output.finish_reason,
-        })
+            dashscope_response.output.finish_reason,
+        ))
     }
     
     async fn get_models(&self) -> Result<Vec<AIModel>> {

@@ -2,6 +2,7 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use anyhow::Result;
 use std::collections::HashMap;
+use regex::Regex;
 
 /**
  * AI提供商接口定义
@@ -54,6 +55,10 @@ pub struct AIResponse {
     pub model: String,
     pub usage: Option<TokenUsage>,
     pub finish_reason: Option<String>,
+    /// 推理内容（<think>标签内的内容）
+    /// 作者：Evilek
+    /// 编写日期：2025-01-10
+    pub reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -191,5 +196,75 @@ impl AIProviderFactory {
 impl Default for AIProviderFactory {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// 推理内容解析工具
+/// 作者：Evilek
+/// 编写日期：2025-01-10
+pub struct ReasoningParser;
+
+impl ReasoningParser {
+    /// 解析AI响应内容，分离推理内容和实际内容
+    ///
+    /// # Arguments
+    /// * `content` - AI响应的原始内容
+    ///
+    /// # Returns
+    /// * `(actual_content, reasoning_content)` - 实际内容和推理内容的元组
+    pub fn parse_content(content: &str) -> (String, Option<String>) {
+        // 使用正则表达式匹配<think>...</think>标签
+        let think_regex = Regex::new(r"<think>(.*?)</think>").unwrap();
+
+        // 提取推理内容
+        let reasoning_content = if let Some(captures) = think_regex.find(content) {
+            let think_match = captures.as_str();
+            // 提取<think>标签内的内容
+            let inner_content = think_match
+                .strip_prefix("<think>")
+                .and_then(|s| s.strip_suffix("</think>"))
+                .unwrap_or("")
+                .trim();
+
+            if inner_content.is_empty() {
+                None
+            } else {
+                Some(inner_content.to_string())
+            }
+        } else {
+            None
+        };
+
+        // 移除推理内容，得到实际内容
+        let actual_content = think_regex.replace_all(content, "").trim().to_string();
+
+        (actual_content, reasoning_content)
+    }
+
+    /// 创建包含推理内容的AIResponse
+    ///
+    /// # Arguments
+    /// * `raw_content` - AI响应的原始内容
+    /// * `model` - 模型名称
+    /// * `usage` - Token使用情况
+    /// * `finish_reason` - 完成原因
+    ///
+    /// # Returns
+    /// * `AIResponse` - 包含分离后内容的响应对象
+    pub fn create_response(
+        raw_content: String,
+        model: String,
+        usage: Option<TokenUsage>,
+        finish_reason: Option<String>,
+    ) -> AIResponse {
+        let (actual_content, reasoning_content) = Self::parse_content(&raw_content);
+
+        AIResponse {
+            content: actual_content,
+            model,
+            usage,
+            finish_reason,
+            reasoning_content,
+        }
     }
 }

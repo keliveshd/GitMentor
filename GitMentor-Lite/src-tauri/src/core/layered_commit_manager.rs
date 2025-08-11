@@ -49,6 +49,11 @@ pub struct LayeredCommitResult {
     pub total_processing_time_ms: u64,
     #[serde(rename = "conversationRecords")]
     pub conversation_records: Vec<String>, // 记录ID列表
+    /// 推理内容（<think>标签内的内容）
+    /// 作者：Evilek
+    /// 编写日期：2025-01-10
+    #[serde(rename = "reasoningContent")]
+    pub reasoning_content: Option<String>,
 }
 
 pub struct LayeredCommitManager {
@@ -212,6 +217,7 @@ impl LayeredCommitManager {
             file_summaries,
             total_processing_time_ms: total_time,
             conversation_records,
+            reasoning_content: final_result.reasoning_content, // 添加推理内容 - Author: Evilek, Date: 2025-01-10
         })
     }
 
@@ -432,6 +438,7 @@ impl LayeredCommitManager {
         Ok(FinalCommitResult {
             message: response.content,
             record_id,
+            reasoning_content: response.reasoning_content, // 添加推理内容 - Author: Evilek, Date: 2025-01-10
         })
     }
 
@@ -691,4 +698,8 @@ struct SingleFileResult {
 struct FinalCommitResult {
     message: String,
     record_id: String,
+    /// 推理内容（<think>标签内的内容）
+    /// 作者：Evilek
+    /// 编写日期：2025-01-10
+    reasoning_content: Option<String>,
 }

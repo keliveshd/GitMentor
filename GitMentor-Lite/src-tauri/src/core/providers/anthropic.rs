@@ -162,16 +162,19 @@ impl AIProvider for AnthropicProvider {
         let anthropic_response: AnthropicResponse = response.json().await?;
         
         if let Some(content) = anthropic_response.content.first() {
-            Ok(AIResponse {
-                content: content.text.clone(),
-                model: anthropic_response.model,
-                usage: anthropic_response.usage.map(|u| TokenUsage {
+            // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
+            use crate::core::ai_provider::ReasoningParser;
+
+            Ok(ReasoningParser::create_response(
+                content.text.clone(),
+                anthropic_response.model,
+                anthropic_response.usage.map(|u| TokenUsage {
                     prompt_tokens: u.input_tokens,
                     completion_tokens: u.output_tokens,
                     total_tokens: u.input_tokens + u.output_tokens,
                 }),
-                finish_reason: anthropic_response.stop_reason,
-            })
+                anthropic_response.stop_reason,
+            ))
         } else {
             Err(anyhow::anyhow!("No response from Anthropic"))
         }

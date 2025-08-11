@@ -192,16 +192,19 @@ impl AIProvider for GeminiProvider {
         
         if let Some(candidate) = gemini_response.candidates.first() {
             if let Some(part) = candidate.content.parts.first() {
-                Ok(AIResponse {
-                    content: part.text.clone(),
-                    model: request.model.clone(),
-                    usage: gemini_response.usage_metadata.map(|u| TokenUsage {
+                // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
+                use crate::core::ai_provider::ReasoningParser;
+
+                Ok(ReasoningParser::create_response(
+                    part.text.clone(),
+                    request.model.clone(),
+                    gemini_response.usage_metadata.map(|u| TokenUsage {
                         prompt_tokens: u.prompt_token_count,
                         completion_tokens: u.candidates_token_count,
                         total_tokens: u.total_token_count,
                     }),
-                    finish_reason: candidate.finish_reason.clone(),
-                })
+                    candidate.finish_reason.clone(),
+                ))
             } else {
                 Err(anyhow::anyhow!("No content in Gemini response"))
             }

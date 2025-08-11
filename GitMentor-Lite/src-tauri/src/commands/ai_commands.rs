@@ -26,6 +26,10 @@ pub struct GenerateCommitResponse {
     pub confidence: f32,
     pub processing_time_ms: u64,
     pub model_used: String,
+    /// 推理内容（<think>标签内的内容）
+    /// 作者：Evilek
+    /// 编写日期：2025-01-10
+    pub reasoning_content: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -224,6 +228,7 @@ pub async fn generate_commit_message_ai(
         confidence: 0.85, // 简化的置信度
         processing_time_ms: processing_time,
         model_used: response.model,
+        reasoning_content: response.reasoning_content, // 添加推理内容 - Author: Evilek, Date: 2025-01-10
     })
 }
 

@@ -38,6 +38,7 @@ macro_rules! info_log {
     };
 }
 
+use chrono::Local;
 use commands::{ai_commands, debug_commands, git_commands, git_config_commands};
 use core::{
     ai_manager::AIManager,
@@ -45,7 +46,49 @@ use core::{
     git_engine::GitEngine,
     llm_client::{LLMClient, LLMConfig},
 };
+use std::fs::OpenOptions;
+use std::io::Write;
 use tokio::sync::Mutex;
+
+/// 写入启动日志到文件
+/// Author: Evilek, Date: 2025-01-09
+fn write_startup_log(message: &str) {
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let log_message = format!("[{}] {}\n", timestamp, message);
+
+    // 写入到当前目录的startup.log文件
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("startup.log")
+    {
+        let _ = file.write_all(log_message.as_bytes());
+        let _ = file.flush();
+    }
+
+    // 同时输出到控制台
+    println!("{}", log_message.trim());
+}
+
+/// 写入错误日志到文件
+/// Author: Evilek, Date: 2025-01-09
+fn write_error_log(error: &str) {
+    let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+    let log_message = format!("[{}] ERROR: {}\n", timestamp, error);
+
+    // 写入到当前目录的startup.log文件
+    if let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open("startup.log")
+    {
+        let _ = file.write_all(log_message.as_bytes());
+        let _ = file.flush();
+    }
+
+    // 同时输出到控制台
+    eprintln!("{}", log_message.trim());
+}
 
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 #[tauri::command]
@@ -55,30 +98,79 @@ fn greet(name: &str) -> String {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    write_startup_log("=== GitMentor-Lite 启动开始 ===");
+    write_startup_log("Author: Evilek, Date: 2025-01-09");
+
+    // 记录当前工作目录
+    match std::env::current_dir() {
+        Ok(dir) => write_startup_log(&format!("当前工作目录: {}", dir.display())),
+        Err(e) => write_error_log(&format!("无法获取当前工作目录: {}", e)),
+    }
+
     // 过滤PNG警告和其他不必要的日志
     //std::env::set_var("RUST_LOG", "warn,libpng=off,image=off");
     std::env::set_var("RUST_LOG", "error"); // 只显示错误日志
-                                            // Initialize configuration directory
-    let config_dir = std::env::current_dir().unwrap().join(".config");
+    write_startup_log("设置日志级别为 ERROR");
+
+    // Initialize configuration directory
+    write_startup_log("初始化配置目录...");
+    let config_dir = match std::env::current_dir() {
+        Ok(dir) => {
+            let config_path = dir.join(".config");
+            write_startup_log(&format!("配置目录路径: {}", config_path.display()));
+            config_path
+        }
+        Err(e) => {
+            write_error_log(&format!("获取当前目录失败: {}", e));
+            panic!("无法获取当前目录");
+        }
+    };
 
     // Initialize Git configuration
+    write_startup_log("初始化Git配置管理器...");
     let git_config_path = config_dir.join("git_config.json");
-    let git_config_manager =
-        GitConfigManager::new(git_config_path).expect("Failed to initialize Git Config Manager");
+    write_startup_log(&format!("Git配置文件路径: {}", git_config_path.display()));
+
+    let git_config_manager = match GitConfigManager::new(git_config_path) {
+        Ok(manager) => {
+            write_startup_log("Git配置管理器初始化成功");
+            manager
+        }
+        Err(e) => {
+            write_error_log(&format!("Git配置管理器初始化失败: {}", e));
+            panic!("Failed to initialize Git Config Manager: {}", e);
+        }
+    };
     let git_config = git_config_manager.get_config().clone();
 
     // Initialize components
+    write_startup_log("初始化核心组件...");
     let git_engine = Mutex::new(GitEngine::new_with_config(git_config));
+    write_startup_log("Git引擎初始化完成");
+
     let git_config_manager = Mutex::new(git_config_manager);
     let llm_config = LLMConfig::default();
     let llm_client = LLMClient::new(llm_config);
+    write_startup_log("LLM客户端初始化完成");
 
     // Initialize AI Manager
+    write_startup_log("初始化AI管理器...");
     let ai_config_path = config_dir.join("ai_config.json");
-    let ai_manager =
-        Mutex::new(AIManager::new(ai_config_path).expect("Failed to initialize AI Manager"));
+    write_startup_log(&format!("AI配置文件路径: {}", ai_config_path.display()));
 
-    tauri::Builder::default()
+    let ai_manager = match AIManager::new(ai_config_path) {
+        Ok(manager) => {
+            write_startup_log("AI管理器初始化成功");
+            Mutex::new(manager)
+        }
+        Err(e) => {
+            write_error_log(&format!("AI管理器初始化失败: {}", e));
+            panic!("Failed to initialize AI Manager: {}", e);
+        }
+    };
+
+    write_startup_log("构建Tauri应用...");
+    let app_result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -144,6 +236,15 @@ pub fn run() {
             ai_commands::check_first_time_setup,
             ai_commands::test_ai_connection,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .run(tauri::generate_context!());
+
+    match app_result {
+        Ok(_) => {
+            write_startup_log("=== GitMentor-Lite 正常退出 ===");
+        }
+        Err(e) => {
+            write_error_log(&format!("Tauri应用运行失败: {}", e));
+            panic!("error while running tauri application: {}", e);
+        }
+    }
 }

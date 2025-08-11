@@ -116,12 +116,15 @@ impl AIProvider for OllamaProvider {
         
         let ollama_response: OllamaResponse = response.json().await?;
         
-        Ok(AIResponse {
-            content: ollama_response.message.content,
-            model: ollama_response.model,
-            usage: None, // Ollama通常不返回token使用信息
-            finish_reason: Some("stop".to_string()),
-        })
+        // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
+        use crate::core::ai_provider::ReasoningParser;
+
+        Ok(ReasoningParser::create_response(
+            ollama_response.message.content,
+            ollama_response.model,
+            None, // Ollama通常不返回token使用信息
+            Some("stop".to_string()),
+        ))
     }
     
     async fn get_models(&self) -> Result<Vec<AIModel>> {
@@ -139,12 +142,10 @@ impl AIProvider for OllamaProvider {
         
         let models = models_response.models.into_iter()
             .map(|model| {
-                // 从模型名称中提取基础名称（去掉版本标签）
-                let base_name = model.name.split(':').next().unwrap_or(&model.name);
-                
+                // 保持完整的模型名称，不截断 Author: Evilek, Date: 2025-01-09
                 AIModel {
                     id: model.name.clone(),
-                    name: base_name.to_string(),
+                    name: model.name.clone(), // 使用完整名称而不是截断的base_name
                     max_tokens: Some(4096), // Ollama模型的默认上下文长度
                     provider: "Ollama".to_string(),
                     default: Some(false),

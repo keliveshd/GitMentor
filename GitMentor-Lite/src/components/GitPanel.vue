@@ -151,6 +151,18 @@
               :disabled="!hasCommittableFiles" :style="{ height: commitTextareaHeight + 'px' }"
               @input="adjustTextareaHeight" ref="commitTextarea"></textarea>
 
+            <!-- 推理内容折叠展示区域 - Author: Evilek, Date: 2025-01-10 -->
+            <div v-if="reasoningContent" class="reasoning-content-section">
+              <div class="reasoning-header" @click="toggleReasoningExpanded">
+                <span class="reasoning-icon">🤔</span>
+                <span class="reasoning-title">AI推理过程</span>
+                <span class="reasoning-toggle">{{ reasoningExpanded ? '▼' : '▶' }}</span>
+              </div>
+              <div v-if="reasoningExpanded" class="reasoning-content">
+                <pre class="reasoning-text">{{ reasoningContent }}</pre>
+              </div>
+            </div>
+
             <!-- 优化后的水平布局按钮区域 - 节省垂直空间 -->
             <div class="commit-controls-horizontal">
               <div class="left-controls">
@@ -370,6 +382,9 @@ const isGenerating = ref(false)
 const generationProgress = ref('')
 const isAIGenerated = ref(false)
 const isLayeredCommit = ref(false)
+// 推理内容相关状态 - Author: Evilek, Date: 2025-01-10
+const reasoningContent = ref<string | null>(null)
+const reasoningExpanded = ref(false)
 const layeredProgress = ref({
   visible: false,
   sessionId: '',
@@ -822,6 +837,14 @@ const generateCommitMessage = async () => {
 const clearCommitMessage = () => {
   commitMessage.value = ''
   isAIGenerated.value = false
+  // 同时清空推理内容 - Author: Evilek, Date: 2025-01-10
+  reasoningContent.value = null
+  reasoningExpanded.value = false
+}
+
+// 推理内容折叠展开切换 - Author: Evilek, Date: 2025-01-10
+const toggleReasoningExpanded = () => {
+  reasoningExpanded.value = !reasoningExpanded.value
 }
 
 /**
@@ -835,6 +858,9 @@ const clearRepositoryState = () => {
   isAIGenerated.value = false
   isGenerating.value = false
   generationProgress.value = ''
+  // 清空推理内容 - Author: Evilek, Date: 2025-01-10
+  reasoningContent.value = null
+  reasoningExpanded.value = false
 
   // 清空Git状态
   gitStatus.value = null
@@ -925,6 +951,9 @@ const executeLayeredCommit = async (stagedFiles: string[], branchName: string | 
     commitMessage.value = result.finalMessage
     isAIGenerated.value = true
     isLayeredCommit.value = true
+    // 设置推理内容 - Author: Evilek, Date: 2025-01-10
+    reasoningContent.value = result.reasoningContent || null
+    reasoningExpanded.value = false // 默认折叠
 
     toast.success('分层提交消息生成成功', '操作完成')
 
@@ -2328,6 +2357,69 @@ onUnmounted(() => {
   /* 最小高度约3行 */
   max-height: 224px;
   /* 最大高度约10行 */
+}
+
+/* 推理内容展示样式 - Author: Evilek, Date: 2025-01-10 */
+.reasoning-content-section {
+  margin-bottom: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8f9fa;
+  overflow: hidden;
+}
+
+.reasoning-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  background: #f1f3f4;
+  border-bottom: 1px solid #e2e8f0;
+  transition: background-color 0.2s ease;
+}
+
+.reasoning-header:hover {
+  background: #e9ecef;
+}
+
+.reasoning-icon {
+  margin-right: 8px;
+  font-size: 16px;
+}
+
+.reasoning-title {
+  flex: 1;
+  font-size: 14px;
+  font-weight: 500;
+  color: #495057;
+}
+
+.reasoning-toggle {
+  font-size: 12px;
+  color: #6c757d;
+  transition: transform 0.2s ease;
+}
+
+.reasoning-content {
+  padding: 12px;
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+}
+
+.reasoning-text {
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #495057;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #f8f9fa;
+  padding: 8px;
+  border-radius: 4px;
+  border: 1px solid #e2e8f0;
 }
 
 /* 优化后的水平布局控制区域 - 节省垂直空间 */

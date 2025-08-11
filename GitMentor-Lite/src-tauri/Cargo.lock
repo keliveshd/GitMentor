@@ -1389,6 +1389,7 @@ dependencies = [
  "git2",
  "handlebars",
  "once_cell",
+ "regex",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
