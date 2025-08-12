@@ -64,7 +64,7 @@
           <div class="repo-info" v-if="currentRepoPath">
             <span class="repo-name">📂 {{ getRepoName(currentRepoPath) }}</span>
             <span class="branch-info" v-if="gitStatus">
-              <span class="branch-name">🌿 {{ gitStatus.branch }}</span>
+              <BranchSwitcher :current-branch="gitStatus.branch" @branch-changed="handleBranchChanged" />
               <span v-if="gitStatus.ahead > 0" class="ahead">↑{{ gitStatus.ahead }}</span>
               <span v-if="gitStatus.behind > 0" class="behind">↓{{ gitStatus.behind }}</span>
               <span v-if="isRefreshing" class="refresh-indicator" title="正在刷新Git状态">🔄</span>
@@ -369,6 +369,7 @@ import Toast from './Toast.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ContextMenu, { type ContextMenuItem } from './ContextMenu.vue'
 import LayeredCommitProgress from './LayeredCommitProgress.vue'
+import BranchSwitcher from './BranchSwitcher.vue'
 import DebugSettings from './DebugSettings.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
@@ -1797,6 +1798,23 @@ const handleFileContextMenu = (file: any, event: MouseEvent) => {
 const closeContextMenu = () => {
   contextMenuVisible.value = false
   contextMenuFile.value = null
+}
+
+// 处理分支切换事件
+// 作者：Evilek
+// 编写日期：2025-08-12
+const handleBranchChanged = async (branchName: string) => {
+  try {
+    console.log(`🌿 [GitPanel] 分支已切换到: ${branchName}`)
+    // 刷新Git状态以更新UI
+    await refreshGitStatus(true)
+    // 刷新提交历史
+    await refreshHistory()
+    toast.success(`已切换到分支: ${branchName}`, '分支切换成功')
+  } catch (error) {
+    console.error('处理分支切换事件失败:', error)
+    toast.error(`处理分支切换失败: ${error}`, '操作失败')
+  }
 }
 
 const handleContextMenuAction = async (action: string) => {

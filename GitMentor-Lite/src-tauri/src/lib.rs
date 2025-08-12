@@ -201,6 +201,7 @@ pub fn run() {
             git_config_commands::reset_git_config,
             git_commands::get_commit_history,
             git_commands::get_branches,
+            git_commands::checkout_branch,
             git_commands::discard_all_changes,
             git_commands::stage_all_changes,
             git_commands::unstage_all_changes,

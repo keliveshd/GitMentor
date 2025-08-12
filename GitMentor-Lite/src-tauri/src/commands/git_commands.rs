@@ -140,6 +140,20 @@ pub async fn get_branches(
         .map_err(|e| format!("Failed to get branches: {}", e))
 }
 
+/// 切换分支
+/// 作者：Evilek
+/// 编写日期：2025-08-12
+#[tauri::command]
+pub async fn checkout_branch(
+    branch_name: String,
+    is_remote: bool,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine.checkout_branch(&branch_name, is_remote)
+        .map_err(|e| format!("Failed to checkout branch: {}", e))
+}
+
 /// 丢弃所有工作区更改
 /// 作者：Evilek
 #[tauri::command]

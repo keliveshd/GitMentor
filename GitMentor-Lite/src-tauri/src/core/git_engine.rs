@@ -1552,6 +1552,142 @@ impl GitEngine {
         Ok(branch_list)
     }
 
+    /// 切换分支
+    /// 作者：Evilek
+    /// 编写日期：2025-08-12
+    pub fn checkout_branch(
+        &self,
+        branch_name: &str,
+        is_remote: bool,
+    ) -> Result<GitOperationResult> {
+        match self.git_method {
+            GitMethod::SystemGit | GitMethod::BundledGit => {
+                // 优先使用Git命令
+                match self.checkout_branch_with_command(branch_name, is_remote) {
+                    Ok(result) => Ok(result),
+                    Err(_e) => {
+                        // 降级到Git2库API
+                        self.checkout_branch_with_git2_api(branch_name, is_remote)
+                    }
+                }
+            }
+            GitMethod::Git2Api => {
+                // 直接使用Git2库API
+                self.checkout_branch_with_git2_api(branch_name, is_remote)
+            }
+        }
+    }
+
+    /// 使用Git命令切换分支
+    fn checkout_branch_with_command(
+        &self,
+        branch_name: &str,
+        is_remote: bool,
+    ) -> Result<GitOperationResult> {
+        let repo_path = self
+            .get_repository_path()
+            .ok_or_else(|| anyhow!("仓库路径未设置"))?;
+        let git_command = self.get_git_command();
+
+        if is_remote {
+            // 检出远程分支，创建本地跟踪分支
+            let local_branch_name = if branch_name.starts_with("origin/") {
+                branch_name.strip_prefix("origin/").unwrap_or(branch_name)
+            } else {
+                branch_name
+            };
+
+            let output = Self::create_hidden_command(&git_command)
+                .current_dir(&repo_path)
+                .args(&["checkout", "-b", local_branch_name, branch_name])
+                .output()?;
+
+            if output.status.success() {
+                Ok(GitOperationResult {
+                    success: true,
+                    message: format!(
+                        "成功检出远程分支 {} 并创建本地分支 {}",
+                        branch_name, local_branch_name
+                    ),
+                    details: Some(String::from_utf8_lossy(&output.stdout).to_string()),
+                })
+            } else {
+                let error_msg = String::from_utf8_lossy(&output.stderr);
+                Err(anyhow!("检出远程分支失败: {}", error_msg))
+            }
+        } else {
+            // 切换本地分支
+            let output = Self::create_hidden_command(&git_command)
+                .current_dir(&repo_path)
+                .args(&["checkout", branch_name])
+                .output()?;
+
+            if output.status.success() {
+                Ok(GitOperationResult {
+                    success: true,
+                    message: format!("成功切换到分支 {}", branch_name),
+                    details: Some(String::from_utf8_lossy(&output.stdout).to_string()),
+                })
+            } else {
+                let error_msg = String::from_utf8_lossy(&output.stderr);
+                Err(anyhow!("切换分支失败: {}", error_msg))
+            }
+        }
+    }
+
+    /// 使用Git2库API切换分支
+    fn checkout_branch_with_git2_api(
+        &self,
+        branch_name: &str,
+        is_remote: bool,
+    ) -> Result<GitOperationResult> {
+        let repo = self.get_repository()?;
+
+        if is_remote {
+            // 检出远程分支，创建本地跟踪分支
+            let local_branch_name = if branch_name.starts_with("origin/") {
+                branch_name.strip_prefix("origin/").unwrap_or(branch_name)
+            } else {
+                branch_name
+            };
+
+            // 查找远程分支
+            let remote_branch = repo.find_branch(branch_name, git2::BranchType::Remote)?;
+            let remote_commit = remote_branch.get().peel_to_commit()?;
+
+            // 创建本地分支
+            let mut local_branch = repo.branch(local_branch_name, &remote_commit, false)?;
+
+            // 设置上游分支
+            local_branch.set_upstream(Some(branch_name))?;
+
+            // 检出新创建的本地分支
+            let obj = repo.revparse_single(&("refs/heads/".to_owned() + local_branch_name))?;
+            repo.checkout_tree(&obj, None)?;
+            repo.set_head(&("refs/heads/".to_owned() + local_branch_name))?;
+
+            Ok(GitOperationResult {
+                success: true,
+                message: format!(
+                    "成功检出远程分支 {} 并创建本地分支 {}",
+                    branch_name, local_branch_name
+                ),
+                details: None,
+            })
+        } else {
+            // 切换本地分支
+            let obj = repo.revparse_single(&("refs/heads/".to_owned() + branch_name))?;
+            repo.checkout_tree(&obj, None)?;
+            repo.set_head(&("refs/heads/".to_owned() + branch_name))?;
+
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("成功切换到分支 {}", branch_name),
+                details: None,
+            })
+        }
+    }
+
     /// 丢弃所有工作区更改
     pub fn discard_all_changes(&self) -> Result<GitOperationResult> {
         let repo = self.get_repository()?;
@@ -2152,7 +2288,7 @@ impl GitEngine {
             std::fs::write(&gitignore_path, existing_content)?;
         }
 
-        let mut message = if added_count > 0 {
+        let message = if added_count > 0 {
             format!("Added {} file(s) to .gitignore", added_count)
         } else {
             "No new files added to .gitignore".to_string()
