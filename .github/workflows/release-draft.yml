@@ -1,0 +1,147 @@
+name: 'Draft Release'
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g., v1.0.0)'
+        required: true
+        type: string
+      prerelease:
+        description: 'Is this a pre-release?'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  create-draft:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate version format
+        run: |
+          if [[ ! "${{ github.event.inputs.version }}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
+            echo "错误: 版本格式不正确。应该是 vX.Y.Z 或 vX.Y.Z-suffix 格式"
+            exit 1
+          fi
+
+      - name: Check if tag exists
+        run: |
+          if git rev-parse "${{ github.event.inputs.version }}" >/dev/null 2>&1; then
+            echo "错误: 标签 ${{ github.event.inputs.version }} 已存在"
+            exit 1
+          fi
+
+      - name: Update version in files
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          VERSION_NUMBER="${VERSION#v}"  # 移除 v 前缀
+          
+          echo "更新版本号到 $VERSION_NUMBER"
+          
+          # 更新 package.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION_NUMBER\"/" GitMentor-Lite/package.json
+          
+          # 更新 Cargo.toml
+          sed -i "s/version = \".*\"/version = \"$VERSION_NUMBER\"/" GitMentor-Lite/src-tauri/Cargo.toml
+          
+          # 更新 tauri.conf.json
+          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION_NUMBER\"/" GitMentor-Lite/src-tauri/tauri.conf.json
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "生成更新日志..."
+          
+          # 获取最新的标签
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LATEST_TAG" ]; then
+            echo "这是第一个版本"
+            CHANGELOG="## 🎉 首次发布
+
+### ✨ 主要功能
+- AI 驱动的 Git 提交消息生成
+- 支持多种 AI 提供商（OpenAI、Claude、Gemini 等）
+- 分层提交管理系统
+- 多语言支持（19种语言）
+- 分支切换和远程同步
+- 直观的用户界面
+
+### 🔧 技术特性
+- 基于 Tauri v2 的跨平台桌面应用
+- Vue 3 + TypeScript 前端
+- Rust 后端
+- 支持 Windows、macOS、Linux
+
+### 📦 安装说明
+请根据您的操作系统下载对应的安装包：
+- Windows: 下载 .msi 文件
+- macOS: 下载 .dmg 文件  
+- Linux: 下载 .deb、.rpm 或 .AppImage 文件"
+          else
+            echo "生成从 $LATEST_TAG 到当前的更新日志"
+            CHANGELOG="## 🚀 更新内容
+
+$(git log $LATEST_TAG..HEAD --pretty=format:"- %s" --no-merges)
+
+### 📦 下载说明
+请根据您的操作系统下载对应的安装包：
+- **Windows**: 下载 \`.msi\` 安装包
+- **macOS**: 下载 \`.dmg\` 磁盘映像
+- **Linux**: 下载 \`.deb\` (Ubuntu/Debian) 或 \`.rpm\` (CentOS/RHEL) 或 \`.AppImage\` (通用)
+
+### 🔧 系统要求
+- Node.js 16+
+- Git 2.30+
+- 支持的操作系统：Windows 10+, macOS 10.15+, Ubuntu 20.04+"
+          fi
+          
+          # 保存到文件
+          echo "$CHANGELOG" > changelog.md
+          
+          # 输出到 GitHub Actions
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Create draft release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          release_name: GitMentor ${{ github.event.inputs.version }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: true
+          prerelease: ${{ github.event.inputs.prerelease }}
+
+      - name: Commit version changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
+          git commit -m "chore: bump version to ${{ github.event.inputs.version }}" || exit 0
+          git push
+
+      - name: Create and push tag
+        run: |
+          git tag ${{ github.event.inputs.version }}
+          git push origin ${{ github.event.inputs.version }}
+
+      - name: Summary
+        run: |
+          echo "## 🎉 草稿发布已创建" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **版本**: ${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **预发布**: ${{ github.event.inputs.prerelease }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **状态**: 草稿 (需要手动发布)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 下一步操作" >> $GITHUB_STEP_SUMMARY
+          echo "1. 检查草稿发布的内容" >> $GITHUB_STEP_SUMMARY
+          echo "2. 等待构建工作流完成" >> $GITHUB_STEP_SUMMARY
+          echo "3. 验证构建产物" >> $GITHUB_STEP_SUMMARY
+          echo "4. 发布草稿版本" >> $GITHUB_STEP_SUMMARY

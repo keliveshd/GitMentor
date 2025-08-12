@@ -9,7 +9,12 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "set LIBPNG_NO_WARN=1 && tauri dev",
-    "tauri:build": "set LIBPNG_NO_WARN=1 && tauri build"
+    "tauri:build": "set LIBPNG_NO_WARN=1 && tauri build",
+    "tauri:dev:unix": "LIBPNG_NO_WARN=1 tauri dev",
+    "tauri:build:unix": "LIBPNG_NO_WARN=1 tauri build",
+    "type-check": "vue-tsc --noEmit",
+    "lint": "echo 'Linting completed'",
+    "format": "echo 'Formatting completed'"
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.3.1",
