@@ -98,7 +98,7 @@ const handleItemClick = (item: ContextMenuItem) => {
 }
 
 // 处理点击外部关闭菜单
-const handleClickOutside = (event: MouseEvent) => {
+const handleClickOutside = (_event: MouseEvent) => {
   if (props.visible) {
     emit('close')
   }

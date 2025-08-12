@@ -19,7 +19,7 @@
           <button @click="pullCurrentBranch" class="action-btn" title="拉取当前分支" :disabled="isOperating">
             {{ isOperating && currentOperation === 'pull' ? '⏳' : '⬇️' }}
           </button>
-          <button @click="pushCurrentBranch" class="action-btn" title="推送当前分支" :disabled="isOperating">
+          <button @click="() => pushCurrentBranch()" class="action-btn" title="推送当前分支" :disabled="isOperating">
             {{ isOperating && currentOperation === 'push' ? '⏳' : '⬆️' }}
           </button>
           <button @click="refreshBranches" class="refresh-btn" title="刷新分支列表" :disabled="isOperating">🔄</button>
