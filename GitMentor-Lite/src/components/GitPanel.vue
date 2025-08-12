@@ -141,7 +141,8 @@
             <div class="file-list">
               <FileItem v-for="file in gitStatus?.staged_files || []" :key="file.path" :file="file" :is-staged="true"
                 :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-                @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+                @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection"
+                @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
           </div>
 
@@ -251,7 +252,8 @@
             <div class="file-list">
               <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
                 :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-                @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection" />
+                @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection"
+                @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
           </div>
 
@@ -269,7 +271,7 @@
               <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file"
                 :is-staged="false" :batch-mode="batchMode" :selected="selectedFiles.has(file.path)"
                 @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer"
-                @toggle-select="toggleFileSelection" />
+                @toggle-select="toggleFileSelection" @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
           </div>
 
@@ -280,7 +282,8 @@
             </div>
             <div class="file-list">
               <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file"
-                :is-staged="false" @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer" />
+                :is-staged="false" @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer"
+                @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
 
             <!-- 无更改状态 -->
@@ -351,6 +354,10 @@
       </div>
     </div>
   </div>
+
+  <!-- 全局右键菜单 -->
+  <ContextMenu :visible="contextMenuVisible" :position="contextMenuPosition" :menuItems="contextMenuItems"
+    @itemClick="handleContextMenuAction" @close="closeContextMenu" />
 </template>
 
 <script setup lang="ts">
@@ -360,6 +367,7 @@ import { listen } from '@tauri-apps/api/event'
 import FileItem from './FileItem.vue'
 import Toast from './Toast.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import ContextMenu, { type ContextMenuItem } from './ContextMenu.vue'
 import LayeredCommitProgress from './LayeredCommitProgress.vue'
 import DebugSettings from './DebugSettings.vue'
 import WindowManager from '../utils/WindowManager'
@@ -431,6 +439,11 @@ const tabs = ref([
 
 // 调试设置状态
 const showDebugSettings = ref(false)
+
+// 全局右键菜单状态
+const contextMenuVisible = ref(false)
+const contextMenuPosition = ref({ x: 0, y: 0 })
+const contextMenuFile = ref<any>(null) // 当前右键的文件
 
 // 提交区域高度自适应相关状态
 const commitTextareaHeight = ref(60) // 默认高度约3行
@@ -1110,7 +1123,7 @@ const batchRevertFiles = async () => {
       await invoke('revert_files', {
         request: {
           file_paths: stagedFiles,
-          revert_type: 'Staged'
+          revert_type: 'DiscardAll'  // 暂存区文件撤销所有更改
         }
       })
     }
@@ -1119,7 +1132,7 @@ const batchRevertFiles = async () => {
       await invoke('revert_files', {
         request: {
           file_paths: unstagedFiles,
-          revert_type: 'WorkingTree'
+          revert_type: 'WorkingTree'  // 工作区文件只撤销工作区更改
         }
       })
     }
@@ -1239,31 +1252,32 @@ const revertFile = async (filePath: string, isStaged: boolean) => {
   const revertType = isStaged ? '暂存区' : '工作区'
 
   const confirmed = await confirm.danger(
-    '回滚文件',
-    `确定要回滚${revertType}中的文件 "${fileName}" 吗？`,
+    '撤销文件更改',
+    `确定要撤销${revertType}中的文件 "${fileName}" 的更改吗？`,
     '此操作将丢失该文件的所有未提交更改，且无法撤销。'
   )
 
   if (!confirmed) return
 
   try {
-    setLoading(true, `正在回滚${revertType}文件...`)
+    setLoading(true, `正在撤销${revertType}文件更改...`)
     await invoke('revert_files', {
       request: {
         file_paths: [filePath],
-        revert_type: isStaged ? 'Staged' : 'WorkingTree'
+        // 对于暂存区文件，撤销所有更改；对于工作区文件，只撤销工作区更改
+        revert_type: isStaged ? 'DiscardAll' : 'WorkingTree'
       }
     })
 
     setLoading(true, '正在刷新状态...')
     await refreshGitStatus(true)
 
-    setLoading(true, '回滚完成')
-    toast.success(`${revertType}文件 ${fileName} 已回滚`, '操作完成')
+    setLoading(true, '撤销完成')
+    toast.success(`${revertType}文件 ${fileName} 的更改已撤销`, '操作完成')
     setTimeout(() => setLoading(false), 1000)
   } catch (error) {
     console.error('Failed to revert file:', error)
-    toast.error('回滚文件失败: ' + error, '操作失败')
+    toast.error('撤销文件更改失败: ' + error, '操作失败')
     setLoading(false)
   }
 }
@@ -1672,6 +1686,178 @@ onUnmounted(() => {
     clearTimeout(operationTimeout)
   }
 })
+
+// 全局右键菜单相关方法
+const contextMenuItems = computed((): ContextMenuItem[] => {
+  if (!contextMenuFile.value) return []
+
+  const file = contextMenuFile.value
+  const items: ContextMenuItem[] = []
+
+  // 根据文件状态显示不同的菜单项
+  if (file.isStaged) {
+    // 暂存区文件菜单
+    items.push({
+      id: 'unstage',
+      text: '取消暂存',
+      icon: '➖',
+      action: 'unstage'
+    })
+
+    items.push({
+      id: 'discardAll',
+      text: '撤销所有更改',
+      icon: '↩️',
+      action: 'discardAll'
+    })
+
+    items.push({
+      id: 'separator1',
+      text: '',
+      icon: '',
+      action: '',
+      separator: true
+    })
+    items.push({
+      id: 'viewDiff',
+      text: '查看差异',
+      icon: '👁️',
+      action: 'viewDiff'
+    })
+  } else if (file.working_tree_status === 'Untracked') {
+    // 未跟踪文件菜单
+    items.push({
+      id: 'stage',
+      text: '暂存文件',
+      icon: '➕',
+      action: 'stage'
+    })
+  } else {
+    // 工作区文件菜单
+    items.push({
+      id: 'stage',
+      text: '暂存更改',
+      icon: '➕',
+      action: 'stage'
+    })
+
+    items.push({
+      id: 'discard',
+      text: '撤销更改',
+      icon: '↩️',
+      action: 'discard'
+    })
+
+    items.push({
+      id: 'separator1',
+      text: '',
+      icon: '',
+      action: '',
+      separator: true
+    })
+    items.push({
+      id: 'viewDiff',
+      text: '查看差异',
+      icon: '👁️',
+      action: 'viewDiff'
+    })
+  }
+
+  // 通用操作（所有文件都可以）
+  items.push({
+    id: 'separator2',
+    text: '',
+    icon: '',
+    action: '',
+    separator: true
+  })
+  items.push({
+    id: 'addToIgnore',
+    text: '添加到 .gitignore',
+    icon: '🚫',
+    action: 'addToIgnore'
+  })
+  items.push({
+    id: 'delete',
+    text: '删除文件',
+    icon: '🗑️',
+    action: 'deleteFile'
+  })
+
+  return items
+})
+
+const handleFileContextMenu = (file: any, event: MouseEvent) => {
+  event.preventDefault()
+  contextMenuFile.value = file
+  contextMenuPosition.value = { x: event.clientX, y: event.clientY }
+  contextMenuVisible.value = true
+}
+
+const closeContextMenu = () => {
+  contextMenuVisible.value = false
+  contextMenuFile.value = null
+}
+
+const handleContextMenuAction = async (action: string) => {
+  if (!contextMenuFile.value) return
+
+  const file = contextMenuFile.value
+
+  try {
+    switch (action) {
+      case 'stage':
+        await toggleStage(file.path, true)
+        break
+      case 'unstage':
+        // 取消暂存：使用 Staged 类型（只重置暂存区，保留工作区更改）
+        if (await confirm.danger('取消暂存', `确定要取消暂存 ${file.path} 吗？`, '')) {
+          await invoke('revert_files', {
+            request: {
+              file_paths: [file.path],
+              revert_type: 'Staged'
+            }
+          })
+          await refreshGitStatus()
+        }
+        break
+      case 'discard':
+        // 撤销工作区更改
+        await revertFile(file.path, false)
+        break
+      case 'discardAll':
+        // 撤销所有更改（暂存区+工作区）
+        await revertFile(file.path, true)
+        break
+      case 'viewDiff':
+        await openDiffViewer(file.path, file.isStaged)
+        break
+      case 'deleteFile':
+        // 通用删除文件操作
+        const fileType = file.working_tree_status === 'Untracked' ? '未跟踪文件' : '文件'
+        if (await confirm.danger('删除文件', `确定要删除${fileType} ${file.path} 吗？`, '此操作不可撤销。')) {
+          if (file.working_tree_status === 'Untracked') {
+            // 未跟踪文件直接删除
+            await invoke('delete_untracked_files', { filePaths: [file.path] })
+          } else {
+            // 已跟踪文件需要先从Git中移除再删除物理文件
+            await invoke('delete_tracked_files', { filePaths: [file.path] })
+          }
+          await refreshGitStatus()
+        }
+        break
+      case 'addToIgnore':
+        await invoke('add_to_gitignore', { filePaths: [file.path] })
+        await refreshGitStatus()
+        break
+    }
+  } catch (error) {
+    console.error('Context menu action failed:', error)
+    toast.error(`操作失败: ${error}`, '操作失败')
+  }
+
+  closeContextMenu()
+}
 </script>
 
 <style scoped>

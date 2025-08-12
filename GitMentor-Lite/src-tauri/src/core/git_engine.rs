@@ -1440,20 +1440,45 @@ impl GitEngine {
                 })
             }
             RevertType::Staged => {
-                // 回滚暂存区更改 - 从索引中移除文件
-                let mut index = repo.index()?;
+                // 回滚暂存区更改 - 将暂存区文件重置到HEAD状态，但保留工作区更改
+                let head = repo.head()?;
+                let head_commit = head.peel_to_commit()?;
 
-                for file_path in &request.file_paths {
-                    // 尝试移除文件，如果文件不在索引中则忽略错误
-                    let _ = index.remove_path(Path::new(file_path));
-                }
-
-                index.write()?;
+                // 将指定文件从暂存区重置到HEAD状态（取消暂存）
+                repo.reset_default(Some(head_commit.as_object()), request.file_paths.iter())?;
 
                 Ok(GitOperationResult {
                     success: true,
                     message: format!(
-                        "Reverted {} file(s) in staging area",
+                        "Unstaged {} file(s) from staging area",
+                        request.file_paths.len()
+                    ),
+                    details: None,
+                })
+            }
+            RevertType::DiscardAll => {
+                // 撤销所有更改 - 先取消暂存，再回滚工作区到HEAD状态
+                let head = repo.head()?;
+                let head_commit = head.peel_to_commit()?;
+                let head_tree = head_commit.tree()?;
+
+                // 1. 先取消暂存（重置索引到HEAD）
+                repo.reset_default(Some(head_commit.as_object()), request.file_paths.iter())?;
+
+                // 2. 再回滚工作区到HEAD状态
+                let mut checkout_builder = git2::build::CheckoutBuilder::new();
+                checkout_builder.force();
+
+                for file_path in &request.file_paths {
+                    checkout_builder.path(file_path);
+                }
+
+                repo.checkout_tree(head_tree.as_object(), Some(&mut checkout_builder))?;
+
+                Ok(GitOperationResult {
+                    success: true,
+                    message: format!(
+                        "Discarded all changes for {} file(s)",
                         request.file_paths.len()
                     ),
                     details: None,
@@ -2078,5 +2103,185 @@ impl GitEngine {
 
         let result = hunks.borrow().clone();
         Ok(result)
+    }
+
+    /// 添加文件到 .gitignore
+    /// 作者：Evilek
+    /// 编写日期：2025-08-11
+    pub fn add_to_gitignore(&self, file_paths: &[String]) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let gitignore_path = std::path::Path::new(repo_path).join(".gitignore");
+
+        // 读取现有的 .gitignore 内容
+        let mut existing_content = if gitignore_path.exists() {
+            std::fs::read_to_string(&gitignore_path)?
+        } else {
+            String::new()
+        };
+
+        // 确保内容以换行符结尾
+        if !existing_content.is_empty() && !existing_content.ends_with('\n') {
+            existing_content.push('\n');
+        }
+
+        let mut added_count = 0;
+        let mut already_ignored = Vec::new();
+
+        for file_path in file_paths {
+            // 检查文件是否已经在 .gitignore 中
+            if existing_content.lines().any(|line| {
+                let trimmed = line.trim();
+                !trimmed.is_empty() && !trimmed.starts_with('#') && trimmed == file_path
+            }) {
+                already_ignored.push(file_path.clone());
+                continue;
+            }
+
+            // 添加到 .gitignore
+            existing_content.push_str(file_path);
+            existing_content.push('\n');
+            added_count += 1;
+        }
+
+        // 写入 .gitignore 文件
+        if added_count > 0 {
+            std::fs::write(&gitignore_path, existing_content)?;
+        }
+
+        let mut message = if added_count > 0 {
+            format!("Added {} file(s) to .gitignore", added_count)
+        } else {
+            "No new files added to .gitignore".to_string()
+        };
+
+        Ok(GitOperationResult {
+            success: true,
+            message,
+            details: if !already_ignored.is_empty() {
+                Some(format!("Already ignored: {}", already_ignored.join(", ")))
+            } else {
+                None
+            },
+        })
+    }
+
+    /// 删除未跟踪文件
+    /// 作者：Evilek
+    /// 编写日期：2025-08-11
+    pub fn delete_untracked_files(&self, file_paths: &[String]) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let mut deleted_count = 0;
+        let mut failed_files = Vec::new();
+
+        for file_path in file_paths {
+            let full_path = std::path::Path::new(repo_path).join(file_path);
+
+            match std::fs::remove_file(&full_path) {
+                Ok(_) => deleted_count += 1,
+                Err(e) => {
+                    // 如果是目录，尝试删除目录
+                    if full_path.is_dir() {
+                        match std::fs::remove_dir_all(&full_path) {
+                            Ok(_) => deleted_count += 1,
+                            Err(_) => failed_files.push(format!("{} ({})", file_path, e)),
+                        }
+                    } else {
+                        failed_files.push(format!("{} ({})", file_path, e));
+                    }
+                }
+            }
+        }
+
+        let mut message = format!("Deleted {} untracked file(s)", deleted_count);
+        if !failed_files.is_empty() {
+            message.push_str(&format!(
+                ", failed to delete {} file(s)",
+                failed_files.len()
+            ));
+        }
+
+        Ok(GitOperationResult {
+            success: deleted_count > 0,
+            message,
+            details: if failed_files.is_empty() {
+                None
+            } else {
+                Some(format!("Failed to delete:\n{}", failed_files.join("\n")))
+            },
+        })
+    }
+
+    /// 删除已跟踪文件（从Git和文件系统中移除）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-11
+    pub fn delete_tracked_files(&self, file_paths: &[String]) -> Result<GitOperationResult> {
+        let repo = self.get_repository()?;
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let mut deleted_count = 0;
+        let mut failed_files = Vec::new();
+        let mut index = repo.index()?;
+
+        for file_path in file_paths {
+            let full_path = std::path::Path::new(repo_path).join(file_path);
+
+            // 1. 从Git索引中移除文件
+            match index.remove_path(std::path::Path::new(file_path)) {
+                Ok(_) => {
+                    // 2. 删除物理文件
+                    match std::fs::remove_file(&full_path) {
+                        Ok(_) => deleted_count += 1,
+                        Err(e) => {
+                            // 如果是目录，尝试删除目录
+                            if full_path.is_dir() {
+                                match std::fs::remove_dir_all(&full_path) {
+                                    Ok(_) => deleted_count += 1,
+                                    Err(_) => failed_files.push(format!("{} ({})", file_path, e)),
+                                }
+                            } else {
+                                failed_files.push(format!("{} ({})", file_path, e));
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    failed_files.push(format!("{} (Git remove failed: {})", file_path, e));
+                }
+            }
+        }
+
+        // 写入索引更改
+        if deleted_count > 0 {
+            index.write()?;
+        }
+
+        let mut message = format!("Deleted {} tracked file(s)", deleted_count);
+        if !failed_files.is_empty() {
+            message.push_str(&format!(
+                ", failed to delete {} file(s)",
+                failed_files.len()
+            ));
+        }
+
+        Ok(GitOperationResult {
+            success: deleted_count > 0,
+            message,
+            details: if failed_files.is_empty() {
+                None
+            } else {
+                Some(format!("Failed to delete:\n{}", failed_files.join("\n")))
+            },
+        })
     }
 }

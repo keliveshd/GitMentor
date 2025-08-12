@@ -216,6 +216,45 @@ pub async fn get_file_diff(
         .map_err(|e| format!("Failed to get file diff: {}", e))
 }
 
+/// 添加文件到 .gitignore
+/// 作者：Evilek
+/// 编写日期：2025-08-11
+#[tauri::command]
+pub async fn add_to_gitignore(
+    file_paths: Vec<String>,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine.add_to_gitignore(&file_paths)
+        .map_err(|e| format!("Failed to add to gitignore: {}", e))
+}
+
+/// 删除未跟踪文件
+/// 作者：Evilek
+/// 编写日期：2025-08-11
+#[tauri::command]
+pub async fn delete_untracked_files(
+    file_paths: Vec<String>,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine.delete_untracked_files(&file_paths)
+        .map_err(|e| format!("Failed to delete untracked files: {}", e))
+}
+
+/// 删除已跟踪文件
+/// 作者：Evilek
+/// 编写日期：2025-08-11
+#[tauri::command]
+pub async fn delete_tracked_files(
+    file_paths: Vec<String>,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine.delete_tracked_files(&file_paths)
+        .map_err(|e| format!("Failed to delete tracked files: {}", e))
+}
+
 /// 获取暂存文件的差异摘要（用于AI生成）
 /// 作者：Evilek
 /// 编写日期：2025-07-27

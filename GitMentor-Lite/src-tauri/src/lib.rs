@@ -207,6 +207,9 @@ pub fn run() {
             git_commands::open_folder_dialog,
             git_commands::get_file_diff,
             git_commands::get_staged_diff_summary,
+            git_commands::add_to_gitignore,
+            git_commands::delete_untracked_files,
+            git_commands::delete_tracked_files,
             // AI commands
             ai_commands::get_ai_config,
             ai_commands::update_ai_config,

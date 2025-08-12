@@ -1,5 +1,5 @@
 <template>
-  <div class="file-item" :class="{ 'staged': isStaged, 'selected': selected }">
+  <div class="file-item" :class="{ 'staged': isStaged, 'selected': selected }" @contextmenu="handleContextMenu">
     <!-- 批量选择复选框 -->
     <div v-if="batchMode" class="file-checkbox" @click.stop="toggleSelection">
       <input type="checkbox" :checked="selected" @change="toggleSelection" />
@@ -35,10 +35,13 @@
         👁️
       </button>
     </div>
+
+
   </div>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 
 // Props
 interface FileStatus {
@@ -64,7 +67,11 @@ const emit = defineEmits<{
   revert: [filePath: string, isStaged: boolean]
   viewDiff: [filePath: string, isStaged: boolean]
   toggleSelect: [filePath: string]
+  refresh: []
+  contextMenu: [file: any, event: MouseEvent]
 }>()
+
+
 
 // 获取文件类型图标
 const getFileTypeIcon = (filePath: string) => {
@@ -106,6 +113,8 @@ const getFileTypeIcon = (filePath: string) => {
 const getStatusIcon = () => {
   return getFileTypeIcon(props.file.path)
 }
+
+
 
 const getStatusText = () => {
   if (props.isStaged) {
@@ -159,6 +168,11 @@ const isDeleted = () => {
   return props.file.working_tree_status === 'Deleted' || props.file.index_status === 'Deleted'
 }
 
+// 判断文件是否为未跟踪文件
+const isUntracked = () => {
+  return props.file.working_tree_status === 'Untracked'
+}
+
 // 方法
 const handleToggleStage = () => {
   emit('toggleStage', props.file.path, !props.isStaged)
@@ -177,6 +191,11 @@ const viewDiff = () => {
 // 批量选择相关方法
 const toggleSelection = () => {
   emit('toggleSelect', props.file.path)
+}
+
+// 右键菜单处理方法
+const handleContextMenu = (event: MouseEvent) => {
+  emit('contextMenu', props.file, event)
 }
 </script>
 

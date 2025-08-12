@@ -82,8 +82,9 @@ pub struct RevertRequest {
 /// 回滚类型
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum RevertType {
-    WorkingTree, // 回滚工作区更改
-    Staged,      // 回滚暂存区更改
+    WorkingTree, // 回滚工作区更改到HEAD状态
+    Staged,      // 取消暂存（将暂存区重置到HEAD，保留工作区更改）
+    DiscardAll,  // 撤销所有更改（工作区和暂存区都重置到HEAD状态）
     Commit,      // 回滚提交
 }
 
