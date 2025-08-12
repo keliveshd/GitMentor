@@ -9,6 +9,7 @@ For Chinese documentation, see README.md.
 ## Overview
 
 GitMentor Lite focuses on “Commit Message Automation + Git Panel.” The frontend is built with Vue 3 + Element Plus, and the backend uses Tauri v2 + Rust. With git2 and multiple AI providers, it enables:
+
 - One‑click generation of standardized commit messages (template‑driven, parameterized)
 - Layered commit session orchestration
 - Common Git operations: view changes, stage, commit, revert
@@ -45,14 +46,17 @@ GitMentor Lite focuses on “Commit Message Automation + Git Panel.” The front
 ## Install & Run
 
 1. Clone
+
    - git clone <repo-url>
    - cd GitMentor
 
 2. Install deps
+
    - cd GitMentor-Lite
    - npm install
 
 3. Dev
+
    - npm run tauri:dev
    - Starts Vite dev server (http://localhost:1420) and the Tauri window
    - If the port is occupied, run GitMentor-Lite/kill-port-1420.bat
@@ -67,11 +71,13 @@ First‑time setup: Choose provider → Set API key → Test connection → Sele
 ## Usage
 
 - Generate a commit message
+
   1. Select a repository and review changes
   2. Choose a template and parameters in the generator view
   3. Click “Generate,” preview the message, then commit
 
 - Layered Commit
+
   1. Enter the “Layered Commit” mode
   2. The AI proposes messages per layer; edit and confirm
   3. Cancel the session at any time
@@ -131,6 +137,7 @@ GitMentor-Lite/
 ## Contributing
 
 Contributions via Issues/PRs are welcome. Please ensure:
+
 - Follow existing code style and structure
 - Rust builds successfully; frontend type‑checks and builds
 - For new providers/commands, add docs/examples and register them in the factory
@@ -138,11 +145,7 @@ Contributions via Issues/PRs are welcome. Please ensure:
 ## FAQ / Troubleshooting
 
 - Port 1420 in use: run GitMentor-Lite/kill-port-1420.bat
-- Tauri build failures: check Rust toolchain, tauri‑cli, Node version; on Windows ensure MSVC toolset
-- AI call errors: verify API keys, network/proxy; use “Test Connection”
-- Git errors: ensure the path is a valid Git repository; check permissions/file locks
 
 ## License
 
 MIT
-

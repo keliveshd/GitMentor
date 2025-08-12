@@ -2,8 +2,6 @@
 
 一个基于 Tauri + Vue 3 + Rust 的跨平台桌面应用，用 AI 生成高质量的 Git 提交信息，并集成常用 Git 操作面板与“分层提交”工作流。支持多家 AI 提供商与可配置模板，帮助你在保证规范的同时显著提升提交效率。
 
-English version follows after the Chinese section.
-
 ---
 
 ## 简介（中文）
@@ -124,8 +122,6 @@ GitMentor-Lite/
 ### 常用脚本
 
 - GitMentor-Lite/kill-port-1420.bat：清理 1420 端口占用
-- GitMentor-Lite/diagnose_and_start.bat：诊断与启动检查
-- GitMentor-Lite/cleanup_unused_icons.bat：清理多余图标
 
 ### 贡献指南
 
@@ -136,116 +132,5 @@ GitMentor-Lite/
 - 新 Provider 或命令请补充文档/示例，并在工厂中注册
 
 ### 许可证
-
-MIT
-
----
-
-## Overview (English)
-
-GitMentor Lite is a cross‑platform desktop app built with Tauri + Vue 3 + Rust. It generates high‑quality Git commit messages using multiple AI providers and configurable templates, and integrates essential Git operations including a “Layered Commit” workflow.
-
-### Features
-
-- Commit message generation
-  - Template‑driven two‑stage processing (language, max tokens, temperature, emoji, types, etc.)
-  - Layered Commit workflow
-- Git panel
-  - Diff / Stage / Commit / Revert
-  - History / Branches (as shown in the UI; evolving)
-- Providers (implemented & registered)
-  - OpenAI, Ollama, Zhipu, Anthropic, DashScope, Doubao, Gemini, Deepseek
-- Conversation logging & progress streaming
-- Desktop‑native experience (Tauri v2; Windows MSI packaging; optional Git sidecar)
-
-### Tech Stack
-
-- Desktop: Tauri v2 (opener, dialog, shell)
-- Frontend: Vue 3 + TypeScript + Vite + Element Plus
-- Backend: Rust (git2, reqwest, tokio, serde, handlebars, uuid, regex, etc.)
-- Others: @git-diff-view, vue-diff, jsdiff, pinia, vue-router
-
-### Requirements
-
-- Node.js 16+
-- Rust 1.70+
-- Git 2.30+
-- Windows/Mac/Linux (per Tauri support; default packaging target is Windows MSI)
-
-### Install & Run
-
-1. Clone
-
-- git clone <repo-url>
-- cd GitMentor
-
-2. Install deps
-
-- cd GitMentor-Lite
-- npm install
-
-3. Dev
-
-- npm run tauri:dev
-  - Starts Vite dev server (http://localhost:1420) and Tauri window
-  - If the port is occupied, run GitMentor-Lite/kill-port-1420.bat
-
-4. Build
-
-- npm run tauri:build
-  - Produces Windows MSI by default
-  - For Git sidecar, see GitMentor-Lite/src-tauri/binaries/README.md
-
-First‑time setup: Choose provider → Set API key → Test connection → Select repository
-
-### Usage
-
-- Generate a commit message: select repo, pick a template, click Generate, preview, commit
-- Layered Commit: enable the mode, review AI suggestions per layer, edit and confirm, cancel anytime
-- Git operations: Stage / Revert / Commit in the panel; History/Branches per UI (evolving)
-
-### API (Tauri commands, partial)
-
-Invoked via `@tauri-apps/api.invoke`:
-
-- Basic: `greet`
-- Git: `select_repository`, `get_git_status`, `stage_files`, `commit_changes`, `revert_files`, `generate_commit_message`
-- Debug: `get_debug_settings`, `set_debug_logs_enabled`, `update_debug_settings`
-- Git config: `get_git_config`, `update_git_config`
-- AI/Layered: `list_providers`, `update_provider_config`, `remove_provider_config`, `get_layered_sessions`, `get_conversation_records_by_session`, `check_and_process_file_tokens`, `cancel_layered_commit`, `check_first_time_setup`, `test_ai_connection`
-
-A dedicated docs/API.md is recommended for full parameter/response specs.
-
-### Structure
-
-```text
-GitMentor-Lite/
-  src/                # Frontend (Vue 3 + TS + Element Plus; icons under public/icons)
-  src-tauri/          # Rust backend & Tauri config
-    src/core/         # AI manager, templates, Git engine, layered commits, logging
-    tauri.conf.json   # Build/packaging config (devUrl, externalBin, etc.)
-  package.json        # Scripts (dev/build/tauri:dev/tauri:build)
-```
-
-### Architecture & Flow
-
-- Frontend invokes commands via `invoke`
-- Backend (Tauri + Rust) dispatches to:
-  - GitEngine (git2) for repository ops
-  - AIManager via provider factory
-  - LLMClient/PromptManager for parameters & templating
-  - ConversationLogger for auditing
-  - LayeredCommitManager for session & cancellation
-- Results are returned to the frontend for preview and confirmation
-
-### Contributing
-
-Contributions via Issues/PRs are welcome. Please ensure:
-
-- Follow existing code style and structure
-- Rust builds; frontend type‑checks and builds
-- For new providers/commands, add docs/examples and register in the factory
-
-### License
 
 MIT
