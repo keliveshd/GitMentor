@@ -148,4 +148,4 @@ Contributions via Issues/PRs are welcome. Please ensure:
 
 ## License
 
-MIT
+GPL-3.0 license
