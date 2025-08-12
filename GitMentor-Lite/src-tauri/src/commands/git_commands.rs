@@ -154,6 +154,44 @@ pub async fn checkout_branch(
         .map_err(|e| format!("Failed to checkout branch: {}", e))
 }
 
+/// 拉取当前分支
+/// 作者：Evilek
+/// 编写日期：2025-08-12
+#[tauri::command]
+pub async fn pull_current_branch(
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine.pull_current_branch()
+        .map_err(|e| format!("Failed to pull: {}", e))
+}
+
+/// 推送当前分支
+/// 作者：Evilek
+/// 编写日期：2025-08-12
+#[tauri::command]
+pub async fn push_current_branch(
+    force: bool,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine.push_current_branch(force)
+        .map_err(|e| format!("Failed to push: {}", e))
+}
+
+/// 获取远程更新
+/// 作者：Evilek
+/// 编写日期：2025-08-12
+#[tauri::command]
+pub async fn fetch_remote(
+    remote_name: Option<String>,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine.fetch_remote(remote_name.as_deref())
+        .map_err(|e| format!("Failed to fetch: {}", e))
+}
+
 /// 丢弃所有工作区更改
 /// 作者：Evilek
 #[tauri::command]

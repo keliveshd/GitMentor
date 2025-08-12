@@ -1688,6 +1688,197 @@ impl GitEngine {
         }
     }
 
+    /// 拉取当前分支
+    /// 作者：Evilek
+    /// 编写日期：2025-08-12
+    pub fn pull_current_branch(&self) -> Result<GitOperationResult> {
+        match self.git_method {
+            GitMethod::SystemGit | GitMethod::BundledGit => {
+                // 优先使用Git命令
+                match self.pull_with_command() {
+                    Ok(result) => Ok(result),
+                    Err(_e) => {
+                        // 降级到Git2库API
+                        self.pull_with_git2_api()
+                    }
+                }
+            }
+            GitMethod::Git2Api => {
+                // 直接使用Git2库API
+                self.pull_with_git2_api()
+            }
+        }
+    }
+
+    /// 使用Git命令拉取
+    fn pull_with_command(&self) -> Result<GitOperationResult> {
+        let repo_path = self
+            .get_repository_path()
+            .ok_or_else(|| anyhow!("仓库路径未设置"))?;
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(&repo_path)
+            .args(&["pull"])
+            .output()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(GitOperationResult {
+                success: true,
+                message: "成功拉取远程更改".to_string(),
+                details: Some(stdout.to_string()),
+            })
+        } else {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("拉取失败: {}", error_msg))
+        }
+    }
+
+    /// 使用Git2库API拉取
+    fn pull_with_git2_api(&self) -> Result<GitOperationResult> {
+        // Git2库的pull操作比较复杂，需要先fetch再merge
+        // 这里简化实现，建议使用Git命令
+        Err(anyhow!("Git2库API暂不支持pull操作，请使用Git命令"))
+    }
+
+    /// 推送当前分支
+    /// 作者：Evilek
+    /// 编写日期：2025-08-12
+    pub fn push_current_branch(&self, force: bool) -> Result<GitOperationResult> {
+        match self.git_method {
+            GitMethod::SystemGit | GitMethod::BundledGit => {
+                // 优先使用Git命令
+                match self.push_with_command(force) {
+                    Ok(result) => Ok(result),
+                    Err(_e) => {
+                        // 降级到Git2库API
+                        self.push_with_git2_api(force)
+                    }
+                }
+            }
+            GitMethod::Git2Api => {
+                // 直接使用Git2库API
+                self.push_with_git2_api(force)
+            }
+        }
+    }
+
+    /// 使用Git命令推送
+    fn push_with_command(&self, force: bool) -> Result<GitOperationResult> {
+        let repo_path = self
+            .get_repository_path()
+            .ok_or_else(|| anyhow!("仓库路径未设置"))?;
+        let git_command = self.get_git_command();
+
+        let mut args = vec!["push"];
+        if force {
+            args.push("--force");
+        }
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(&repo_path)
+            .args(&args)
+            .output()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let details = if !stderr.is_empty() {
+                stderr.to_string()
+            } else {
+                stdout.to_string()
+            };
+
+            Ok(GitOperationResult {
+                success: true,
+                message: if force {
+                    "成功强制推送到远程仓库".to_string()
+                } else {
+                    "成功推送到远程仓库".to_string()
+                },
+                details: Some(details),
+            })
+        } else {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("推送失败: {}", error_msg))
+        }
+    }
+
+    /// 使用Git2库API推送
+    fn push_with_git2_api(&self, _force: bool) -> Result<GitOperationResult> {
+        // Git2库的push操作需要处理认证等复杂逻辑
+        // 这里简化实现，建议使用Git命令
+        Err(anyhow!("Git2库API暂不支持push操作，请使用Git命令"))
+    }
+
+    /// 获取远程更新（fetch）
+    /// 作者：Evilek
+    /// 编写日期：2025-08-12
+    pub fn fetch_remote(&self, remote_name: Option<&str>) -> Result<GitOperationResult> {
+        match self.git_method {
+            GitMethod::SystemGit | GitMethod::BundledGit => {
+                // 优先使用Git命令
+                match self.fetch_with_command(remote_name) {
+                    Ok(result) => Ok(result),
+                    Err(_e) => {
+                        // 降级到Git2库API
+                        self.fetch_with_git2_api(remote_name)
+                    }
+                }
+            }
+            GitMethod::Git2Api => {
+                // 直接使用Git2库API
+                self.fetch_with_git2_api(remote_name)
+            }
+        }
+    }
+
+    /// 使用Git命令获取远程更新
+    fn fetch_with_command(&self, remote_name: Option<&str>) -> Result<GitOperationResult> {
+        let repo_path = self
+            .get_repository_path()
+            .ok_or_else(|| anyhow!("仓库路径未设置"))?;
+        let git_command = self.get_git_command();
+
+        let mut args = vec!["fetch"];
+        if let Some(remote) = remote_name {
+            args.push(remote);
+        }
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(&repo_path)
+            .args(&args)
+            .output()?;
+
+        if output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: true,
+                message: "成功获取远程更新".to_string(),
+                details: Some(stderr.to_string()),
+            })
+        } else {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("获取远程更新失败: {}", error_msg))
+        }
+    }
+
+    /// 使用Git2库API获取远程更新
+    fn fetch_with_git2_api(&self, remote_name: Option<&str>) -> Result<GitOperationResult> {
+        let repo = self.get_repository()?;
+        let remote_name = remote_name.unwrap_or("origin");
+
+        let mut remote = repo.find_remote(remote_name)?;
+        remote.fetch(&[] as &[&str], None, None)?;
+
+        Ok(GitOperationResult {
+            success: true,
+            message: format!("成功从 {} 获取远程更新", remote_name),
+            details: None,
+        })
+    }
+
     /// 丢弃所有工作区更改
     pub fn discard_all_changes(&self) -> Result<GitOperationResult> {
         let repo = self.get_repository()?;

@@ -11,8 +11,19 @@
     <!-- 分支下拉菜单 -->
     <div v-if="showDropdown" class="branch-dropdown" @click.stop>
       <div class="dropdown-header">
-        <h4>切换分支</h4>
-        <button @click="refreshBranches" class="refresh-btn" title="刷新分支列表">🔄</button>
+        <h4>分支管理</h4>
+        <div class="header-actions">
+          <button @click="fetchRemote" class="action-btn" title="获取远程更新" :disabled="isOperating">
+            {{ isOperating && currentOperation === 'fetch' ? '⏳' : '📥' }}
+          </button>
+          <button @click="pullCurrentBranch" class="action-btn" title="拉取当前分支" :disabled="isOperating">
+            {{ isOperating && currentOperation === 'pull' ? '⏳' : '⬇️' }}
+          </button>
+          <button @click="pushCurrentBranch" class="action-btn" title="推送当前分支" :disabled="isOperating">
+            {{ isOperating && currentOperation === 'push' ? '⏳' : '⬆️' }}
+          </button>
+          <button @click="refreshBranches" class="refresh-btn" title="刷新分支列表" :disabled="isOperating">🔄</button>
+        </div>
       </div>
 
       <!-- 搜索框 -->
@@ -89,6 +100,8 @@ const branches = ref<any[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const switchingBranch = ref<string | null>(null)
+const isOperating = ref(false)
+const currentOperation = ref<string | null>(null)
 
 // Toast
 const toast = useToast()
@@ -170,6 +183,94 @@ const switchBranch = async (branchName: string, isRemote: boolean) => {
 
 const checkoutRemoteBranch = async (branchName: string) => {
   await switchBranch(branchName, true)
+}
+
+// Git 操作方法
+const fetchRemote = async () => {
+  if (isOperating.value) return
+
+  try {
+    isOperating.value = true
+    currentOperation.value = 'fetch'
+
+    const result = await invoke('fetch_remote', {
+      remoteName: null
+    }) as any
+
+    if (result.success) {
+      toast.success(result.message, '获取成功')
+      // 刷新分支列表以显示最新的远程分支
+      await loadBranches()
+    } else {
+      toast.error(result.message || '获取远程更新失败', '操作失败')
+    }
+  } catch (error) {
+    console.error('Failed to fetch remote:', error)
+    toast.error(`获取远程更新失败: ${error}`, '操作失败')
+  } finally {
+    isOperating.value = false
+    currentOperation.value = null
+  }
+}
+
+const pullCurrentBranch = async () => {
+  if (isOperating.value) return
+
+  try {
+    isOperating.value = true
+    currentOperation.value = 'pull'
+
+    const result = await invoke('pull_current_branch') as any
+
+    if (result.success) {
+      toast.success(result.message, '拉取成功')
+      emit('branchChanged', props.currentBranch || 'unknown')
+    } else {
+      toast.error(result.message || '拉取失败', '操作失败')
+    }
+  } catch (error) {
+    console.error('Failed to pull:', error)
+    toast.error(`拉取失败: ${error}`, '操作失败')
+  } finally {
+    isOperating.value = false
+    currentOperation.value = null
+  }
+}
+
+const pushCurrentBranch = async (force = false) => {
+  if (isOperating.value) return
+
+  try {
+    isOperating.value = true
+    currentOperation.value = 'push'
+
+    const result = await invoke('push_current_branch', {
+      force
+    }) as any
+
+    if (result.success) {
+      toast.success(result.message, '推送成功')
+    } else {
+      toast.error(result.message || '推送失败', '操作失败')
+    }
+  } catch (error) {
+    console.error('Failed to push:', error)
+    const errorMsg = String(error)
+
+    // 检查是否需要强制推送
+    if (errorMsg.includes('rejected') || errorMsg.includes('non-fast-forward')) {
+      const confirmed = confirm('推送被拒绝，可能需要强制推送。是否强制推送？\n警告：强制推送可能会覆盖远程更改！')
+      if (confirmed) {
+        await pushCurrentBranch(true)
+        return
+      }
+    }
+
+    toast.error(`推送失败: ${error}`, '操作失败')
+  } finally {
+    isOperating.value = false
+    currentOperation.value = null
+  }
 }
 
 // 键盘事件处理
@@ -279,18 +380,42 @@ onUnmounted(() => {
   color: var(--text-color, #24292f);
 }
 
+.header-actions {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.action-btn,
 .refresh-btn {
   background: none;
   border: none;
   cursor: pointer;
-  padding: 4px;
+  padding: 6px 8px;
   border-radius: 4px;
   font-size: 12px;
-  transition: background 0.2s ease;
+  transition: all 0.2s ease;
+  min-width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
+.action-btn:hover,
 .refresh-btn:hover {
   background: var(--hover-bg, #e1e5e9);
+}
+
+.action-btn:disabled,
+.refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.action-btn:disabled:hover,
+.refresh-btn:disabled:hover {
+  background: none;
 }
 
 .search-box {
