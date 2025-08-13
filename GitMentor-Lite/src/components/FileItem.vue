@@ -41,7 +41,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+// import { computed } from 'vue'
 
 // Props
 interface FileStatus {
@@ -169,9 +169,9 @@ const isDeleted = () => {
 }
 
 // 判断文件是否为未跟踪文件
-const isUntracked = () => {
-  return props.file.working_tree_status === 'Untracked'
-}
+// const isUntracked = () => {
+//   return props.file.working_tree_status === 'Untracked'
+// }
 
 // 方法
 const handleToggleStage = () => {

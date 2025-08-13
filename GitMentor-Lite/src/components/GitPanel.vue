@@ -64,10 +64,20 @@
           <div class="repo-info" v-if="currentRepoPath">
             <span class="repo-name">📂 {{ getRepoName(currentRepoPath) }}</span>
             <span class="branch-info" v-if="gitStatus">
-              <span class="branch-name">🌿 {{ gitStatus.branch }}</span>
+              <BranchSwitcher :current-branch="gitStatus.branch" @branch-changed="handleBranchChanged" />
               <span v-if="gitStatus.ahead > 0" class="ahead">↑{{ gitStatus.ahead }}</span>
               <span v-if="gitStatus.behind > 0" class="behind">↓{{ gitStatus.behind }}</span>
               <span v-if="isRefreshing" class="refresh-indicator" title="正在刷新Git状态">🔄</span>
+
+              <!-- Git 快捷操作按钮 -->
+              <div class="git-quick-actions">
+                <button @click="quickPull" class="quick-action-btn" title="拉取当前分支" :disabled="isGitOperating">
+                  {{ isGitOperating && gitOperation === 'pull' ? '⏳' : '⬇️' }}
+                </button>
+                <button @click="quickPush" class="quick-action-btn" title="推送当前分支" :disabled="isGitOperating">
+                  {{ isGitOperating && gitOperation === 'push' ? '⏳' : '⬆️' }}
+                </button>
+              </div>
             </span>
           </div>
 
@@ -369,6 +379,7 @@ import Toast from './Toast.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ContextMenu, { type ContextMenuItem } from './ContextMenu.vue'
 import LayeredCommitProgress from './LayeredCommitProgress.vue'
+import BranchSwitcher from './BranchSwitcher.vue'
 import DebugSettings from './DebugSettings.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
@@ -411,6 +422,9 @@ const templatesLoaded = ref(false)
 // 刷新状态指示
 const isRefreshing = ref(false)
 const refreshCount = ref(0)
+// Git 操作状态
+const isGitOperating = ref(false)
+const gitOperation = ref<string | null>(null)
 
 // 最近仓库相关状态
 const recentRepos = ref<RecentRepo[]>([])
@@ -1799,6 +1813,101 @@ const closeContextMenu = () => {
   contextMenuFile.value = null
 }
 
+// 处理分支切换事件
+// 作者：Evilek
+// 编写日期：2025-08-12
+const handleBranchChanged = async (branchName: string) => {
+  try {
+    console.log(`🌿 [GitPanel] 分支已切换到: ${branchName}`)
+    // 刷新Git状态以更新UI
+    await refreshGitStatus(true)
+    // 刷新提交历史
+    await refreshHistory()
+    toast.success(`已切换到分支: ${branchName}`, '分支切换成功')
+  } catch (error) {
+    console.error('处理分支切换事件失败:', error)
+    toast.error(`处理分支切换失败: ${error}`, '操作失败')
+  }
+}
+
+// Git 快捷操作方法
+// 作者：Evilek
+// 编写日期：2025-08-12
+const quickPull = async () => {
+  if (isGitOperating.value) return
+
+  try {
+    isGitOperating.value = true
+    gitOperation.value = 'pull'
+
+    const result = await invoke('pull_current_branch') as any
+
+    if (result.success) {
+      toast.success(result.message, '拉取成功')
+      // 刷新Git状态以更新UI
+      await refreshGitStatus(true)
+    } else {
+      toast.error(result.message || '拉取失败', '操作失败')
+    }
+  } catch (error) {
+    console.error('快捷拉取失败:', error)
+    toast.error(`拉取失败: ${error}`, '操作失败')
+  } finally {
+    isGitOperating.value = false
+    gitOperation.value = null
+  }
+}
+
+const quickPush = async () => {
+  if (isGitOperating.value) return
+
+  try {
+    isGitOperating.value = true
+    gitOperation.value = 'push'
+
+    const result = await invoke('push_current_branch', {
+      force: false
+    }) as any
+
+    if (result.success) {
+      toast.success(result.message, '推送成功')
+    } else {
+      toast.error(result.message || '推送失败', '操作失败')
+    }
+  } catch (error) {
+    console.error('快捷推送失败:', error)
+    const errorMsg = String(error)
+
+    // 检查是否需要强制推送
+    if (errorMsg.includes('rejected') || errorMsg.includes('non-fast-forward')) {
+      const confirmed = await confirm.warning(
+        '推送冲突',
+        '推送被拒绝，可能需要强制推送。是否强制推送？\n警告：强制推送可能会覆盖远程更改！'
+      )
+      if (confirmed) {
+        try {
+          const forceResult = await invoke('push_current_branch', {
+            force: true
+          }) as any
+
+          if (forceResult.success) {
+            toast.success(forceResult.message, '强制推送成功')
+          } else {
+            toast.error(forceResult.message || '强制推送失败', '操作失败')
+          }
+        } catch (forceError) {
+          toast.error(`强制推送失败: ${forceError}`, '操作失败')
+        }
+      }
+    } else {
+      toast.error(`推送失败: ${error}`, '操作失败')
+    }
+  } finally {
+    isGitOperating.value = false
+    gitOperation.value = null
+  }
+}
+
 const handleContextMenuAction = async (action: string) => {
   if (!contextMenuFile.value) return
 
@@ -2395,6 +2504,44 @@ const handleContextMenuAction = async (action: string) => {
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
+}
+
+.git-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+}
+
+.quick-action-btn {
+  background: none;
+  border: 1px solid var(--border-color, #e1e5e9);
+  border-radius: 4px;
+  cursor: pointer;
+  padding: 4px 6px;
+  font-size: 11px;
+  color: var(--text-color, #24292f);
+  transition: all 0.2s ease;
+  min-width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.quick-action-btn:hover {
+  background: var(--hover-bg, #f6f8fa);
+  border-color: var(--border-hover, #d0d7de);
+}
+
+.quick-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.quick-action-btn:disabled:hover {
+  background: none;
+  border-color: var(--border-color, #e1e5e9);
 }
 
 .branch-name {

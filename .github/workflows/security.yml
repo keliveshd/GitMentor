@@ -1,0 +1,126 @@
+name: 'Security Scan'
+
+on:
+  schedule:
+    # 每周一凌晨 2 点运行安全扫描
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  security-scan:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'GitMentor-Lite/package-lock.json'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+
+      - name: Install npm dependencies
+        working-directory: ./GitMentor-Lite
+        run: npm ci
+
+      - name: Run npm security audit
+        working-directory: ./GitMentor-Lite
+        run: |
+          echo "=== NPM 安全审计 ==="
+          npm audit --audit-level high
+          echo "NPM 安全审计完成"
+
+      - name: Run cargo security audit
+        working-directory: ./GitMentor-Lite/src-tauri
+        run: |
+          echo "=== Cargo 安全审计 ==="
+          cargo audit
+          echo "Cargo 安全审计完成"
+
+      - name: Check for known vulnerabilities
+        run: |
+          echo "=== 检查已知漏洞 ==="
+          echo "检查 package.json 中的依赖版本..."
+          cat GitMentor-Lite/package.json | grep -E "(version|dependencies)" || true
+          echo "检查 Cargo.toml 中的依赖版本..."
+          cat GitMentor-Lite/src-tauri/Cargo.toml | grep -E "version.*=" || true
+          echo "漏洞检查完成"
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: moderate
+          allow-licenses: GPL-3.0, MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC
+
+  codeql-analysis:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript', 'rust' ]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Setup Node.js (for JavaScript analysis)
+        if: matrix.language == 'javascript'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: 'GitMentor-Lite/package-lock.json'
+
+      - name: Install dependencies (for JavaScript analysis)
+        if: matrix.language == 'javascript'
+        working-directory: ./GitMentor-Lite
+        run: npm ci
+
+      - name: Setup Rust (for Rust analysis)
+        if: matrix.language == 'rust'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies (for Rust analysis)
+        if: matrix.language == 'rust'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v3
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
