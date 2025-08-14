@@ -538,9 +538,9 @@ pub async fn execute_layered_commit(
     ai_manager: State<'_, Mutex<AIManager>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     app_handle: tauri::AppHandle,
-    templateId: String,
-    stagedFiles: Vec<String>,
-    branchName: Option<String>,
+    template_id: String,
+    staged_files: Vec<String>,
+    branch_name: Option<String>,
 ) -> Result<crate::core::layered_commit_manager::LayeredCommitResult, String> {
     use crate::core::layered_commit_manager::LayeredCommitManager;
     use std::sync::Arc;
@@ -762,7 +762,7 @@ pub struct FileTokenCheckResult {
 pub async fn check_and_process_file_tokens(
     ai_manager: State<'_, Mutex<AIManager>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
-    filePaths: Vec<String>,
+    file_paths: Vec<String>,
     template_id: Option<String>,
 ) -> Result<FileTokenCheckResult, String> {
     use crate::utils::token_counter::TokenCounter;

@@ -90,6 +90,7 @@ impl GitConfigManager {
     }
 
     /// 获取Git执行方式的显示名称
+    #[allow(dead_code)]
     pub fn get_execution_mode_display_name(mode: &GitExecutionMode) -> &'static str {
         match mode {
             GitExecutionMode::Auto => "自动检测",
