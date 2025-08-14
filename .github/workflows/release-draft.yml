@@ -73,18 +73,24 @@ jobs:
           draft: true
           prerelease: ${{ github.event.inputs.prerelease }}
 
-      - name: Commit version changes
+      - name: Create release branch and PR
         run: |
+          BRANCH="release/${{ github.event.inputs.version }}"
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action"
+          git checkout -b $BRANCH
           git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
-          git commit -m "chore: bump version to ${{ github.event.inputs.version }}" || exit 0
-          git push
+          git commit -m "chore: bump version to ${{ github.event.inputs.version }}"
+          git push origin $BRANCH
 
-      - name: Create and push tag
+          echo "::notice::Created release branch: $BRANCH"
+          echo "::notice::Please create a pull request to merge version changes"
+
+      - name: Create tag (after PR merge)
         run: |
-          git tag ${{ github.event.inputs.version }}
-          git push origin ${{ github.event.inputs.version }}
+          echo "::notice::After merging the PR, manually create tag:"
+          echo "::notice::git tag ${{ github.event.inputs.version }}"
+          echo "::notice::git push origin ${{ github.event.inputs.version }}"
 
       - name: Summary
         run: |
