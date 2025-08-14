@@ -1,0 +1,71 @@
+name: 'Release GitMentor'
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-latest'
+            args: ''
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: 'npm'
+          cache-dependency-path: GitMentor-Lite/package-lock.json
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './GitMentor-Lite/src-tauri -> target'
+
+      - name: install frontend dependencies
+        working-directory: GitMentor-Lite
+        run: npm ci
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: './GitMentor-Lite'
+          tagName: ${{ github.ref_name }}
+          releaseName: 'GitMentor ${{ github.ref_name }}'
+          releaseBody: |
+            ## GitMentor ${{ github.ref_name }}
+            
+            ### 🚀 新功能
+            - AI 驱动的 Git 提交消息生成
+            - 分层提交管理
+            - 多语言支持（19种语言）
+            - 分支切换和远程同步
+            
+            ### 📦 下载说明
+            - **Windows**: 下载 `.msi` 安装包
+            
+            ### 🔧 系统要求
+            - Windows 10+
+            - Git 2.30+
+          releaseDraft: false
+          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
+          args: ${{ matrix.args }}
