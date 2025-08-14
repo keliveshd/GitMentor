@@ -47,13 +47,16 @@ jobs:
           echo "更新版本号到 $VERSION_NUMBER"
 
           # 更新 package.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION_NUMBER\"/" GitMentor-Lite/package.json
+          npm version $VERSION_NUMBER --no-git-tag-version --prefix GitMentor-Lite
 
-          # 更新 Cargo.toml
-          sed -i "s/version = \".*\"/version = \"$VERSION_NUMBER\"/" GitMentor-Lite/src-tauri/Cargo.toml
+          # 更新 Cargo.toml (使用 cargo-edit 或手动更新)
+          cd GitMentor-Lite/src-tauri
+          # 使用更精确的 sed 命令，只更新 [package] 部分的第一个 version
+          sed -i "0,/^\[package\]/,/^\[/{s/^version = \"[^\"]*\"/version = \"$VERSION_NUMBER\"/}" Cargo.toml
 
           # 更新 tauri.conf.json
-          sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION_NUMBER\"/" GitMentor-Lite/src-tauri/tauri.conf.json
+          cd ../..
+          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"$VERSION_NUMBER\"/" GitMentor-Lite/src-tauri/tauri.conf.json
 
       - name: Generate changelog
         id: changelog
