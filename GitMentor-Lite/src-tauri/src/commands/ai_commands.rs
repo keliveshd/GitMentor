@@ -583,9 +583,9 @@ pub async fn execute_layered_commit(
 
     // 调用真正的分层提交逻辑
     let result = manager.execute_layered_commit(
-        &templateId,
-        stagedFiles,
-        branchName,
+        &template_id,
+        staged_files,
+        branch_name,
         repository_path,
         progress_callback,
     ).await;
@@ -769,7 +769,7 @@ pub async fn check_and_process_file_tokens(
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
-    println!("🔍 [check_and_process_file_tokens] 开始处理 {} 个文件", filePaths.len());
+    println!("🔍 [check_and_process_file_tokens] 开始处理 {} 个文件", file_paths.len());
 
     let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
     let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
@@ -790,14 +790,14 @@ pub async fn check_and_process_file_tokens(
     drop(ai_manager_guard);
     println!("🔍 [check_and_process_file_tokens] 模型token限制: {:?}", model_max_tokens);
 
-    let mut processed_files = Vec::new();
+    let mut processed_files: Vec<String> = Vec::new();
     let mut needs_split = false;
 
     println!("🔍 [check_and_process_file_tokens] 开始获取文件diff...");
 
     // 性能优化：使用批量diff获取，避免单个文件的重复Git操作
     let git_engine_guard = git_engine_arc.read().await;
-    let batch_diff_result = git_engine_guard.get_diff_summary(&filePaths);
+    let batch_diff_result = git_engine_guard.get_diff_summary(&file_paths);
     drop(git_engine_guard);
 
     // 如果批量获取失败，回退到单个文件处理（但添加超时保护）
@@ -808,7 +808,7 @@ pub async fn check_and_process_file_tokens(
             println!("🔍 [check_and_process_file_tokens] 使用批量diff，长度: {}", batch_diff.len());
             // 简化处理：如果能获取到批量diff，就假设所有文件都有变更
             // 这是一个权衡：牺牲一些精确性换取性能
-            for file_path in &filePaths {
+            for file_path in &file_paths {
                 // 为每个文件分配一部分diff内容（简化估算）
                 let estimated_diff = format!("diff --git a/{} b/{}\n--- a/{}\n+++ b/{}\n@@ -1,10 +1,10 @@\n 文件变更内容...",
                                             file_path, file_path, file_path, file_path);
@@ -820,8 +820,8 @@ pub async fn check_and_process_file_tokens(
             // 回退到原来的逻辑，但添加超时保护
             let git_engine_guard = git_engine_arc.read().await;
 
-            for (index, file_path) in filePaths.iter().enumerate() {
-                println!("🔍 [check_and_process_file_tokens] 处理文件 {}/{}: {}", index + 1, filePaths.len(), file_path);
+            for (index, file_path) in file_paths.iter().enumerate() {
+                println!("🔍 [check_and_process_file_tokens] 处理文件 {}/{}: {}", index + 1, file_paths.len(), file_path);
 
                 // 使用优化后的Git diff获取
                 let start_time = std::time::Instant::now();
@@ -845,8 +845,8 @@ pub async fn check_and_process_file_tokens(
 
     // 智能分组策略：根据token使用量决定处理方式
     let mut total_tokens = 0u32;
-    let mut large_files = Vec::new();
-    let mut normal_files = Vec::new();
+    let mut large_files: Vec<(String, String, u32)> = Vec::new();
+    let mut normal_files: Vec<(String, String, u32)> = Vec::new();
 
     // 计算每个文件的token使用量
     for (file_path, diff_content_opt) in file_diffs {
@@ -859,15 +859,15 @@ pub async fn check_and_process_file_tokens(
             if TokenCounter::is_over_limit(file_tokens, model_max_tokens) {
                 println!("⚠️ [check_and_process_file_tokens] 文件 {} 超过token限制，标记为大文件", file_path);
                 needs_split = true;
-                large_files.push((file_path, diff_content, file_tokens));
+                large_files.push((file_path.clone(), diff_content.clone(), file_tokens));
             } else {
                 total_tokens += file_tokens;
-                normal_files.push((file_path, diff_content, file_tokens));
+                normal_files.push((file_path.clone(), diff_content.clone(), file_tokens));
             }
         } else {
             // diff获取失败的文件直接添加
             println!("⚠️ [check_and_process_file_tokens] 文件 {} diff获取失败，直接添加", file_path);
-            processed_files.push(file_path);
+            processed_files.push(file_path.clone());
         }
     }
 
@@ -910,7 +910,7 @@ pub async fn check_and_process_file_tokens(
             needs_split = true;
         } else {
             // 文件大小合适，直接处理
-            processed_files.push(file_path);
+            processed_files.push(file_path.clone());
         }
     }
 
