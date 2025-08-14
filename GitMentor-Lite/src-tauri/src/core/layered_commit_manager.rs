@@ -449,6 +449,7 @@ impl LayeredCommitManager {
     }
 
     /// 分析单个文件（原方法，保持向后兼容）
+    #[allow(dead_code)]
     async fn analyze_single_file(
         &self,
         file_path: &str,
@@ -700,6 +701,7 @@ impl LayeredCommitManager {
     /// 生成最终提交消息（原方法，保持向后兼容）
     /// 作者：Evilek
     /// 编写日期：2025-08-05
+    #[allow(dead_code)]
     async fn generate_final_commit_message(
         &self,
         template_id: &str,
@@ -850,6 +852,7 @@ impl LayeredCommitManager {
     /// 截取新增文件内容（保留原方法用于向后兼容）
     /// Author: Evilek, Date: 2025-01-08
     /// 根据token限制截取新增文件的前面部分
+    #[allow(dead_code)]
     async fn truncate_new_file_content(&self, diff_content: &str) -> Result<String> {
         let ai_manager = self.ai_manager.read().await;
         let config = ai_manager.get_config().await;
@@ -949,6 +952,7 @@ impl LayeredCommitManager {
     /// 分割文件内容（保留原方法用于向后兼容）
     /// Author: Evilek, Date: 2025-01-08
     /// 将大文件内容分割成多个部分
+    #[allow(dead_code)]
     async fn split_file_content(&self, diff_content: &str) -> Result<Vec<String>> {
         let ai_manager = self.ai_manager.read().await;
         let config = ai_manager.get_config().await;
@@ -1002,6 +1006,7 @@ impl LayeredCommitManager {
     /// 将AI配置中的语言名称转换为语言代码
     /// Author: Evilek, Date: 2025-01-08
     /// 统一语言转换逻辑，避免代码重复
+    #[allow(dead_code)]
     fn convert_ai_language_to_code(language_name: &str) -> String {
         match language_name {
             "Simplified Chinese" => "zh-CN",

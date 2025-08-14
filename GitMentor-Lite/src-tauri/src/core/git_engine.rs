@@ -30,6 +30,7 @@ pub struct GitEngine {
 }
 
 impl GitEngine {
+    #[allow(dead_code)]
     pub fn new() -> Self {
         let git_config = GitConfig::default();
         let git_method = Self::determine_git_method(&git_config);
@@ -79,6 +80,7 @@ impl GitEngine {
     /// 获取当前Git配置
     /// 作者：Evilek
     /// 编写日期：2025-08-07
+    #[allow(dead_code)]
     pub fn get_config(&self) -> &GitConfig {
         &self.git_config
     }
@@ -920,7 +922,7 @@ impl GitEngine {
     /// 使用Git命令行工具获取文件diff（性能优化）
     /// Author: Evilek, Date: 2025-01-08
     fn get_file_diff_via_command(&self, repo_path: &str, file_path: &str) -> Result<String> {
-        use std::process::Command;
+        // use std::process::Command;
 
         // 使用缓存的Git路径，如果没有则回退到检测
         let git_cmd = if let Some(ref git_path) = self.git_path {
@@ -1396,7 +1398,7 @@ impl GitEngine {
     }
 
     /// 获取Git签名
-    fn get_signature(&self, repo: &Repository) -> Result<Signature> {
+    fn get_signature(&self, repo: &Repository) -> Result<Signature<'_>> {
         // 尝试从配置获取用户信息
         let config = repo.config()?;
         let name = config

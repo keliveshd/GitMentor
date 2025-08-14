@@ -1,22 +1,26 @@
-name: 'Draft Release'
+name: "Draft Release"
 
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g., v1.0.0)'
+        description: "Release version (e.g., v1.0.0)"
         required: true
         type: string
       prerelease:
-        description: 'Is this a pre-release?'
+        description: "Is this a pre-release?"
         required: false
         default: false
         type: boolean
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   create-draft:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -39,15 +43,15 @@ jobs:
         run: |
           VERSION="${{ github.event.inputs.version }}"
           VERSION_NUMBER="${VERSION#v}"  # 移除 v 前缀
-          
+
           echo "更新版本号到 $VERSION_NUMBER"
-          
+
           # 更新 package.json
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION_NUMBER\"/" GitMentor-Lite/package.json
-          
+
           # 更新 Cargo.toml
           sed -i "s/version = \".*\"/version = \"$VERSION_NUMBER\"/" GitMentor-Lite/src-tauri/Cargo.toml
-          
+
           # 更新 tauri.conf.json
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION_NUMBER\"/" GitMentor-Lite/src-tauri/tauri.conf.json
 
@@ -55,58 +59,8 @@ jobs:
         id: changelog
         run: |
           echo "生成更新日志..."
-          
-          # 获取最新的标签
-          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-          
-          if [ -z "$LATEST_TAG" ]; then
-            echo "这是第一个版本"
-            CHANGELOG="## 🎉 首次发布
-
-### ✨ 主要功能
-- AI 驱动的 Git 提交消息生成
-- 支持多种 AI 提供商（OpenAI、Claude、Gemini 等）
-- 分层提交管理系统
-- 多语言支持（19种语言）
-- 分支切换和远程同步
-- 直观的用户界面
-
-### 🔧 技术特性
-- 基于 Tauri v2 的跨平台桌面应用
-- Vue 3 + TypeScript 前端
-- Rust 后端
-- 支持 Windows、macOS、Linux
-
-### 📦 安装说明
-请根据您的操作系统下载对应的安装包：
-- Windows: 下载 .msi 文件
-- macOS: 下载 .dmg 文件  
-- Linux: 下载 .deb、.rpm 或 .AppImage 文件"
-          else
-            echo "生成从 $LATEST_TAG 到当前的更新日志"
-            CHANGELOG="## 🚀 更新内容
-
-$(git log $LATEST_TAG..HEAD --pretty=format:"- %s" --no-merges)
-
-### 📦 下载说明
-请根据您的操作系统下载对应的安装包：
-- **Windows**: 下载 \`.msi\` 安装包
-- **macOS**: 下载 \`.dmg\` 磁盘映像
-- **Linux**: 下载 \`.deb\` (Ubuntu/Debian) 或 \`.rpm\` (CentOS/RHEL) 或 \`.AppImage\` (通用)
-
-### 🔧 系统要求
-- Node.js 16+
-- Git 2.30+
-- 支持的操作系统：Windows 10+, macOS 10.15+, Ubuntu 20.04+"
-          fi
-          
-          # 保存到文件
-          echo "$CHANGELOG" > changelog.md
-          
-          # 输出到 GitHub Actions
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          CHANGELOG="GitMentor 发布 - AI 驱动的 Git 提交消息生成工具"
+          echo "changelog=$CHANGELOG" >> $GITHUB_OUTPUT
 
       - name: Create draft release
         uses: actions/create-release@v1

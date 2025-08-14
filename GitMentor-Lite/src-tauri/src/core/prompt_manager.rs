@@ -190,6 +190,7 @@ impl PromptManager {
     /// 计算模板内容哈希
     /// 作者：Evilek
     /// 编写日期：2025-01-29
+    #[allow(dead_code)]
     fn calculate_template_hash(template: &PromptTemplate) -> String {
         let mut hasher = Sha256::new();
         hasher.update(template.system_prompt.as_bytes());
@@ -859,6 +860,7 @@ config.js: 更新配置参数
     /// 执行完整的两段式提交流程（新的核心方法）
     /// 作者：Evilek
     /// 编写日期：2025-08-08
+    #[allow(dead_code)]
     pub async fn execute_two_phase_commit<F>(
         &self,
         template_id: &str,
@@ -1064,6 +1066,7 @@ config.js: 更新配置参数
     /// 作者：Evilek
     /// 编写日期：2025-01-29
     /// 更新日期：2025-08-08 (支持两段式处理)
+    #[allow(dead_code)]
     pub fn generate_dynamic_system_prompt(
         &self,
         template: &PromptTemplate,
