@@ -25,7 +25,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: "windows-latest"
+          - platform: "windows-2022"
             args: ""
             target: "x86_64-pc-windows-msvc"
             arch: "x86_64"
@@ -95,13 +95,10 @@ jobs:
         run: ls -la ./artifacts
 
       - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          release_name: GitMentor ${{ github.ref_name }}
+          name: GitMentor ${{ github.ref_name }}
           draft: false
           prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
           body: |
@@ -119,28 +116,18 @@ jobs:
             ### 🔧 系统要求
             - Windows 10+
             - Git 2.30+
-
-      - name: Find and upload release assets
-        run: |
-          # 查找并上传 Windows 构建产物
-          find ./artifacts -type f \( -name "*.msi" -o -name "*.exe" \) -exec echo "Found: {}" \;
-
-          # 上传 Windows MSI 文件
-          for file in ./artifacts/gitmentor-windows-x86_64/*.msi; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "Uploading Windows MSI: $filename"
-              gh release upload ${{ github.ref_name }} "$file" --clobber
-            fi
-          done
-
-          # 上传 Windows EXE 文件
-          for file in ./artifacts/gitmentor-windows-x86_64/*.exe; do
-            if [ -f "$file" ]; then
-              filename=$(basename "$file")
-              echo "Uploading Windows EXE: $filename"
-              gh release upload ${{ github.ref_name }} "$file" --clobber
-            fi
-          done
+          files: |
+            ./artifacts/gitmentor-windows-x86_64/msi/*.msi
+            ./artifacts/gitmentor-windows-x86_64/nsis/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Debug artifacts structure
+        run: |
+          # 显示目录结构用于调试
+          echo "=== 显示 artifacts 目录结构 ==="
+          ls -la ./artifacts/
+          echo "=== 显示 gitmentor-windows-x86_64 目录结构 ==="
+          ls -la ./artifacts/gitmentor-windows-x86_64/
+          echo "=== 递归显示所有文件 ==="
+          find ./artifacts -type f -name "*" -exec echo "Found file: {}" \;
