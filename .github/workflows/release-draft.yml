@@ -49,19 +49,10 @@ jobs:
           # 更新 package.json
           npm version $VERSION_NUMBER --no-git-tag-version --prefix GitMentor-Lite
 
-          # 更新 Cargo.toml (使用更精确的方法)
+          # 更新 Cargo.toml (只更新第3行的版本，这是 [package] 部分的版本)
           cd GitMentor-Lite/src-tauri
-          # 使用 awk 更安全地更新 [package] 部分的版本
-          awk -v version="$VERSION_NUMBER" '
-          /^\[package\]/ { in_package = 1 }
-          /^\[/ && !/^\[package\]/ { in_package = 0 }
-          in_package && /^version = / && !updated {
-            print "version = \"" version "\""
-            updated = 1
-            next
-          }
-          { print }
-          ' Cargo.toml > Cargo.toml.tmp && mv Cargo.toml.tmp Cargo.toml
+          # 使用行号精确更新，避免误修改依赖版本
+          sed -i "3s/version = .*/version = \"$VERSION_NUMBER\"/" Cargo.toml
 
           # 更新 tauri.conf.json
           cd ../..
