@@ -193,14 +193,15 @@ impl GitEngine {
             debug_log!("[DEBUG] ========================================");
             return GitMethod::BundledGit;
         } else {
-            debug_log!("[WARN] ❌ 内置Git不可用，降级到Git2库API");
+            debug_log!("[ERROR] ❌ 内置Git不可用");
         }
 
-        // 3. 降级到Git2库API
-        debug_log!("[DEBUG] 步骤3: 降级到Git2库API");
-        debug_log!("[WARN] ⚠️  系统Git和内置Git都不可用，使用Git2库API（功能受限）");
+        // 3. 不再自动降级到Git2库API，强制要求Git命令
+        debug_log!("[DEBUG] 步骤3: 强制返回SystemGit，要求用户安装Git");
+        debug_log!("[ERROR] ⚠️  系统Git和内置Git都不可用，GitMentor需要Git命令行工具才能正常工作");
+        debug_log!("[ERROR] 请安装Git并确保在PATH中可用，或者在设置中手动配置为Git2Api模式");
         debug_log!("[DEBUG] ========================================");
-        GitMethod::Git2Api
+        GitMethod::SystemGit // 强制返回SystemGit，让错误在实际使用时暴露
     }
 
     /// 检测系统是否安装了Git命令
@@ -1104,27 +1105,26 @@ impl GitEngine {
     pub fn get_status(&self) -> Result<GitStatusResult> {
         println!("[DEBUG] 开始获取Git状态，使用方式: {:?}", self.git_method);
 
-        match self.git_method {
-            GitMethod::SystemGit | GitMethod::BundledGit => {
-                // 优先使用Git命令（超快速）
-                match self.get_status_with_git_command() {
-                    Ok(result) => {
-                        println!("[DEBUG] Git命令方式成功");
-                        return Ok(result);
+        // 强制优先使用Git命令，只有在完全不可用时才降级
+        match self.get_status_with_git_command() {
+            Ok(result) => {
+                println!("[DEBUG] Git命令方式成功");
+                return Ok(result);
+            }
+            Err(e) => {
+                println!("[ERROR] Git命令执行失败: {}", e);
+                println!("[ERROR] 请检查Git是否正确安装并在PATH中可用");
+
+                // 只有在明确配置为Git2Api时才使用，否则返回错误
+                match self.git_method {
+                    GitMethod::Git2Api => {
+                        println!("[WARN] 强制使用Git2库API作为最后手段");
+                        self.get_status_with_git2_api()
                     }
-                    Err(e) => {
-                        println!("[WARN] Git命令方式失败，降级到Git2库API: {}", e);
-                        // 降级到Git2库API
-                    }
+                    _ => Err(anyhow!("Git命令不可用: {}。请安装Git或检查PATH配置", e)),
                 }
             }
-            GitMethod::Git2Api => {
-                println!("[DEBUG] 直接使用Git2库API");
-            }
         }
-
-        // 使用Git2库API作为备选方案
-        self.get_status_with_git2_api()
     }
 
     /// 使用Git2库API获取状态（备选方案）
@@ -1221,6 +1221,76 @@ impl GitEngine {
     /// 编写日期：2025-01-25
     /// 更新日期：2025-01-29 (添加删除文件和大文件处理逻辑)
     pub fn stage_files(&self, request: &StageRequest) -> Result<GitOperationResult> {
+        // 强制优先使用Git命令
+        match self.stage_files_with_command(request) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                println!("[ERROR] Git stage命令失败: {}", e);
+                println!("[ERROR] 文件暂存失败，请检查文件状态");
+
+                // 只有在明确配置为Git2Api时才使用
+                match self.git_method {
+                    GitMethod::Git2Api => {
+                        println!("[WARN] 尝试使用Git2库API进行文件暂存");
+                        self.stage_files_with_git2_api(request)
+                    }
+                    _ => Err(anyhow!("文件暂存失败: {}。请使用Git命令行工具", e)),
+                }
+            }
+        }
+    }
+
+    /// 使用Git命令暂存文件
+    fn stage_files_with_command(&self, request: &StageRequest) -> Result<GitOperationResult> {
+        let repo_path = self
+            .get_repository_path()
+            .ok_or_else(|| anyhow!("仓库路径未设置"))?;
+        let git_command = self.get_git_command();
+
+        let mut success_count = 0;
+        let mut failed_files = Vec::new();
+
+        for file_path in &request.file_paths {
+            let mut args = vec!["add"];
+
+            if request.stage {
+                // 暂存文件
+                args.push(file_path);
+            } else {
+                // 取消暂存文件
+                args = vec!["reset", "HEAD", file_path];
+            }
+
+            let output = Self::create_hidden_command(&git_command)
+                .current_dir(&repo_path)
+                .args(&args)
+                .output()?;
+
+            if output.status.success() {
+                success_count += 1;
+            } else {
+                let error_msg = String::from_utf8_lossy(&output.stderr);
+                failed_files.push(format!("{}: {}", file_path, error_msg));
+            }
+        }
+
+        if failed_files.is_empty() {
+            Ok(GitOperationResult {
+                success: true,
+                message: if request.stage {
+                    format!("成功暂存 {} 个文件", success_count)
+                } else {
+                    format!("成功取消暂存 {} 个文件", success_count)
+                },
+                details: None,
+            })
+        } else {
+            Err(anyhow!("部分文件操作失败: {}", failed_files.join(", ")))
+        }
+    }
+
+    /// 使用Git2库API暂存文件（备选方案）
+    fn stage_files_with_git2_api(&self, request: &StageRequest) -> Result<GitOperationResult> {
         let repo = self.get_repository()?;
         let mut index = repo.index()?;
 
@@ -1326,6 +1396,74 @@ impl GitEngine {
 
     /// 提交更改
     pub fn commit(&self, request: &CommitRequest) -> Result<GitOperationResult> {
+        // 强制优先使用Git命令
+        match self.commit_with_command(request) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                println!("[ERROR] Git commit命令失败: {}", e);
+                println!("[ERROR] 提交失败，请检查暂存区状态和提交信息");
+
+                // 只有在明确配置为Git2Api时才使用
+                match self.git_method {
+                    GitMethod::Git2Api => {
+                        println!("[WARN] 尝试使用Git2库API进行提交");
+                        self.commit_with_git2_api(request)
+                    }
+                    _ => Err(anyhow!("提交失败: {}。请使用Git命令行工具", e)),
+                }
+            }
+        }
+    }
+
+    /// 使用Git命令提交
+    fn commit_with_command(&self, request: &CommitRequest) -> Result<GitOperationResult> {
+        let repo_path = self
+            .get_repository_path()
+            .ok_or_else(|| anyhow!("仓库路径未设置"))?;
+        let git_command = self.get_git_command();
+
+        // 如果指定了文件，先暂存这些文件
+        if !request.selected_files.is_empty() {
+            for file_path in &request.selected_files {
+                let output = Self::create_hidden_command(&git_command)
+                    .current_dir(&repo_path)
+                    .args(&["add", file_path])
+                    .output()?;
+
+                if !output.status.success() {
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+                    return Err(anyhow!("暂存文件 {} 失败: {}", file_path, error_msg));
+                }
+            }
+        }
+
+        // 构建提交命令
+        let mut args = vec!["commit", "-m", &request.message];
+
+        if request.amend {
+            args.insert(1, "--amend");
+        }
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(&repo_path)
+            .args(&args)
+            .output()?;
+
+        if output.status.success() {
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            Ok(GitOperationResult {
+                success: true,
+                message: "提交成功".to_string(),
+                details: Some(stdout.to_string()),
+            })
+        } else {
+            let error_msg = String::from_utf8_lossy(&output.stderr);
+            Err(anyhow!("提交失败: {}", error_msg))
+        }
+    }
+
+    /// 使用Git2库API提交（备选方案）
+    fn commit_with_git2_api(&self, request: &CommitRequest) -> Result<GitOperationResult> {
         let repo = self.get_repository()?;
         let mut index = repo.index()?;
 
@@ -1562,20 +1700,21 @@ impl GitEngine {
         branch_name: &str,
         is_remote: bool,
     ) -> Result<GitOperationResult> {
-        match self.git_method {
-            GitMethod::SystemGit | GitMethod::BundledGit => {
-                // 优先使用Git命令
-                match self.checkout_branch_with_command(branch_name, is_remote) {
-                    Ok(result) => Ok(result),
-                    Err(_e) => {
-                        // 降级到Git2库API
+        // 强制优先使用Git命令
+        match self.checkout_branch_with_command(branch_name, is_remote) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                println!("[ERROR] Git checkout命令失败: {}", e);
+                println!("[ERROR] 分支切换失败，请检查分支名称和Git状态");
+
+                // 只有在明确配置为Git2Api时才使用
+                match self.git_method {
+                    GitMethod::Git2Api => {
+                        println!("[WARN] 尝试使用Git2库API进行分支切换");
                         self.checkout_branch_with_git2_api(branch_name, is_remote)
                     }
+                    _ => Err(anyhow!("分支切换失败: {}。请使用Git命令行工具", e)),
                 }
-            }
-            GitMethod::Git2Api => {
-                // 直接使用Git2库API
-                self.checkout_branch_with_git2_api(branch_name, is_remote)
             }
         }
     }
@@ -1694,20 +1833,21 @@ impl GitEngine {
     /// 作者：Evilek
     /// 编写日期：2025-08-12
     pub fn pull_current_branch(&self) -> Result<GitOperationResult> {
-        match self.git_method {
-            GitMethod::SystemGit | GitMethod::BundledGit => {
-                // 优先使用Git命令
-                match self.pull_with_command() {
-                    Ok(result) => Ok(result),
-                    Err(_e) => {
-                        // 降级到Git2库API
+        // 强制优先使用Git命令
+        match self.pull_with_command() {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                println!("[ERROR] Git pull命令失败: {}", e);
+                println!("[ERROR] 拉取失败，可能存在合并冲突或网络问题");
+
+                // 只有在明确配置为Git2Api时才使用
+                match self.git_method {
+                    GitMethod::Git2Api => {
+                        println!("[WARN] 尝试使用Git2库API进行拉取（功能有限）");
                         self.pull_with_git2_api()
                     }
+                    _ => Err(anyhow!("拉取失败: {}。请使用Git命令行解决冲突", e)),
                 }
-            }
-            GitMethod::Git2Api => {
-                // 直接使用Git2库API
-                self.pull_with_git2_api()
             }
         }
     }
@@ -1739,29 +1879,89 @@ impl GitEngine {
 
     /// 使用Git2库API拉取
     fn pull_with_git2_api(&self) -> Result<GitOperationResult> {
-        // Git2库的pull操作比较复杂，需要先fetch再merge
-        // 这里简化实现，建议使用Git命令
-        Err(anyhow!("Git2库API暂不支持pull操作，请使用Git命令"))
+        let repo = self.get_repository()?;
+
+        // 第一步：Fetch
+        let mut remote = repo.find_remote("origin").or_else(|_| {
+            let remotes = repo.remotes()?;
+            if let Some(remote_name) = remotes.get(0) {
+                repo.find_remote(remote_name)
+            } else {
+                Err(git2::Error::from_str("没有找到远程仓库"))
+            }
+        })?;
+
+        // 设置fetch回调
+        let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            if let Some(username) = username_from_url {
+                git2::Cred::ssh_key_from_agent(username)
+            } else {
+                git2::Cred::default()
+            }
+        });
+
+        let mut fetch_options = git2::FetchOptions::new();
+        fetch_options.remote_callbacks(callbacks);
+
+        // 执行fetch
+        remote.fetch(&[] as &[&str], Some(&mut fetch_options), None)?;
+
+        // 第二步：Merge
+        let head = repo.head()?;
+        let branch_name = head.shorthand().unwrap_or("HEAD");
+        let upstream_branch = format!("refs/remotes/origin/{}", branch_name);
+
+        // 检查是否有upstream分支
+        let upstream_ref = repo.find_reference(&upstream_branch)?;
+        let upstream_commit = repo.reference_to_annotated_commit(&upstream_ref)?;
+
+        // 执行merge分析
+        let analysis = repo.merge_analysis(&[&upstream_commit])?;
+
+        if analysis.0.is_up_to_date() {
+            Ok(GitOperationResult {
+                success: true,
+                message: "当前分支已是最新".to_string(),
+                details: Some("无需拉取".to_string()),
+            })
+        } else if analysis.0.is_fast_forward() {
+            // 快进合并
+            let mut reference = repo.find_reference(&format!("refs/heads/{}", branch_name))?;
+            reference.set_target(upstream_commit.id(), "Fast-forward merge")?;
+            repo.set_head(&format!("refs/heads/{}", branch_name))?;
+            repo.checkout_head(Some(git2::build::CheckoutBuilder::default().force()))?;
+
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("成功快进合并分支 {}", branch_name),
+                details: Some("执行了快进合并".to_string()),
+            })
+        } else {
+            // 需要普通合并，这比较复杂，建议使用Git命令
+            Err(anyhow!("需要合并提交，建议使用Git命令执行pull操作"))
+        }
     }
 
     /// 推送当前分支
     /// 作者：Evilek
     /// 编写日期：2025-08-12
     pub fn push_current_branch(&self, force: bool) -> Result<GitOperationResult> {
-        match self.git_method {
-            GitMethod::SystemGit | GitMethod::BundledGit => {
-                // 优先使用Git命令
-                match self.push_with_command(force) {
-                    Ok(result) => Ok(result),
-                    Err(_e) => {
-                        // 降级到Git2库API
+        // 强制优先使用Git命令
+        match self.push_with_command(force) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                println!("[ERROR] Git push命令失败: {}", e);
+                println!("[ERROR] 推送失败，可能需要先拉取或存在权限问题");
+
+                // 只有在明确配置为Git2Api时才使用
+                match self.git_method {
+                    GitMethod::Git2Api => {
+                        println!("[WARN] 尝试使用Git2库API进行推送（需要正确的认证配置）");
                         self.push_with_git2_api(force)
                     }
+                    _ => Err(anyhow!("推送失败: {}。请检查网络连接和权限配置", e)),
                 }
-            }
-            GitMethod::Git2Api => {
-                // 直接使用Git2库API
-                self.push_with_git2_api(force)
             }
         }
     }
@@ -1808,30 +2008,97 @@ impl GitEngine {
     }
 
     /// 使用Git2库API推送
-    fn push_with_git2_api(&self, _force: bool) -> Result<GitOperationResult> {
-        // Git2库的push操作需要处理认证等复杂逻辑
-        // 这里简化实现，建议使用Git命令
-        Err(anyhow!("Git2库API暂不支持push操作，请使用Git命令"))
+    fn push_with_git2_api(&self, force: bool) -> Result<GitOperationResult> {
+        let repo = self.get_repository()?;
+
+        // 获取当前分支
+        let head = repo.head()?;
+        let branch_name = head.shorthand().unwrap_or("HEAD");
+
+        // 获取远程仓库
+        let mut remote = repo.find_remote("origin").or_else(|_| {
+            // 如果没有origin，尝试获取第一个远程仓库
+            let remotes = repo.remotes()?;
+            if let Some(remote_name) = remotes.get(0) {
+                repo.find_remote(remote_name)
+            } else {
+                Err(git2::Error::from_str("没有找到远程仓库"))
+            }
+        })?;
+
+        // 构建推送引用规范
+        let refspec = if force {
+            format!("+refs/heads/{}:refs/heads/{}", branch_name, branch_name)
+        } else {
+            format!("refs/heads/{}:refs/heads/{}", branch_name, branch_name)
+        };
+
+        // 设置推送选项和回调
+        let mut push_options = git2::PushOptions::new();
+
+        // 设置认证回调
+        let mut callbacks = git2::RemoteCallbacks::new();
+        callbacks.credentials(|_url, username_from_url, _allowed_types| {
+            // 尝试使用SSH密钥
+            if let Some(username) = username_from_url {
+                git2::Cred::ssh_key_from_agent(username)
+            } else {
+                // 尝试使用默认凭据
+                git2::Cred::default()
+            }
+        });
+
+        // 设置推送进度回调
+        callbacks.push_update_reference(|refname, status| {
+            if let Some(msg) = status {
+                println!("推送更新失败 {}: {}", refname, msg);
+                Err(git2::Error::from_str("推送更新失败"))
+            } else {
+                println!("推送更新成功: {}", refname);
+                Ok(())
+            }
+        });
+
+        push_options.remote_callbacks(callbacks);
+
+        // 执行推送
+        match remote.push(&[&refspec], Some(&mut push_options)) {
+            Ok(_) => Ok(GitOperationResult {
+                success: true,
+                message: if force {
+                    format!("成功强制推送分支 {} 到远程仓库", branch_name)
+                } else {
+                    format!("成功推送分支 {} 到远程仓库", branch_name)
+                },
+                details: Some(format!("推送引用: {}", refspec)),
+            }),
+            Err(e) => {
+                // 如果Git2推送失败，提供更详细的错误信息
+                let error_msg = format!("Git2推送失败: {}。建议使用系统Git命令进行推送", e);
+                Err(anyhow!(error_msg))
+            }
+        }
     }
 
     /// 获取远程更新（fetch）
     /// 作者：Evilek
     /// 编写日期：2025-08-12
     pub fn fetch_remote(&self, remote_name: Option<&str>) -> Result<GitOperationResult> {
-        match self.git_method {
-            GitMethod::SystemGit | GitMethod::BundledGit => {
-                // 优先使用Git命令
-                match self.fetch_with_command(remote_name) {
-                    Ok(result) => Ok(result),
-                    Err(_e) => {
-                        // 降级到Git2库API
+        // 强制优先使用Git命令
+        match self.fetch_with_command(remote_name) {
+            Ok(result) => Ok(result),
+            Err(e) => {
+                println!("[ERROR] Git fetch命令失败: {}", e);
+                println!("[ERROR] 获取远程更新失败，请检查网络连接");
+
+                // 只有在明确配置为Git2Api时才使用
+                match self.git_method {
+                    GitMethod::Git2Api => {
+                        println!("[WARN] 尝试使用Git2库API进行fetch");
                         self.fetch_with_git2_api(remote_name)
                     }
+                    _ => Err(anyhow!("获取远程更新失败: {}。请检查网络连接", e)),
                 }
-            }
-            GitMethod::Git2Api => {
-                // 直接使用Git2库API
-                self.fetch_with_git2_api(remote_name)
             }
         }
     }

@@ -2,7 +2,7 @@
 name = "gitmentorlite"
 version = "0.1.3"
 description = "A Tauri App"
-authors = ["you"]
+authors = ["Keliveshd"]
 edition = "2021"
 
 # 指定二进制文件名 - Author: Evilek, Date: 2025-01-10
