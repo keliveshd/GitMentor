@@ -100,7 +100,7 @@ jobs:
           git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
           git commit -m "chore: bump version to $VERSION"
           if ($LASTEXITCODE -eq 0) {
-            git push origin ${{ github.ref_name }}
+            git push origin "refs/heads/${{ github.ref_name }}"
             Write-Host "✅ 已提交并推送版本更新"
           } else {
             Write-Host "ℹ️ 没有需要提交的更改"
