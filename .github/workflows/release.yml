@@ -67,14 +67,20 @@ jobs:
             echo "无需更新版本文件"
           fi
 
-      # 更新版本文件（仅在手动输入版本号时） - Author: Evilek, Date: 2025-01-15
-      - name: Update version files
+      # 更新版本文件并创建PR（仅在手动输入版本号时） - Author: Evilek, Date: 2025-01-15
+      - name: Update version files and create PR
         if: steps.get_version.outputs.need_update == 'true'
         run: |
           $VERSION = "${{ steps.get_version.outputs.version }}"
           # 移除v前缀获取纯版本号
           $CLEAN_VERSION = $VERSION -replace '^v', ''
-          Write-Host "更新版本文件到: $CLEAN_VERSION"
+          $BRANCH_NAME = "release/$VERSION"
+          Write-Host "创建版本更新分支: $BRANCH_NAME"
+
+          # 创建新分支
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b $BRANCH_NAME
 
           # 更新package.json
           $packageJson = Get-Content "GitMentor-Lite/package.json" -Raw | ConvertFrom-Json
@@ -94,16 +100,50 @@ jobs:
           $tauriConfig | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/src-tauri/tauri.conf.json"
           Write-Host "✅ 已更新 tauri.conf.json"
 
-          # 提交更改
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          # 提交更改到新分支
           git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
           git commit -m "chore: bump version to $VERSION"
-          if ($LASTEXITCODE -eq 0) {
-            git push origin "refs/heads/${{ github.ref_name }}"
-            Write-Host "✅ 已提交并推送版本更新"
-          } else {
-            Write-Host "ℹ️ 没有需要提交的更改"
+          git push origin $BRANCH_NAME
+          Write-Host "✅ 已推送版本更新分支"
+
+          # 创建Pull Request
+          $PR_BODY = @"
+          ## 🚀 版本更新到 $VERSION
+
+          此PR由GitHub Actions自动创建，用于更新版本号。
+
+          ### 📋 更改内容
+          - 更新 package.json 版本号到 $CLEAN_VERSION
+          - 更新 Cargo.toml 版本号到 $CLEAN_VERSION
+          - 更新 tauri.conf.json 版本号到 $CLEAN_VERSION
+
+          ### ⚠️ 注意事项
+          请合并此PR后，Release workflow将继续执行。
+          "@
+
+          $headers = @{
+            "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
+            "Accept" = "application/vnd.github.v3+json"
+          }
+
+          $prData = @{
+            title = "chore: bump version to $VERSION"
+            head = $BRANCH_NAME
+            base = "${{ github.ref_name }}"
+            body = $PR_BODY
+          } | ConvertTo-Json
+
+          try {
+            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/pulls" -Method Post -Headers $headers -Body $prData -ContentType "application/json"
+            Write-Host "✅ 已创建Pull Request: $($response.html_url)"
+            Write-Host "::notice::版本更新PR已创建，请合并后重新运行Release workflow"
+            Write-Host "::error::Workflow暂停 - 请先合并版本更新PR，然后重新运行此workflow"
+            exit 1
+          } catch {
+            Write-Host "❌ 创建PR失败: $($_.Exception.Message)"
+            Write-Host "请手动创建PR从 $BRANCH_NAME 到 ${{ github.ref_name }}"
+            Write-Host "::error::请手动处理版本更新后重新运行workflow"
+            exit 1
           }
         shell: pwsh
 
