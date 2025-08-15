@@ -1,9 +1,19 @@
-name: 'Release GitMentor'
+name: "Release GitMentor"
 
 on:
   push:
-    tags: ['v*']
+    tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号 (例如: v0.1.4, 留空则自动从package.json读取)"
+        required: false
+        type: string
+      create_tag:
+        description: "是否创建新的Git标签"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -16,18 +26,103 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: 'windows-latest'
-            args: ''
+          - platform: "windows-latest"
+            args: ""
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 获取完整的git历史，用于tag操作
+
+      # 获取版本号 - Author: Evilek, Date: 2025-01-15
+      - name: Get version
+        id: get_version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            # 从tag推送获取版本号
+            VERSION="${{ github.ref_name }}"
+            echo "从tag获取版本号: $VERSION"
+          elif [ -n "${{ github.event.inputs.version }}" ]; then
+            # 从手动输入获取版本号
+            VERSION="${{ github.event.inputs.version }}"
+            echo "从输入获取版本号: $VERSION"
+          else
+            # 从package.json自动获取版本号
+            PACKAGE_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
+            VERSION="v$PACKAGE_VERSION"
+            echo "从package.json获取版本号: $VERSION"
+          fi
+
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "最终版本号: $VERSION"
+
+          # 设置是否需要更新文件的标志
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            echo "need_update=true" >> $GITHUB_OUTPUT
+            echo "需要更新版本文件"
+          else
+            echo "need_update=false" >> $GITHUB_OUTPUT
+            echo "无需更新版本文件"
+          fi
+
+      # 更新版本文件（仅在手动输入版本号时） - Author: Evilek, Date: 2025-01-15
+      - name: Update version files
+        if: steps.get_version.outputs.need_update == 'true'
+        run: |
+          $VERSION = "${{ steps.get_version.outputs.version }}"
+          # 移除v前缀获取纯版本号
+          $CLEAN_VERSION = $VERSION -replace '^v', ''
+          Write-Host "更新版本文件到: $CLEAN_VERSION"
+
+          # 更新package.json
+          $packageJson = Get-Content "GitMentor-Lite/package.json" -Raw | ConvertFrom-Json
+          $packageJson.version = $CLEAN_VERSION
+          $packageJson | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/package.json"
+          Write-Host "✅ 已更新 package.json"
+
+          # 更新Cargo.toml (使用PowerShell替换第3行)
+          $cargoContent = Get-Content "GitMentor-Lite/src-tauri/Cargo.toml"
+          $cargoContent[2] = "version = `"$CLEAN_VERSION`""
+          $cargoContent | Set-Content "GitMentor-Lite/src-tauri/Cargo.toml"
+          Write-Host "✅ 已更新 Cargo.toml"
+
+          # 更新tauri.conf.json
+          $tauriConfig = Get-Content "GitMentor-Lite/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
+          $tauriConfig.version = $CLEAN_VERSION
+          $tauriConfig | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/src-tauri/tauri.conf.json"
+          Write-Host "✅ 已更新 tauri.conf.json"
+
+          # 提交更改
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
+          git commit -m "chore: bump version to $VERSION"
+          if ($LASTEXITCODE -eq 0) {
+            git push origin ${{ github.ref_name }}
+            Write-Host "✅ 已提交并推送版本更新"
+          } else {
+            Write-Host "ℹ️ 没有需要提交的更改"
+          }
+        shell: pwsh
+
+      # 创建tag（仅在手动触发且需要时） - Author: Evilek, Date: 2025-01-15
+      - name: Create tag
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          echo "创建tag: $VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$VERSION" -m "Release $VERSION"
+          git push origin "$VERSION"
 
       - name: setup node
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
-          cache: 'npm'
+          cache: "npm"
           cache-dependency-path: GitMentor-Lite/package-lock.json
 
       - name: install Rust stable
@@ -36,7 +131,7 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './GitMentor-Lite/src-tauri -> target'
+          workspaces: "./GitMentor-Lite/src-tauri -> target"
 
       - name: install frontend dependencies
         working-directory: GitMentor-Lite
@@ -48,21 +143,21 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          projectPath: './GitMentor-Lite'
-          tagName: ${{ github.ref_name }}
-          releaseName: 'GitMentor ${{ github.ref_name }}'
+          projectPath: "./GitMentor-Lite"
+          tagName: ${{ steps.get_version.outputs.version }}
+          releaseName: "GitMentor ${{ steps.get_version.outputs.version }}"
           releaseBody: |
-            ## GitMentor ${{ github.ref_name }}
-            
+            ## GitMentor ${{ steps.get_version.outputs.version }}
+
             ### 🚀 新功能
             - AI 驱动的 Git 提交消息生成
             - 分层提交管理
             - 多语言支持（19种语言）
             - 分支切换和远程同步
-            
+
             ### 📦 下载说明
             - **Windows**: 下载 `.msi` 安装包
-            
+
             ### 🔧 系统要求
             - Windows 10+
             - Git 2.30+
