@@ -334,3 +334,46 @@ pub async fn get_staged_diff_summary(
     engine.get_diff_summary(&staged_files)
         .map_err(|e| format!("Failed to get diff summary: {}", e))
 }
+
+/// 获取文件统计信息（用于文件监控）
+/// 作者：Evilek
+/// 编写日期：2025-01-15
+#[derive(serde::Serialize)]
+pub struct FileStats {
+    pub modified: Option<String>,
+    pub size: u64,
+    pub exists: bool,
+}
+
+#[tauri::command]
+pub async fn get_file_stats(path: String) -> Result<FileStats, String> {
+    use std::fs;
+    use std::time::SystemTime;
+
+    match fs::metadata(&path) {
+        Ok(metadata) => {
+            let modified = metadata.modified()
+                .ok()
+                .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
+                .map(|duration| {
+                    let timestamp = duration.as_secs();
+                    chrono::DateTime::from_timestamp(timestamp as i64, 0)
+                        .unwrap_or_default()
+                        .to_rfc3339()
+                });
+
+            Ok(FileStats {
+                modified,
+                size: metadata.len(),
+                exists: true,
+            })
+        }
+        Err(_) => {
+            Ok(FileStats {
+                modified: None,
+                size: 0,
+                exists: false,
+            })
+        }
+    }
+}

@@ -564,12 +564,17 @@ const openRepoByPath = async (path: string) => {
 
     setLoading(true, '完成')
     setTimeout(() => setLoading(false), 500)
+
+    // 启动文件监控 - Author: Evilek, Date: 2025-01-15
+    startFileWatcher()
   } catch (error) {
     console.error('打开仓库失败:', error)
     toast.error(`打开仓库失败: ${error}`, '操作失败')
     setLoading(false)
     // 重置仓库路径
     currentRepoPath.value = ''
+    // 停止文件监控
+    stopFileWatcher()
   }
 }
 
@@ -665,6 +670,82 @@ const scheduleRefresh = () => {
       await refreshGitStatus()
     }
   }, OPERATION_BATCH_DELAY)
+}
+
+// 文件监控功能 - Author: Evilek, Date: 2025-01-15
+const startFileWatcher = () => {
+  if (!currentRepoPath.value) return
+
+  console.log('🔍 启动文件监控，仓库路径:', currentRepoPath.value)
+
+  fileWatchInterval = setInterval(async () => {
+    try {
+      await checkFileChanges()
+    } catch (error) {
+      console.warn('文件监控检查失败:', error)
+    }
+  }, FILE_WATCH_INTERVAL)
+}
+
+const stopFileWatcher = () => {
+  if (fileWatchInterval) {
+    clearInterval(fileWatchInterval)
+    fileWatchInterval = null
+    console.log('🛑 停止文件监控')
+  }
+  fileModificationTimes.value.clear()
+}
+
+const checkFileChanges = async () => {
+  if (!currentRepoPath.value || !gitStatus.value) return
+
+  const now = Date.now()
+  if (now - lastFileCheckTime < FILE_WATCH_INTERVAL - 100) {
+    return // 避免过于频繁的检查
+  }
+  lastFileCheckTime = now
+
+  try {
+    // 获取当前Git状态中的所有文件
+    const allFiles = [
+      ...(gitStatus.value.staged_files || []),
+      ...(gitStatus.value.unstaged_files || []),
+      ...(gitStatus.value.untracked_files || [])
+    ]
+
+    let hasChanges = false
+
+    // 检查每个文件的修改时间
+    for (const file of allFiles) {
+      try {
+        const filePath = `${currentRepoPath.value}/${file.path}`
+        const stats = await invoke('get_file_stats', { path: filePath }) as any
+
+        if (stats && stats.modified) {
+          const modTime = new Date(stats.modified).getTime()
+          const lastModTime = fileModificationTimes.value.get(file.path)
+
+          if (lastModTime && modTime > lastModTime) {
+            console.log('🔄 检测到文件变化:', file.path)
+            hasChanges = true
+          }
+
+          fileModificationTimes.value.set(file.path, modTime)
+        }
+      } catch (error) {
+        // 忽略单个文件的检查错误
+        console.debug('检查文件失败:', file.path, error)
+      }
+    }
+
+    // 如果检测到变化，刷新Git状态
+    if (hasChanges) {
+      console.log('🔄 检测到文件变化，自动刷新Git状态')
+      await refreshGitStatus(true)
+    }
+  } catch (error) {
+    console.warn('文件变化检查失败:', error)
+  }
 }
 
 const toggleStage = async (filePath: string, shouldStage: boolean) => {
@@ -766,6 +847,12 @@ let lastRefreshTime = 0
 const REFRESH_DEBOUNCE_DELAY = 500 // 500ms防抖延迟
 const MIN_REFRESH_INTERVAL = 1000 // 最小刷新间隔1秒
 let refreshPromise: Promise<void> | null = null
+
+// 文件监控自动刷新机制 - Author: Evilek, Date: 2025-01-15
+let fileWatchInterval: number | null = null
+let lastFileCheckTime = 0
+const FILE_WATCH_INTERVAL = 3000 // 3秒检查一次文件变化
+const fileModificationTimes = ref<Map<string, number>>(new Map())
 
 const generateCommitMessage = async () => {
   if (!hasCommittableFiles.value) return
@@ -1643,6 +1730,19 @@ watch(commitMessage, (newValue, oldValue) => {
   }
 })
 
+// 监听仓库路径变化，重新启动文件监控 - Author: Evilek, Date: 2025-01-15
+watch(currentRepoPath, (newPath, oldPath) => {
+  if (oldPath) {
+    stopFileWatcher()
+  }
+  if (newPath) {
+    // 延迟启动，确保仓库已完全加载
+    setTimeout(() => {
+      startFileWatcher()
+    }, 1000)
+  }
+})
+
 // 生命周期
 onMounted(async () => {
   // 初始化Toast实例
@@ -1666,6 +1766,11 @@ onMounted(async () => {
 
       // 自动加载上次打开的仓库
       await autoLoadLastRepo()
+
+      // 如果成功加载了仓库，启动文件监控 - Author: Evilek, Date: 2025-01-15
+      if (currentRepoPath.value) {
+        startFileWatcher()
+      }
     } else {
       console.error('Tauri API 未正确加载')
     }
@@ -1690,6 +1795,10 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   // 移除仓库刷新事件监听器 Author: Evilek, Date: 2025-01-10
   window.removeEventListener('refreshRepository', handleRepositoryRefresh)
+
+  // 清理文件监控 - Author: Evilek, Date: 2025-01-15
+  stopFileWatcher()
+
   if (generateTimeout) {
     clearTimeout(generateTimeout)
   }

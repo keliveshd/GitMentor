@@ -214,6 +214,7 @@ pub fn run() {
             git_commands::add_to_gitignore,
             git_commands::delete_untracked_files,
             git_commands::delete_tracked_files,
+            git_commands::get_file_stats,
             // AI commands
             ai_commands::get_ai_config,
             ai_commands::update_ai_config,
