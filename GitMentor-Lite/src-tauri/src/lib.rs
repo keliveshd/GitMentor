@@ -43,7 +43,7 @@ macro_rules! info_log {
 }
 
 use chrono::Local;
-use commands::{ai_commands, debug_commands, git_commands, git_config_commands};
+use commands::{ai_commands, debug_commands, git_commands, git_config_commands, update_commands};
 use core::{
     ai_manager::AIManager,
     git_config::GitConfigManager,
@@ -178,6 +178,8 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_fs::init())
         .manage(git_engine)
         .manage(git_config_manager)
         .manage(llm_client)
@@ -247,6 +249,15 @@ pub fn run() {
             ai_commands::cancel_layered_commit,
             ai_commands::check_first_time_setup,
             ai_commands::test_ai_connection,
+            // Update commands
+            update_commands::check_for_updates,
+            update_commands::download_update,
+            update_commands::install_update,
+            update_commands::get_current_version,
+            update_commands::cleanup_update_files,
+            update_commands::check_update_file_exists,
+            update_commands::get_update_settings,
+            update_commands::save_update_settings,
         ])
         .run(tauri::generate_context!());
 

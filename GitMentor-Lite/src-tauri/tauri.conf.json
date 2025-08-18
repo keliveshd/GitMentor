@@ -39,7 +39,16 @@
             "core:window:allow-set-size",
             "core:window:allow-set-resizable",
             "dialog:allow-confirm",
-            "dialog:default"
+            "dialog:default",
+            "http:default",
+            "http:allow-fetch",
+            "fs:default",
+            "fs:allow-read-file",
+            "fs:allow-write-file",
+            "fs:allow-create",
+            "fs:allow-remove",
+            "fs:allow-mkdir",
+            "fs:allow-exists"
           ]
         }
       ]

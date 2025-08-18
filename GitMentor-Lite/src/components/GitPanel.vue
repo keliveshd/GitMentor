@@ -21,6 +21,9 @@
               📊 对话记录
             </button>
             <div class="menu-divider"></div>
+            <button @click="checkForUpdates" class="menu-item" :disabled="loading || !tauriReady">
+              🔄 检查更新
+            </button>
             <button @click="openDebugSettings" class="menu-item">
               🛠️ 开发设置
             </button>
@@ -368,6 +371,10 @@
   <!-- 全局右键菜单 -->
   <ContextMenu :visible="contextMenuVisible" :position="contextMenuPosition" :menuItems="contextMenuItems"
     @itemClick="handleContextMenuAction" @close="closeContextMenu" />
+
+  <!-- 更新对话框 -->
+  <UpdateDialog :visible="showUpdateDialog" @close="closeUpdateDialog" @updateStarted="handleUpdateStarted"
+    @updateCompleted="handleUpdateCompleted" />
 </template>
 
 <script setup lang="ts">
@@ -381,6 +388,7 @@ import ContextMenu, { type ContextMenuItem } from './ContextMenu.vue'
 import LayeredCommitProgress from './LayeredCommitProgress.vue'
 import BranchSwitcher from './BranchSwitcher.vue'
 import DebugSettings from './DebugSettings.vue'
+import UpdateDialog from './UpdateDialog.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
@@ -432,6 +440,9 @@ const showRecentDropdown = ref(false)
 
 // 菜单状态
 const showMenu = ref(false)
+
+// 更新对话框状态
+const showUpdateDialog = ref(false)
 
 // Tab页状态管理
 // Author: Evilek
@@ -1521,6 +1532,30 @@ const openAISettings = async () => {
     console.error('❌ [GitPanel] 打开AI服务设置窗口失败:', error)
     alert(`打开AI服务设置失败: ${error instanceof Error ? error.message : '未知错误'}`)
   }
+}
+
+// 检查更新方法
+// 作者：Evilek
+// 编写日期：2025-01-18
+const checkForUpdates = () => {
+  console.log('🔄 [GitPanel] 检查更新')
+  showUpdateDialog.value = true
+  showMenu.value = false
+}
+
+const closeUpdateDialog = () => {
+  showUpdateDialog.value = false
+}
+
+const handleUpdateStarted = () => {
+  console.log('📥 [GitPanel] 更新下载开始')
+  showToast('开始下载更新包...', 'info')
+}
+
+const handleUpdateCompleted = () => {
+  console.log('✅ [GitPanel] 更新安装完成')
+  showToast('更新安装完成，应用将重启', 'success')
+  // 这里可以添加重启应用的逻辑
 }
 
 // 加载可用模板列表
