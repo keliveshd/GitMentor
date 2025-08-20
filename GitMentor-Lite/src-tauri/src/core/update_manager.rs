@@ -61,7 +61,7 @@ impl UpdateManager {
     /// 创建新的更新管理器实例
     pub fn new(current_version: String) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(30))
+            .timeout(Duration::from_secs(60))  // 增加超时时间到60秒
             .user_agent("GitMentor-Updater/1.0")
             .build()
             .expect("Failed to create HTTP client");
@@ -76,30 +76,55 @@ impl UpdateManager {
 
     /// 检查是否有新版本可用
     pub async fn check_for_updates(&self) -> Result<VersionInfo> {
+        println!("[DEBUG] UpdateManager::check_for_updates() 开始执行");
+
         let url = format!(
             "https://api.github.com/repos/{}/{}/releases/latest",
             self.repo_owner, self.repo_name
         );
 
+        println!("[DEBUG] 检查更新: 请求URL: {}", url);
+        println!("[DEBUG] 仓库信息: owner={}, name={}", self.repo_owner, self.repo_name);
+
+        println!("[DEBUG] 开始发送 HTTP 请求...");
         let response = self
             .client
             .get(&url)
             .header("Accept", "application/vnd.github+json")
             .header("X-GitHub-Api-Version", "2022-11-28")
             .send()
-            .await?;
+            .await
+            .map_err(|e| {
+                println!("[ERROR] GitHub API 请求失败: {}", e);
+                println!("[ERROR] 错误类型: {:?}", e);
+                anyhow::anyhow!("网络请求失败: {}。请检查网络连接或稍后重试。", e)
+            })?;
+
+        println!("[DEBUG] GitHub API 响应状态: {}", response.status());
 
         if !response.status().is_success() {
+            let status = response.status();
+            let error_text = response.text().await.unwrap_or_else(|_| "无法读取错误信息".to_string());
+            println!("[ERROR] GitHub API 错误响应: {}", error_text);
             return Err(anyhow::anyhow!(
-                "GitHub API request failed: {}",
-                response.status()
+                "GitHub API 请求失败: {} - {}",
+                status,
+                error_text
             ));
         }
 
-        let release: GitHubRelease = response.json().await?;
+        let release: GitHubRelease = response.json().await
+            .map_err(|e| {
+                println!("[ERROR] 解析 GitHub API 响应失败: {}", e);
+                anyhow::anyhow!("解析更新信息失败: {}", e)
+            })?;
+
+        println!("[DEBUG] 获取到 release 信息: tag={}, draft={}, prerelease={}",
+                 release.tag_name, release.draft, release.prerelease);
 
         // 跳过草稿和预发布版本
         if release.draft || release.prerelease {
+            println!("[INFO] 跳过草稿或预发布版本: {}", release.tag_name);
             return Ok(VersionInfo {
                 current: self.current_version.clone(),
                 latest: self.current_version.clone(),
@@ -112,10 +137,17 @@ impl UpdateManager {
 
         let latest_version = self.normalize_version(&release.tag_name);
         let current_version = self.normalize_version(&self.current_version);
+
+        println!("[DEBUG] 版本比较: 当前={}, 最新={}", current_version, latest_version);
+
         let has_update = self.compare_versions(&current_version, &latest_version) == Ordering::Less;
+
+        println!("[DEBUG] 是否有更新: {}", has_update);
 
         // 查找 Windows MSI 安装包
         let download_url = self.find_windows_installer(&release.assets);
+
+        println!("[DEBUG] 找到的下载链接: {:?}", download_url);
 
         Ok(VersionInfo {
             current: self.current_version.clone(),

@@ -1538,9 +1538,13 @@ const openAISettings = async () => {
 // 作者：Evilek
 // 编写日期：2025-01-18
 const checkForUpdates = () => {
-  console.log('🔄 [GitPanel] 检查更新')
+  console.log('🔄 [GitPanel] 用户点击检查更新按钮')
+  console.log('🔄 [GitPanel] 当前 showUpdateDialog 状态:', showUpdateDialog.value)
+  console.log('🔄 [GitPanel] 设置 showUpdateDialog = true')
   showUpdateDialog.value = true
+  console.log('🔄 [GitPanel] 关闭菜单')
   showMenu.value = false
+  console.log('🔄 [GitPanel] 检查更新对话框应该已显示')
 }
 
 const closeUpdateDialog = () => {
@@ -1549,12 +1553,12 @@ const closeUpdateDialog = () => {
 
 const handleUpdateStarted = () => {
   console.log('📥 [GitPanel] 更新下载开始')
-  showToast('开始下载更新包...', 'info')
+  toast.info('开始下载更新包...')
 }
 
 const handleUpdateCompleted = () => {
   console.log('✅ [GitPanel] 更新安装完成')
-  showToast('更新安装完成，应用将重启', 'success')
+  toast.success('更新安装完成，应用将重启')
   // 这里可以添加重启应用的逻辑
 }
 

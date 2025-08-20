@@ -250,6 +250,7 @@ pub fn run() {
             ai_commands::check_first_time_setup,
             ai_commands::test_ai_connection,
             // Update commands
+            update_commands::test_network_connection,
             update_commands::check_for_updates,
             update_commands::download_update,
             update_commands::install_update,

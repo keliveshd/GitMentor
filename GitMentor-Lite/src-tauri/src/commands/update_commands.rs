@@ -17,17 +17,79 @@ struct DownloadProgressEvent {
     percentage: f64,
 }
 
+/// 测试网络连接命令
+#[command]
+pub async fn test_network_connection() -> Result<bool, String> {
+    println!("[DEBUG] 开始网络连接测试...");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+        .map_err(|e| {
+            println!("[ERROR] 创建HTTP客户端失败: {}", e);
+            format!("创建HTTP客户端失败: {}", e)
+        })?;
+
+    println!("[DEBUG] HTTP客户端创建成功，开始请求 GitHub API...");
+
+    // 测试连接到 GitHub API
+    match client.get("https://api.github.com").send().await {
+        Ok(response) => {
+            let status = response.status();
+            println!("[DEBUG] 网络连接测试收到响应: {}", status);
+            let is_success = status.is_success();
+            println!("[DEBUG] 响应是否成功: {}", is_success);
+
+            if !is_success {
+                println!("[WARN] GitHub API 返回非成功状态码: {}", status);
+                // 即使状态码不是2xx，但能连接到GitHub就算网络正常
+                Ok(true)
+            } else {
+                println!("[DEBUG] 网络连接测试完全成功");
+                Ok(true)
+            }
+        }
+        Err(e) => {
+            println!("[ERROR] 网络连接测试失败: {}", e);
+            println!("[ERROR] 错误详情: {:?}", e);
+
+            // 检查是否是特定类型的错误
+            if e.is_timeout() {
+                println!("[ERROR] 错误类型: 超时");
+            } else if e.is_connect() {
+                println!("[ERROR] 错误类型: 连接失败");
+            } else if e.is_request() {
+                println!("[ERROR] 错误类型: 请求错误");
+            }
+
+            Err(format!("网络连接失败: {}", e))
+        }
+    }
+}
+
 /// 检查更新命令
 #[command]
 pub async fn check_for_updates() -> Result<VersionInfo, String> {
+    println!("[DEBUG] ========== 开始检查更新 ==========");
+
     // 从 tauri.conf.json 读取当前版本
     let current_version = env!("CARGO_PKG_VERSION").to_string();
+    println!("[DEBUG] 当前版本: {}", current_version);
+
+    println!("[DEBUG] 创建更新管理器...");
     let update_manager = UpdateManager::new(current_version);
-    
-    update_manager
-        .check_for_updates()
-        .await
-        .map_err(|e| format!("检查更新失败: {}", e))
+
+    println!("[DEBUG] 调用更新管理器检查更新...");
+    match update_manager.check_for_updates().await {
+        Ok(version_info) => {
+            println!("[DEBUG] 检查更新成功: {:?}", version_info);
+            Ok(version_info)
+        }
+        Err(e) => {
+            println!("[ERROR] 检查更新失败: {}", e);
+            Err(format!("检查更新失败: {}", e))
+        }
+    }
 }
 
 /// 下载更新命令
@@ -36,22 +98,41 @@ pub async fn download_update(
     app_handle: AppHandle,
     download_url: String,
 ) -> Result<String, String> {
+    println!("[DEBUG] ========== 开始下载更新 ==========");
+    println!("[DEBUG] 下载URL: {}", download_url);
+
     let current_version = env!("CARGO_PKG_VERSION").to_string();
+    println!("[DEBUG] 当前版本: {}", current_version);
+
     let update_manager = UpdateManager::new(current_version);
-    
+    println!("[DEBUG] 更新管理器创建成功");
+
     // 获取应用数据目录
-    let app_data_dir = app_handle
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
+    println!("[DEBUG] 获取应用数据目录...");
+    let app_data_dir = match app_handle.path().app_data_dir() {
+        Ok(dir) => {
+            println!("[DEBUG] 应用数据目录: {:?}", dir);
+            dir
+        }
+        Err(e) => {
+            println!("[ERROR] 获取应用数据目录失败: {}", e);
+            return Err(format!("获取应用数据目录失败: {}", e));
+        }
+    };
     
     // 创建下载路径
     let download_dir = app_data_dir.join("updates");
+    println!("[DEBUG] 下载目录: {:?}", download_dir);
+
     let filename = extract_filename_from_url(&download_url)
         .unwrap_or_else(|| "GitMentor-update.msi".to_string());
+    println!("[DEBUG] 文件名: {}", filename);
+
     let download_path = download_dir.join(&filename);
-    
+    println!("[DEBUG] 完整下载路径: {:?}", download_path);
+
     // 创建进度回调
+    println!("[DEBUG] 创建进度回调...");
     let app_handle_clone = app_handle.clone();
     let progress_callback = Box::new(move |downloaded: u64, total: u64| {
         let percentage = if total > 0 {
@@ -59,23 +140,35 @@ pub async fn download_update(
         } else {
             0.0
         };
-        
+
+        println!("[DEBUG] 下载进度: {}/{} ({}%)", downloaded, total, percentage);
+
         let event = DownloadProgressEvent {
             downloaded,
             total,
             percentage,
         };
-        
+
         // 发送进度事件到前端
-        let _ = app_handle_clone.emit("download-progress", &event);
+        if let Err(e) = app_handle_clone.emit("download-progress", &event) {
+            println!("[ERROR] 发送进度事件失败: {}", e);
+        }
     });
-    
-    update_manager
+
+    println!("[DEBUG] 开始调用更新管理器下载...");
+    match update_manager
         .download_update(&download_url, &download_path, Some(progress_callback))
         .await
-        .map_err(|e| format!("下载更新失败: {}", e))?;
-    
-    Ok(download_path.to_string_lossy().to_string())
+    {
+        Ok(_) => {
+            println!("[DEBUG] 下载完成成功");
+            Ok(download_path.to_string_lossy().to_string())
+        }
+        Err(e) => {
+            println!("[ERROR] 下载失败: {}", e);
+            Err(format!("下载更新失败: {}", e))
+        }
+    }
 }
 
 /// 安装更新命令

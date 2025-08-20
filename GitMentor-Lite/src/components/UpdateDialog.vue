@@ -77,6 +77,7 @@
         <div v-else-if="status === 'error'" class="error-section">
           <div class="error-icon">❌</div>
           <p class="error-message">{{ errorMessage }}</p>
+          <button @click="retryCheck" class="retry-btn">重试检查</button>
         </div>
       </div>
 
@@ -120,7 +121,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
@@ -175,31 +176,76 @@ const dialogTitle = computed(() => {
 
 // 方法
 const checkForUpdates = async () => {
+  console.log('🔄 [UpdateDialog] ========== checkForUpdates 函数开始 ==========')
+
   try {
     status.value = 'checking'
-    
+    console.log('🔄 [UpdateDialog] 设置状态为 checking')
+
+    // 添加超时处理
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('检查更新超时（60秒）')), 60000)
+    })
+
     // 获取当前版本
-    currentVersion.value = await invoke('get_current_version')
-    
+    console.log('📋 [UpdateDialog] 开始获取当前版本...')
+    const getCurrentVersionPromise = invoke('get_current_version')
+    currentVersion.value = await Promise.race([getCurrentVersionPromise, timeoutPromise]) as string
+    console.log('📋 [UpdateDialog] 当前版本:', currentVersion.value)
+
+    // 先测试网络连接
+    console.log('🌐 [UpdateDialog] 开始测试网络连接...')
+    try {
+      const testNetworkPromise = invoke('test_network_connection')
+      const networkResult = await Promise.race([testNetworkPromise, timeoutPromise])
+      console.log('🌐 [UpdateDialog] 网络连接测试原始结果:', networkResult)
+
+      if (typeof networkResult === 'boolean') {
+        console.log('🌐 [UpdateDialog] 网络连接测试结果 (boolean):', networkResult)
+        if (!networkResult) {
+          throw new Error('网络连接测试失败，请检查网络连接或防火墙设置')
+        }
+        console.log('✅ [UpdateDialog] 网络连接正常')
+      } else {
+        console.log('🌐 [UpdateDialog] 网络连接测试返回非布尔值:', typeof networkResult, networkResult)
+        // 如果返回的不是布尔值，可能是错误信息
+        throw new Error(`网络连接异常: ${networkResult}`)
+      }
+    } catch (networkError) {
+      console.error('❌ [UpdateDialog] 网络连接失败:', networkError)
+      console.error('❌ [UpdateDialog] 错误类型:', typeof networkError)
+      console.error('❌ [UpdateDialog] 错误详情:', networkError)
+      throw new Error(`网络连接失败: ${networkError}`)
+    }
+
     // 检查更新
-    const updateInfo = await invoke('check_for_updates') as any
-    
+    console.log('🌐 [UpdateDialog] 开始调用 GitHub API 检查更新...')
+    const checkUpdatesPromise = invoke('check_for_updates')
+    const updateInfo = await Promise.race([checkUpdatesPromise, timeoutPromise]) as any
+    console.log('📦 [UpdateDialog] 更新信息:', updateInfo)
+
     if (updateInfo.has_update) {
       status.value = 'update-available'
       latestVersion.value = updateInfo.latest
       releaseNotes.value = updateInfo.release_notes || ''
       publishedAt.value = updateInfo.published_at || ''
       downloadUrl.value = updateInfo.download_url || ''
+      console.log('✅ [UpdateDialog] 发现新版本:', latestVersion.value)
     } else {
       status.value = 'no-update'
+      console.log('✅ [UpdateDialog] 已是最新版本')
     }
   } catch (error) {
     status.value = 'error'
     errorMessage.value = error as string
+    console.error('❌ [UpdateDialog] 检查更新失败:', error)
   }
 }
 
 const startDownload = async () => {
+  console.log('📥 [UpdateDialog] startDownload 开始执行')
+  console.log('📥 [UpdateDialog] downloadUrl:', downloadUrl.value)
+
   if (!downloadUrl.value) {
     errorMessage.value = '下载链接不可用'
     status.value = 'error'
@@ -207,18 +253,28 @@ const startDownload = async () => {
   }
 
   try {
+    console.log('📥 [UpdateDialog] 设置下载状态')
     status.value = 'downloading'
     isDownloading.value = true
     downloadProgress.value = 0
     downloadedBytes.value = 0
     totalBytes.value = 0
 
+    console.log('📥 [UpdateDialog] 发送 updateStarted 事件')
     emit('updateStarted')
 
     // 开始下载
+    console.log('📥 [UpdateDialog] 调用 download_update 命令')
+    console.log('📥 [UpdateDialog] 下载参数:', { downloadUrl: downloadUrl.value })
+
     const installerPath = await invoke('download_update', {
       downloadUrl: downloadUrl.value
+    }).catch(error => {
+      console.error('📥 [UpdateDialog] download_update 命令失败:', error)
+      throw error
     }) as string
+
+    console.log('📥 [UpdateDialog] 下载完成，安装包路径:', installerPath)
 
     // 下载完成，开始安装
     status.value = 'installing'
@@ -245,6 +301,11 @@ const cancelDownload = () => {
   // TODO: 实现下载取消逻辑
   isDownloading.value = false
   status.value = 'update-available'
+}
+
+const retryCheck = async () => {
+  console.log('🔄 [UpdateDialog] 用户点击重试按钮')
+  await checkForUpdates()
 }
 
 const closeDialog = () => {
@@ -276,21 +337,38 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
+// 监听 visible 属性变化
+watch(() => props.visible, async (newVisible, oldVisible) => {
+  console.log('🔄 [UpdateDialog] visible 属性变化:', { oldVisible, newVisible })
+  if (newVisible && !oldVisible) {
+    console.log('🔄 [UpdateDialog] 对话框从隐藏变为显示，开始检查更新')
+    await checkForUpdates()
+  }
+})
+
 // 生命周期
 onMounted(async () => {
+  console.log('🔄 [UpdateDialog] 组件已挂载, visible:', props.visible)
+
   if (props.visible) {
+    console.log('🔄 [UpdateDialog] 对话框可见，开始检查更新')
     await checkForUpdates()
+  } else {
+    console.log('🔄 [UpdateDialog] 对话框不可见，跳过检查更新')
   }
 
   // 监听下载进度事件
+  console.log('🔄 [UpdateDialog] 设置下载进度监听器')
   const unlisten = await listen('download-progress', (event: any) => {
     const { downloaded, total, percentage } = event.payload
+    console.log('📥 [UpdateDialog] 下载进度:', { downloaded, total, percentage })
     downloadedBytes.value = downloaded
     totalBytes.value = total
     downloadProgress.value = percentage
   })
 
   onUnmounted(() => {
+    console.log('🔄 [UpdateDialog] 组件卸载，清理监听器')
     unlisten()
   })
 })
@@ -544,5 +622,21 @@ onMounted(async () => {
 .secondary-btn:hover {
   background: #e1e5e9;
   border-color: #afb8c1;
+}
+
+.retry-btn {
+  background: #0969da;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  margin-top: 12px;
+  transition: background 0.2s;
+}
+
+.retry-btn:hover {
+  background: #0860ca;
 }
 </style>
