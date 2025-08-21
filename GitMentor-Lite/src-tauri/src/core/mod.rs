@@ -17,3 +17,4 @@ pub mod layered_commit_manager;
 pub mod llm_client;
 pub mod prompt_manager;
 pub mod providers;
+pub mod update_manager;

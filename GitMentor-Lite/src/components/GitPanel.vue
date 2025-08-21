@@ -21,6 +21,9 @@
               📊 对话记录
             </button>
             <div class="menu-divider"></div>
+            <button @click="checkForUpdates" class="menu-item" :disabled="loading || !tauriReady">
+              🔄 检查更新
+            </button>
             <button @click="openDebugSettings" class="menu-item">
               🛠️ 开发设置
             </button>
@@ -368,6 +371,13 @@
   <!-- 全局右键菜单 -->
   <ContextMenu :visible="contextMenuVisible" :position="contextMenuPosition" :menuItems="contextMenuItems"
     @itemClick="handleContextMenuAction" @close="closeContextMenu" />
+
+  <!-- 更新对话框 -->
+  <UpdateDialog :visible="showUpdateDialog" @close="closeUpdateDialog" @updateStarted="handleUpdateStarted"
+    @updateCompleted="handleUpdateCompleted" />
+
+  <!-- 关于对话框 -->
+  <AboutDialog :visible="showAboutDialog" @close="closeAboutDialog" />
 </template>
 
 <script setup lang="ts">
@@ -381,6 +391,8 @@ import ContextMenu, { type ContextMenuItem } from './ContextMenu.vue'
 import LayeredCommitProgress from './LayeredCommitProgress.vue'
 import BranchSwitcher from './BranchSwitcher.vue'
 import DebugSettings from './DebugSettings.vue'
+import UpdateDialog from './UpdateDialog.vue'
+import AboutDialog from './AboutDialog.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
@@ -432,6 +444,12 @@ const showRecentDropdown = ref(false)
 
 // 菜单状态
 const showMenu = ref(false)
+
+// 更新对话框状态
+const showUpdateDialog = ref(false)
+
+// 关于对话框状态
+const showAboutDialog = ref(false)
 
 // Tab页状态管理
 // Author: Evilek
@@ -564,12 +582,17 @@ const openRepoByPath = async (path: string) => {
 
     setLoading(true, '完成')
     setTimeout(() => setLoading(false), 500)
+
+    // 启动文件监控 - Author: Evilek, Date: 2025-01-15
+    startFileWatcher()
   } catch (error) {
     console.error('打开仓库失败:', error)
     toast.error(`打开仓库失败: ${error}`, '操作失败')
     setLoading(false)
     // 重置仓库路径
     currentRepoPath.value = ''
+    // 停止文件监控
+    stopFileWatcher()
   }
 }
 
@@ -665,6 +688,82 @@ const scheduleRefresh = () => {
       await refreshGitStatus()
     }
   }, OPERATION_BATCH_DELAY)
+}
+
+// 文件监控功能 - Author: Evilek, Date: 2025-01-15
+const startFileWatcher = () => {
+  if (!currentRepoPath.value) return
+
+  console.log('🔍 启动文件监控，仓库路径:', currentRepoPath.value)
+
+  fileWatchInterval = setInterval(async () => {
+    try {
+      await checkFileChanges()
+    } catch (error) {
+      console.warn('文件监控检查失败:', error)
+    }
+  }, FILE_WATCH_INTERVAL)
+}
+
+const stopFileWatcher = () => {
+  if (fileWatchInterval) {
+    clearInterval(fileWatchInterval)
+    fileWatchInterval = null
+    console.log('🛑 停止文件监控')
+  }
+  fileModificationTimes.value.clear()
+}
+
+const checkFileChanges = async () => {
+  if (!currentRepoPath.value || !gitStatus.value) return
+
+  const now = Date.now()
+  if (now - lastFileCheckTime < FILE_WATCH_INTERVAL - 100) {
+    return // 避免过于频繁的检查
+  }
+  lastFileCheckTime = now
+
+  try {
+    // 获取当前Git状态中的所有文件
+    const allFiles = [
+      ...(gitStatus.value.staged_files || []),
+      ...(gitStatus.value.unstaged_files || []),
+      ...(gitStatus.value.untracked_files || [])
+    ]
+
+    let hasChanges = false
+
+    // 检查每个文件的修改时间
+    for (const file of allFiles) {
+      try {
+        const filePath = `${currentRepoPath.value}/${file.path}`
+        const stats = await invoke('get_file_stats', { path: filePath }) as any
+
+        if (stats && stats.modified) {
+          const modTime = new Date(stats.modified).getTime()
+          const lastModTime = fileModificationTimes.value.get(file.path)
+
+          if (lastModTime && modTime > lastModTime) {
+            console.log('🔄 检测到文件变化:', file.path)
+            hasChanges = true
+          }
+
+          fileModificationTimes.value.set(file.path, modTime)
+        }
+      } catch (error) {
+        // 忽略单个文件的检查错误
+        console.debug('检查文件失败:', file.path, error)
+      }
+    }
+
+    // 如果检测到变化，刷新Git状态
+    if (hasChanges) {
+      console.log('🔄 检测到文件变化，自动刷新Git状态')
+      await refreshGitStatus(true)
+    }
+  } catch (error) {
+    console.warn('文件变化检查失败:', error)
+  }
 }
 
 const toggleStage = async (filePath: string, shouldStage: boolean) => {
@@ -766,6 +865,12 @@ let lastRefreshTime = 0
 const REFRESH_DEBOUNCE_DELAY = 500 // 500ms防抖延迟
 const MIN_REFRESH_INTERVAL = 1000 // 最小刷新间隔1秒
 let refreshPromise: Promise<void> | null = null
+
+// 文件监控自动刷新机制 - Author: Evilek, Date: 2025-01-15
+let fileWatchInterval: number | null = null
+let lastFileCheckTime = 0
+const FILE_WATCH_INTERVAL = 3000 // 3秒检查一次文件变化
+const fileModificationTimes = ref<Map<string, number>>(new Map())
 
 const generateCommitMessage = async () => {
   if (!hasCommittableFiles.value) return
@@ -1386,9 +1491,14 @@ const closeDebugSettings = () => {
 
 // 关于功能
 const openAbout = () => {
-  // TODO: 实现关于对话框
-  console.log('打开关于对话框')
+  console.log('🔍 [GitPanel] 打开关于对话框')
+  showAboutDialog.value = true
   showMenu.value = false
+}
+
+const closeAboutDialog = () => {
+  console.log('🔍 [GitPanel] 关闭关于对话框')
+  showAboutDialog.value = false
 }
 
 // 自动加载上次打开的仓库
@@ -1434,6 +1544,34 @@ const openAISettings = async () => {
     console.error('❌ [GitPanel] 打开AI服务设置窗口失败:', error)
     alert(`打开AI服务设置失败: ${error instanceof Error ? error.message : '未知错误'}`)
   }
+}
+
+// 检查更新方法
+// 作者：Evilek
+// 编写日期：2025-01-18
+const checkForUpdates = () => {
+  console.log('🔄 [GitPanel] 用户点击检查更新按钮')
+  console.log('🔄 [GitPanel] 当前 showUpdateDialog 状态:', showUpdateDialog.value)
+  console.log('🔄 [GitPanel] 设置 showUpdateDialog = true')
+  showUpdateDialog.value = true
+  console.log('🔄 [GitPanel] 关闭菜单')
+  showMenu.value = false
+  console.log('🔄 [GitPanel] 检查更新对话框应该已显示')
+}
+
+const closeUpdateDialog = () => {
+  showUpdateDialog.value = false
+}
+
+const handleUpdateStarted = () => {
+  console.log('📥 [GitPanel] 更新下载开始')
+  toast.info('开始下载更新包...')
+}
+
+const handleUpdateCompleted = () => {
+  console.log('✅ [GitPanel] 更新安装完成')
+  toast.success('更新安装完成，应用将重启')
+  // 这里可以添加重启应用的逻辑
 }
 
 // 加载可用模板列表
@@ -1643,6 +1781,19 @@ watch(commitMessage, (newValue, oldValue) => {
   }
 })
 
+// 监听仓库路径变化，重新启动文件监控 - Author: Evilek, Date: 2025-01-15
+watch(currentRepoPath, (newPath, oldPath) => {
+  if (oldPath) {
+    stopFileWatcher()
+  }
+  if (newPath) {
+    // 延迟启动，确保仓库已完全加载
+    setTimeout(() => {
+      startFileWatcher()
+    }, 1000)
+  }
+})
+
 // 生命周期
 onMounted(async () => {
   // 初始化Toast实例
@@ -1666,6 +1817,11 @@ onMounted(async () => {
 
       // 自动加载上次打开的仓库
       await autoLoadLastRepo()
+
+      // 如果成功加载了仓库，启动文件监控 - Author: Evilek, Date: 2025-01-15
+      if (currentRepoPath.value) {
+        startFileWatcher()
+      }
     } else {
       console.error('Tauri API 未正确加载')
     }
@@ -1690,6 +1846,10 @@ onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
   // 移除仓库刷新事件监听器 Author: Evilek, Date: 2025-01-10
   window.removeEventListener('refreshRepository', handleRepositoryRefresh)
+
+  // 清理文件监控 - Author: Evilek, Date: 2025-01-15
+  stopFileWatcher()
+
   if (generateTimeout) {
     clearTimeout(generateTimeout)
   }
@@ -1970,9 +2130,9 @@ const handleContextMenuAction = async (action: string) => {
 </script>
 
 <style scoped>
+/* 修复层叠上下文问题 - 移除position: relative */
+/* Author: Evilek, Date: 2025-08-21 */
 .git-panel {
-  position: relative;
-  /* 为绝对定位的加载状态提供定位上下文 */
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -1981,15 +2141,20 @@ const handleContextMenuAction = async (action: string) => {
   /* 允许内容超出视口高度时滚动 */
 }
 
-/* 菜单栏样式 - 优化高度以节省垂直空间 */
+/* 简化菜单栏样式 - 移除伪元素避免层叠上下文问题 */
+/* Author: Evilek, Date: 2025-08-21 */
 .menu-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
   padding: 6px 16px;
-  background: #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
   margin-bottom: 12px;
+  box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+  border-radius: 0 0 12px 12px;
+  position: relative;
+  z-index: 10001;
 }
 
 .menu-left .app-title {
@@ -1997,52 +2162,98 @@ const handleContextMenuAction = async (action: string) => {
   font-weight: 600;
 }
 
+/* 菜单下拉容器 - 超高z-index */
+/* Author: Evilek, Date: 2025-08-21 */
 .menu-dropdown {
   position: relative;
+  z-index: 999998;
 }
 
+/* 菜单按钮 - 超高z-index确保可点击 */
+/* Author: Evilek, Date: 2025-08-21 */
 .menu-btn {
   background: none;
   border: none;
   color: white;
   font-size: 16px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  transition: background-color 0.2s ease;
+  padding: 8px 12px;
+  border-radius: 8px;
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 999999;
 }
 
 .menu-btn:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
+/* 下拉菜单内容 - 回到absolute定位，移除了所有层叠上下文问题 */
+/* Author: Evilek, Date: 2025-08-21 */
 .menu-dropdown-content {
   position: absolute;
   right: 0;
   top: 100%;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  min-width: 150px;
-  z-index: 1000;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid rgba(226, 232, 240, 0.8);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  min-width: 180px;
+  z-index: 999997;
+  overflow: hidden;
+  animation: menuFadeIn 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+@keyframes menuFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.95);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 现代化菜单项样式 - Author: Evilek, Date: 2025-08-21 */
 .menu-item {
   display: block;
   width: 100%;
-  padding: 8px 12px;
+  padding: 12px 16px;
   background: none;
   border: none;
   text-align: left;
   cursor: pointer;
   font-size: 14px;
   color: #374151;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  font-weight: 500;
+}
+
+.menu-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  transform: scaleY(0);
+  transition: transform 0.2s ease;
 }
 
 .menu-item:hover:not(:disabled) {
-  background: #f3f4f6;
+  background: linear-gradient(135deg, rgba(102, 126, 234, 0.08), rgba(118, 75, 162, 0.08));
+  color: #667eea;
+  transform: translateX(4px);
+}
+
+.menu-item:hover:not(:disabled)::before {
+  transform: scaleY(1);
 }
 
 .menu-item:disabled {
@@ -2050,46 +2261,48 @@ const handleContextMenuAction = async (action: string) => {
   cursor: not-allowed;
 }
 
-/* Tab导航样式 */
-/* Author: Evilek, Date: 2025-01-08 */
+/* Tab导航样式 - 移除定位避免层叠上下文问题 */
+/* Author: Evilek, Date: 2025-01-08, Updated: 2025-08-21 */
 .tab-navigation {
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.8);
   padding: 0 16px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .tab-list {
   display: flex;
-  gap: 2px;
+  gap: 4px;
 }
 
+/* 简化tab-item避免层叠上下文问题 */
 .tab-item {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 12px 16px;
+  gap: 8px;
+  padding: 14px 20px;
   background: none;
   border: none;
-  border-radius: 8px 8px 0 0;
+  border-radius: 12px 12px 0 0;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 600;
   color: #6b7280;
-  transition: all 0.2s ease;
-  position: relative;
+  transition: all 0.3s ease;
 }
 
 .tab-item:hover {
-  background: rgba(99, 102, 241, 0.1);
+  background: rgba(102, 126, 234, 0.08);
   color: #4f46e5;
 }
 
 .tab-item.active {
   background: white;
   color: #4f46e5;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(226, 232, 240, 0.8);
   border-bottom: 1px solid white;
   margin-bottom: -1px;
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
 }
 
 .tab-icon {
@@ -2188,17 +2401,21 @@ const handleContextMenuAction = async (action: string) => {
   line-height: 1.5;
 }
 
-/* 仓库头部 */
+/* 仓库头部 - 与commit-area宽度对齐 */
+/* Author: Evilek, Date: 2025-08-21 */
 .repo-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  margin-bottom: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: 16px;
+  margin: 0 16px 20px 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
 }
+
+/* 移除伪元素和动画避免层叠上下文问题 */
 
 .repo-info {
   display: flex;
@@ -2264,29 +2481,37 @@ const handleContextMenuAction = async (action: string) => {
 
 
 
-/* 选择仓库按钮 - 中等尺寸，重要操作 */
+/* 选择仓库按钮 - 正常层级，低于菜单 */
+/* Author: Evilek, Date: 2025-08-21 */
 .select-repo-btn {
-  padding: 6px 12px;
+  padding: 8px 16px;
   border: none;
-  border-radius: 5px;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  font-size: 14px;
+  font-weight: 600;
+  transition: all 0.3s ease;
   white-space: nowrap;
-  background: #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
-  height: 32px;
-  min-width: 70px;
+  height: 40px;
+  min-width: 90px;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+  position: relative;
+  z-index: 10;
 }
 
 .select-repo-btn:hover:not(:disabled) {
-  background: #5a67d8;
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
 }
 
 .select-repo-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* 仓库名称样式 */
@@ -2462,41 +2687,66 @@ const handleContextMenuAction = async (action: string) => {
   min-width: 120px;
 }
 
-/* 统一的操作按钮样式 - 移除图标，统一尺寸 */
+/* 统一的操作按钮样式 - 现代化渐变设计 */
+/* Author: Evilek, Date: 2025-08-21 */
 .action-btn {
-  padding: 8px 16px;
+  padding: 10px 20px;
   border: none;
-  border-radius: 6px;
+  border-radius: 10px;
   cursor: pointer;
   font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s ease;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   white-space: nowrap;
-  min-width: 80px;
-  height: 36px;
+  min-width: 100px;
+  height: 42px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+}
+
+.action-btn::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+  transition: left 0.5s ease;
+}
+
+.action-btn:hover:not(:disabled)::before {
+  left: 100%;
 }
 
 .action-btn.generate-btn {
-  background: #10b981;
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   color: white;
 }
 
 .action-btn.generate-btn:hover:not(:disabled) {
-  background: #059669;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(16, 185, 129, 0.3);
 }
 
 .action-btn.commit-btn {
-  background: #667eea;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
 }
 
 .action-btn.commit-btn:hover:not(:disabled) {
-  background: #5a67d8;
+  background: linear-gradient(135deg, #5a67d8 0%, #6b46c1 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 25px rgba(102, 126, 234, 0.3);
 }
 
 .action-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+  transform: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
 }
 
 .branch-info {
@@ -2570,13 +2820,14 @@ const handleContextMenuAction = async (action: string) => {
 
 
 
-/* Git状态面板 */
+/* Git状态面板 - 修复下拉菜单被裁剪问题 */
+/* Author: Evilek, Date: 2025-08-21 */
 .git-status-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* 主要内容区域 - 修改为根据内容自适应高度，避免暂存区为空时占用大量空间 */
@@ -2593,15 +2844,26 @@ const handleContextMenuAction = async (action: string) => {
   /* 为绝对定位的提示信息留出空间 */
 }
 
-/* 文件区域样式 */
+/* 文件区域样式 - 现代化卡片设计（移除backdrop-filter避免层叠上下文冲突） */
+/* Author: Evilek, Date: 2025-08-21 */
 .staged-files,
 .unstaged-files,
 .file-section {
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: 16px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.06), 0 1px 4px rgba(0, 0, 0, 0.04);
+  transition: all 0.3s ease;
+}
+
+.staged-files:hover,
+.unstaged-files:hover,
+.file-section:hover {
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1), 0 2px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(-2px);
 }
 
 /* 暂存区 - 根据内容自适应高度 */
@@ -2625,14 +2887,27 @@ const handleContextMenuAction = async (action: string) => {
   max-height: 220px;
 }
 
+/* 现代化区域标题样式 - Author: Evilek, Date: 2025-08-21 */
 .section-title,
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 16px;
-  background: #f7fafc;
-  border-bottom: 1px solid #e2e8f0;
+  padding: 16px 20px;
+  background: linear-gradient(135deg, rgba(247, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.9) 100%);
+  border-bottom: 1px solid rgba(226, 232, 240, 0.6);
+  position: relative;
+}
+
+.section-title::before,
+.section-header::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.3), transparent);
 }
 
 .section-title h4,
@@ -2672,34 +2947,40 @@ const handleContextMenuAction = async (action: string) => {
   max-height: 248px;
 }
 
-/* 提交区域 - 优化高度以节省垂直空间 */
+/* 提交区域 - 移除overflow避免裁剪问题 */
+/* Author: Evilek, Date: 2025-08-21 */
 .commit-area {
   position: relative;
   /* 为绝对定位的进度条提供定位上下文 */
-  padding: 12px;
-  background: #f7fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f7fafc 0%, #f1f5f9 100%);
+  border: 1px solid rgba(226, 232, 240, 0.6);
+  border-radius: 16px;
   flex: 0 0 auto;
   /* 不参与flex空间分配，根据内容自适应 */
-  min-height: 140px;
+  min-height: 160px;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
+/* 移除伪元素和动画避免层叠上下文问题 */
+
+/* 现代化提交输入框样式（移除backdrop-filter避免层叠上下文冲突） */
+/* Author: Evilek, Date: 2025-08-21 */
 .commit-input {
   width: 100%;
-  padding: 12px;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
+  padding: 16px;
+  border: 2px solid rgba(226, 232, 240, 0.6);
+  border-radius: 12px;
   font-family: inherit;
   font-size: 14px;
   line-height: 20px;
   /* 固定行高，便于计算 */
   resize: none;
   /* 禁用手动调整大小，使用自动调整 */
-  margin-bottom: 12px;
-  transition: height 0.2s ease;
+  margin-bottom: 16px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   /* 高度变化动画 */
   overflow-y: hidden;
   /* 默认隐藏滚动条 */
@@ -2707,6 +2988,15 @@ const handleContextMenuAction = async (action: string) => {
   /* 最小高度约3行 */
   max-height: 224px;
   /* 最大高度约10行 */
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.commit-input:focus {
+  outline: none;
+  border-color: rgba(102, 126, 234, 0.8);
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1), 0 4px 12px rgba(0, 0, 0, 0.08);
+  transform: translateY(-1px);
 }
 
 /* 推理内容展示样式 - Author: Evilek, Date: 2025-01-10 */
