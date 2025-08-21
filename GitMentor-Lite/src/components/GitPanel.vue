@@ -1,4 +1,4 @@
-<!--  --><template>
+<template>
   <div class="git-panel">
     <!-- 菜单栏 -->
     <div class="menu-bar">
@@ -323,61 +323,489 @@
                 </div>
               </div>
             </div>
+
+
           </div>
         </div>
       </div>
     </div>
 
     <!-- 日报生成Tab页 -->
-    <!-- Author: Evilek, Date: 2025-01-08 -->
+    <!-- Author: Evilek, Date: 2025-08-21 -->
     <div v-show="activeTab === 'daily-report'" class="tab-pane">
-      <div class="construction-container">
-        <div class="construction-content">
-          <div class="construction-icon">🚧</div>
-          <h2 class="construction-title">日报生成功能</h2>
-          <p class="construction-subtitle">施工中...</p>
+      <div class="daily-report-container">
+        <!-- 步骤指示器 -->
+        <div class="steps-indicator">
+          <div class="step-item" :class="{ active: dailyReportStep >= 1, completed: dailyReportStep > 1 }">
+            <div class="step-number">1</div>
+            <div class="step-label">选择仓库</div>
+          </div>
+          <div class="step-connector" :class="{ active: dailyReportStep > 1 }"></div>
+          <div class="step-item" :class="{ active: dailyReportStep >= 2, completed: dailyReportStep > 2 }">
+            <div class="step-number">2</div>
+            <div class="step-label">选择用户</div>
+          </div>
+          <div class="step-connector" :class="{ active: dailyReportStep > 2 }"></div>
+          <div class="step-item" :class="{ active: dailyReportStep >= 3, completed: dailyReportStep > 3 }">
+            <div class="step-number">3</div>
+            <div class="step-label">选择日期</div>
+          </div>
+          <div class="step-connector" :class="{ active: dailyReportStep > 3 }"></div>
+          <div class="step-item" :class="{ active: dailyReportStep >= 4 }">
+            <div class="step-number">4</div>
+            <div class="step-label">生成报告</div>
+          </div>
+        </div>
+
+        <!-- 主要内容区域 -->
+        <div class="daily-report-content">
+          <div class="content-layout">
+            <!-- 左侧主要流程 -->
+            <div class="main-flow">
+              <!-- 步骤1: 仓库选择 -->
+              <div v-if="dailyReportStep === 1" class="step-content">
+                <div class="step-card">
+                  <div class="card-header">
+                    <h3>📁 选择代码仓库</h3>
+                    <p>选择需要生成日报的代码仓库，支持多选</p>
+                  </div>
+                  <div class="card-body">
+                    <div class="repo-search">
+                      <div class="search-input-wrapper">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                          <circle cx="11" cy="11" r="8"></circle>
+                          <path d="m21 21-4.35-4.35"></path>
+                        </svg>
+                        <input v-model="repoSearchQuery" type="text" placeholder="搜索仓库..." class="search-input" />
+                      </div>
+                      <button @click="selectAllRepos" class="select-all-btn" :disabled="!availableRepos.length">
+                        {{ selectedRepos.length === availableRepos.length ? '取消全选' : '全选' }}
+                      </button>
+                    </div>
+
+                    <div class="repo-list">
+                      <div v-for="repo in filteredRepos" :key="repo.path" class="repo-item"
+                        :class="{ selected: selectedRepos.includes(repo.path) }"
+                        @click="toggleRepoSelection(repo.path)">
+                        <div class="repo-checkbox">
+                          <svg v-if="selectedRepos.includes(repo.path)" class="check-icon" viewBox="0 0 24 24"
+                            fill="currentColor">
+                            <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                          </svg>
+                        </div>
+                        <div class="repo-info">
+                          <div class="repo-name">{{ repo.name }}</div>
+                          <div class="repo-path">{{ repo.path }}</div>
+                        </div>
+                        <div class="repo-status">
+                          <span class="status-badge">{{ repo.status || '就绪' }}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-if="!filteredRepos.length" class="empty-state">
+                      <div class="empty-icon">📂</div>
+                      <p>{{ repoSearchQuery ? '未找到匹配的仓库' : '暂无可用仓库' }}</p>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <div class="selection-summary">
+                      已选择 {{ selectedRepos.length }} 个仓库
+                    </div>
+                    <button @click="nextStep" class="next-btn" :disabled="!selectedRepos.length">
+                      下一步：选择用户
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 步骤2: 用户选择 -->
+              <div v-if="dailyReportStep === 2" class="step-content">
+                <div class="step-card">
+                  <div class="card-header">
+                    <h3>👥 选择提交用户</h3>
+                    <p>从所选仓库的提交记录中选择需要生成日报的用户</p>
+                  </div>
+                  <div class="card-body">
+                    <div class="loading-users" v-if="loadingUsers">
+                      <div class="loading-spinner"></div>
+                      <p>正在获取用户列表...</p>
+                    </div>
+
+                    <div v-else class="user-selection">
+                      <div class="user-search">
+                        <div class="search-input-wrapper">
+                          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                          </svg>
+                          <input v-model="userSearchQuery" type="text" placeholder="搜索用户..." class="search-input" />
+                        </div>
+                      </div>
+
+                      <div class="user-list">
+                        <div v-for="user in filteredUsers" :key="user.email" class="user-item"
+                          :class="{ selected: selectedUsers.includes(user.email) }"
+                          @click="toggleUserSelection(user.email)">
+                          <div class="user-checkbox">
+                            <svg v-if="selectedUsers.includes(user.email)" class="check-icon" viewBox="0 0 24 24"
+                              fill="currentColor">
+                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                            </svg>
+                          </div>
+                          <div class="user-avatar">
+                            {{ user.name.charAt(0).toUpperCase() }}
+                          </div>
+                          <div class="user-info">
+                            <div class="user-name">{{ user.name }}</div>
+                            <div class="user-email">{{ user.email }}</div>
+                          </div>
+                          <div class="user-stats">
+                            <span class="commit-count">{{ user.commitCount }} 次提交</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div v-if="!filteredUsers.length" class="empty-state">
+                        <div class="empty-icon">👤</div>
+                        <p>{{ userSearchQuery ? '未找到匹配的用户' : '暂无用户数据' }}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <button @click="prevStep" class="prev-btn">
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m15 18-6-6 6-6" />
+                      </svg>
+                      上一步
+                    </button>
+                    <div class="selection-summary">
+                      已选择 {{ selectedUsers.length }} 个用户
+                    </div>
+                    <button @click="nextStep" class="next-btn" :disabled="!selectedUsers.length">
+                      下一步：选择日期
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 步骤3: 日期选择 -->
+              <div v-if="dailyReportStep === 3" class="step-content">
+                <div class="step-card">
+                  <div class="card-header">
+                    <h3>📅 选择日期范围</h3>
+                    <p>选择需要生成日报的日期范围</p>
+                  </div>
+                  <div class="card-body">
+                    <div class="date-selection">
+                      <div class="date-presets">
+                        <button @click="setDatePreset('today')" class="preset-btn"
+                          :class="{ active: isDatePresetActive('today') }">
+                          今天
+                        </button>
+                        <button @click="setDatePreset('yesterday')" class="preset-btn"
+                          :class="{ active: isDatePresetActive('yesterday') }">
+                          昨天
+                        </button>
+                        <button @click="setDatePreset('thisWeek')" class="preset-btn"
+                          :class="{ active: isDatePresetActive('thisWeek') }">
+                          本周
+                        </button>
+                        <button @click="setDatePreset('lastWeek')" class="preset-btn"
+                          :class="{ active: isDatePresetActive('lastWeek') }">
+                          上周
+                        </button>
+                        <button @click="setDatePreset('thisMonth')" class="preset-btn"
+                          :class="{ active: isDatePresetActive('thisMonth') }">
+                          本月
+                        </button>
+                      </div>
+
+                      <div class="date-inputs">
+                        <div class="date-input-group">
+                          <label>开始日期</label>
+                          <input v-model="dateRange.start" type="date" class="date-input"
+                            :max="dateRange.end || today" />
+                        </div>
+                        <div class="date-separator">至</div>
+                        <div class="date-input-group">
+                          <label>结束日期</label>
+                          <input v-model="dateRange.end" type="date" class="date-input" :min="dateRange.start"
+                            :max="today" />
+                        </div>
+                      </div>
+
+                      <div v-if="dateRange.start && dateRange.end" class="date-summary">
+                        <div class="summary-item">
+                          <span class="summary-label">日期范围：</span>
+                          <span class="summary-value">{{ formatDateRange() }}</span>
+                        </div>
+                        <div class="summary-item">
+                          <span class="summary-label">天数：</span>
+                          <span class="summary-value">{{ calculateDaysDiff() }} 天</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <button @click="prevStep" class="prev-btn">
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m15 18-6-6 6-6" />
+                      </svg>
+                      上一步
+                    </button>
+                    <div class="selection-summary">
+                      {{ dateRange.start && dateRange.end ? '已选择日期范围' : '请选择日期范围' }}
+                    </div>
+                    <button @click="nextStep" class="next-btn" :disabled="!dateRange.start || !dateRange.end">
+                      下一步：生成报告
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 步骤4: 生成报告 -->
+              <div v-if="dailyReportStep === 4" class="step-content">
+                <div class="step-card">
+                  <div class="card-header">
+                    <h3>📊 生成日报</h3>
+                    <p>确认配置信息并生成日报</p>
+                  </div>
+                  <div class="card-body">
+                    <div class="config-summary">
+                      <div class="summary-section">
+                        <h4>📁 选择的仓库 ({{ selectedRepos.length }})</h4>
+                        <div class="summary-list">
+                          <div v-for="repoPath in selectedRepos" :key="repoPath" class="summary-item-small">
+                            {{ getRepoDisplayName(repoPath) }}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="summary-section">
+                        <h4>👥 选择的用户 ({{ selectedUsers.length }})</h4>
+                        <div class="summary-list">
+                          <div v-for="userEmail in selectedUsers" :key="userEmail" class="summary-item-small">
+                            {{ getUserName(userEmail) }}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div class="summary-section">
+                        <h4>📅 日期范围</h4>
+                        <div class="summary-value-large">
+                          {{ formatDateRange() }} ({{ calculateDaysDiff() }} 天)
+                        </div>
+                      </div>
+                    </div>
+
+                    <div v-if="generatingReport" class="generating-state">
+                      <div class="loading-spinner"></div>
+                      <p>正在生成日报...</p>
+                      <div class="progress-details">
+                        <div class="progress-step">{{ reportProgress.currentStep }}</div>
+                      </div>
+                    </div>
+
+                    <div v-if="reportGenerated" class="report-result">
+                      <div class="result-header">
+                        <svg class="success-icon" viewBox="0 0 24 24" fill="currentColor">
+                          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                        </svg>
+                        <h4>日报生成完成</h4>
+                      </div>
+                      <div class="result-actions">
+                        <button @click="viewReport" class="action-btn primary">
+                          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                          查看报告
+                        </button>
+                        <button @click="exportReport" class="action-btn secondary">
+                          <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7,10 12,15 17,10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          导出报告
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <button @click="prevStep" class="prev-btn" :disabled="generatingReport">
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m15 18-6-6 6-6" />
+                      </svg>
+                      上一步
+                    </button>
+                    <div class="selection-summary">
+                      {{ generatingReport ? '正在生成...' : reportGenerated ? '生成完成' : '准备生成' }}
+                    </div>
+                    <button v-if="!reportGenerated" @click="generateReport" class="generate-btn"
+                      :disabled="generatingReport">
+                      <svg v-if="!generatingReport" class="btn-icon" viewBox="0 0 24 24" fill="none"
+                        stroke="currentColor">
+                        <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                      </svg>
+                      <div v-else class="loading-spinner-small"></div>
+                      {{ generatingReport ? '生成中...' : '开始生成' }}
+                    </button>
+                    <button v-else @click="resetWizard" class="reset-btn">
+                      <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" />
+                        <path d="M21 3v5h-5" />
+                        <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" />
+                        <path d="M3 21v-5h5" />
+                      </svg>
+                      重新开始
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 右侧历史报告区域 -->
+            <div class="history-sidebar">
+              <div class="history-card">
+                <div class="history-header">
+                  <h3>📋 历史报告</h3>
+                  <p>查看之前生成的日报</p>
+                </div>
+
+                <div class="history-content">
+                  <div v-if="historyReports.length === 0" class="history-empty">
+                    <div class="empty-icon">📄</div>
+                    <p>暂无历史报告</p>
+                    <span class="empty-hint">生成第一份日报后将显示在这里</span>
+                  </div>
+
+                  <div v-else class="history-list">
+                    <div v-for="report in historyReports" :key="report.id" class="history-item"
+                      @click="viewHistoryReport(report)">
+                      <div class="history-item-header">
+                        <div class="history-title">{{ report.title }}</div>
+                        <div class="history-date">{{ formatHistoryDate(report.createdAt) }}</div>
+                      </div>
+                      <div class="history-meta">
+                        <span class="meta-item">
+                          <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M9 19c-5 0-8-3-8-8s3-8 8-8 8 3 8 8-3 8-8 8z" />
+                            <path d="M9 9h3l-3 3" />
+                          </svg>
+                          {{ report.repos.length }} 仓库
+                        </span>
+                        <span class="meta-item">
+                          <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                            <circle cx="12" cy="7" r="4" />
+                          </svg>
+                          {{ report.users.length }} 用户
+                        </span>
+                        <span class="meta-item">
+                          <svg class="meta-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                            <line x1="16" y1="2" x2="16" y2="6" />
+                            <line x1="8" y1="2" x2="8" y2="6" />
+                            <line x1="3" y1="10" x2="21" y2="10" />
+                          </svg>
+                          {{ report.dayCount }} 天
+                        </span>
+                      </div>
+                      <div class="history-actions">
+                        <button @click.stop="viewHistoryReport(report)" class="action-btn-small view">
+                          <svg class="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                          查看
+                        </button>
+                        <button @click.stop="exportHistoryReport(report)" class="action-btn-small export">
+                          <svg class="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                            <polyline points="7,10 12,15 17,10" />
+                            <line x1="12" y1="15" x2="12" y2="3" />
+                          </svg>
+                          导出
+                        </button>
+                        <button @click.stop="deleteHistoryReport(report)" class="action-btn-small delete">
+                          <svg class="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <polyline points="3,6 5,6 21,6" />
+                            <path d="m19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2" />
+                          </svg>
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="history-footer">
+                  <button @click="clearAllHistory" class="clear-all-btn" :disabled="historyReports.length === 0">
+                    <svg class="btn-icon-small" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                      <polyline points="3,6 5,6 21,6" />
+                      <path d="m19,6v14a2,2 0 0,1-2,2H7a2,2 0 0,1-2-2V6m3,0V4a2,2 0 0,1,2-2h4a2,2 0 0,1,2,2v2" />
+                      <line x1="10" y1="11" x2="10" y2="17" />
+                      <line x1="14" y1="11" x2="14" y2="17" />
+                    </svg>
+                    清空历史
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- Toast通知组件 -->
-  <Toast ref="toastRef" />
+    <!-- Toast通知组件 -->
+    <Toast ref="toastRef" />
 
-  <!-- 确认对话框组件 -->
-  <ConfirmDialog :visible="globalConfirm.visible.value" :options="globalConfirm.options.value"
-    @confirm="globalConfirm.confirm" @cancel="globalConfirm.cancel" @close="globalConfirm.close" />
+    <!-- 确认对话框组件 -->
+    <ConfirmDialog :visible="globalConfirm.visible.value" :options="globalConfirm.options.value"
+      @confirm="globalConfirm.confirm" @cancel="globalConfirm.cancel" @close="globalConfirm.close" />
 
-  <!-- 分层提交进度弹窗 -->
-  <LayeredCommitProgress :visible="layeredProgress.visible" :session-id="layeredProgress.sessionId"
-    :current-step="layeredProgress.currentStep" :total-steps="layeredProgress.totalSteps"
-    :current-status="layeredProgress.currentStatus" :current-file="layeredProgress.currentFile"
-    :file-summaries="layeredProgress.fileSummaries" :ai-stream-content="layeredProgress.aiStreamContent"
-    @cancel="cancelLayeredCommit" />
+    <!-- 分层提交进度弹窗 -->
+    <LayeredCommitProgress :visible="layeredProgress.visible" :session-id="layeredProgress.sessionId"
+      :current-step="layeredProgress.currentStep" :total-steps="layeredProgress.totalSteps"
+      :current-status="layeredProgress.currentStatus" :current-file="layeredProgress.currentFile"
+      :file-summaries="layeredProgress.fileSummaries" :ai-stream-content="layeredProgress.aiStreamContent"
+      @cancel="cancelLayeredCommit" />
 
-  <!-- 调试设置弹窗 -->
-  <div v-if="showDebugSettings" class="modal-overlay debug-settings-overlay" @click="closeDebugSettings">
-    <div class="modal-content debug-settings-modal" @click.stop>
-      <div class="modal-header">
-        <h3>🛠️ 开发设置</h3>
-        <button @click="closeDebugSettings" class="close-btn">×</button>
-      </div>
-      <div class="modal-body">
-        <DebugSettings />
+    <!-- 调试设置弹窗 -->
+    <div v-if="showDebugSettings" class="modal-overlay debug-settings-overlay" @click="closeDebugSettings">
+      <div class="modal-content debug-settings-modal" @click.stop>
+        <div class="modal-header">
+          <h3>🛠️ 开发设置</h3>
+          <button @click="closeDebugSettings" class="close-btn">×</button>
+        </div>
+        <div class="modal-body">
+          <DebugSettings />
+        </div>
       </div>
     </div>
+
+    <!-- 全局右键菜单 -->
+    <ContextMenu :visible="contextMenuVisible" :position="contextMenuPosition" :menuItems="contextMenuItems"
+      @itemClick="handleContextMenuAction" @close="closeContextMenu" />
+
+    <!-- 更新对话框 -->
+    <UpdateDialog :visible="showUpdateDialog" @close="closeUpdateDialog" @updateStarted="handleUpdateStarted"
+      @updateCompleted="handleUpdateCompleted" />
+
+    <!-- 关于对话框 -->
+    <AboutDialog :visible="showAboutDialog" @close="closeAboutDialog" />
   </div>
-
-  <!-- 全局右键菜单 -->
-  <ContextMenu :visible="contextMenuVisible" :position="contextMenuPosition" :menuItems="contextMenuItems"
-    @itemClick="handleContextMenuAction" @close="closeContextMenu" />
-
-  <!-- 更新对话框 -->
-  <UpdateDialog :visible="showUpdateDialog" @close="closeUpdateDialog" @updateStarted="handleUpdateStarted"
-    @updateCompleted="handleUpdateCompleted" />
-
-  <!-- 关于对话框 -->
-  <AboutDialog :visible="showAboutDialog" @close="closeAboutDialog" />
 </template>
 
 <script setup lang="ts">
@@ -427,6 +855,22 @@ const layeredProgress = ref({
   fileSummaries: [],
   aiStreamContent: ''  // AI实时输出内容 - Author: Evilek, Date: 2025-01-10
 })
+
+// 日报生成相关状态 - Author: Evilek, Date: 2025-08-21
+const dailyReportStep = ref(1)
+const selectedRepos = ref<string[]>([])
+const selectedUsers = ref<string[]>([])
+const dateRange = ref<{ start: string; end: string }>({ start: '', end: '' })
+const repoSearchQuery = ref('')
+const userSearchQuery = ref('')
+const availableRepos = ref<any[]>([])
+const availableUsers = ref<any[]>([])
+const loadingUsers = ref(false)
+const generatingReport = ref(false)
+const reportGenerated = ref(false)
+const reportProgress = ref({ currentStep: '' })
+const today = ref(new Date().toISOString().split('T')[0])
+const historyReports = ref<any[]>([]) // 历史报告列表
 
 // 模板相关状态
 const availableTemplates = ref<any[]>([])
@@ -517,6 +961,23 @@ const canBatchUnstage = computed(() => {
     const file = allFiles.value.find(f => f.path === filePath)
     return file && file.isStaged
   })
+})
+
+// 日报生成相关计算属性 - Author: Evilek, Date: 2025-08-21
+const filteredRepos = computed(() => {
+  if (!repoSearchQuery.value) return availableRepos.value
+  return availableRepos.value.filter(repo =>
+    repo.name.toLowerCase().includes(repoSearchQuery.value.toLowerCase()) ||
+    repo.path.toLowerCase().includes(repoSearchQuery.value.toLowerCase())
+  )
+})
+
+const filteredUsers = computed(() => {
+  if (!userSearchQuery.value) return availableUsers.value
+  return availableUsers.value.filter(user =>
+    user.name.toLowerCase().includes(userSearchQuery.value.toLowerCase()) ||
+    user.email.toLowerCase().includes(userSearchQuery.value.toLowerCase())
+  )
 })
 
 // 差异查看器已改为独立窗口，不再需要本地状态
@@ -1812,6 +2273,12 @@ onMounted(async () => {
       // 加载最近仓库列表
       loadRecentRepos()
 
+      // 初始化日报生成可用仓库列表
+      initializeAvailableRepos()
+
+      // 初始化历史报告数据
+      initializeHistoryReports()
+
       // 加载可用模板列表
       await loadAvailableTemplates()
 
@@ -2126,6 +2593,273 @@ const handleContextMenuAction = async (action: string) => {
   }
 
   closeContextMenu()
+}
+
+// 日报生成相关方法 - Author: Evilek, Date: 2025-08-21
+const nextStep = () => {
+  if (dailyReportStep.value < 4) {
+    dailyReportStep.value++
+    if (dailyReportStep.value === 2) {
+      loadUsersFromRepos()
+    }
+  }
+}
+
+const prevStep = () => {
+  if (dailyReportStep.value > 1) {
+    dailyReportStep.value--
+  }
+}
+
+const selectAllRepos = () => {
+  if (selectedRepos.value.length === availableRepos.value.length) {
+    selectedRepos.value = []
+  } else {
+    selectedRepos.value = availableRepos.value.map(repo => repo.path)
+  }
+}
+
+const toggleRepoSelection = (repoPath: string) => {
+  const index = selectedRepos.value.indexOf(repoPath)
+  if (index > -1) {
+    selectedRepos.value.splice(index, 1)
+  } else {
+    selectedRepos.value.push(repoPath)
+  }
+}
+
+const toggleUserSelection = (userEmail: string) => {
+  const index = selectedUsers.value.indexOf(userEmail)
+  if (index > -1) {
+    selectedUsers.value.splice(index, 1)
+  } else {
+    selectedUsers.value.push(userEmail)
+  }
+}
+
+const loadUsersFromRepos = async () => {
+  if (!selectedRepos.value.length) return
+
+  try {
+    loadingUsers.value = true
+    // 这里应该调用后端API获取用户列表
+    // const users = await invoke('get_repo_contributors', { repoPaths: selectedRepos.value })
+    // availableUsers.value = users
+
+    // 临时模拟数据
+    availableUsers.value = [
+      { name: 'Evilek', email: 'evilek@example.com', commitCount: 156 },
+      { name: 'John Doe', email: 'john@example.com', commitCount: 89 },
+      { name: 'Jane Smith', email: 'jane@example.com', commitCount: 234 }
+    ]
+  } catch (error) {
+    console.error('Failed to load users:', error)
+    toast.error('获取用户列表失败: ' + error, '操作失败')
+  } finally {
+    loadingUsers.value = false
+  }
+}
+
+// 初始化可用仓库列表
+const initializeAvailableRepos = () => {
+  // 这里应该从最近仓库列表或其他来源获取
+  availableRepos.value = recentRepos.value.map(repo => ({
+    name: repo.name,
+    path: repo.path,
+    status: '就绪'
+  }))
+}
+
+// 日期相关方法 - Author: Evilek, Date: 2025-08-21
+const setDatePreset = (preset: string) => {
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  switch (preset) {
+    case 'today':
+      dateRange.value.start = today.toISOString().split('T')[0]
+      dateRange.value.end = today.toISOString().split('T')[0]
+      break
+    case 'yesterday':
+      dateRange.value.start = yesterday.toISOString().split('T')[0]
+      dateRange.value.end = yesterday.toISOString().split('T')[0]
+      break
+    case 'thisWeek':
+      const thisWeekStart = new Date(today)
+      thisWeekStart.setDate(today.getDate() - today.getDay())
+      dateRange.value.start = thisWeekStart.toISOString().split('T')[0]
+      dateRange.value.end = today.toISOString().split('T')[0]
+      break
+    case 'lastWeek':
+      const lastWeekEnd = new Date(today)
+      lastWeekEnd.setDate(today.getDate() - today.getDay() - 1)
+      const lastWeekStart = new Date(lastWeekEnd)
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6)
+      dateRange.value.start = lastWeekStart.toISOString().split('T')[0]
+      dateRange.value.end = lastWeekEnd.toISOString().split('T')[0]
+      break
+    case 'thisMonth':
+      const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+      dateRange.value.start = thisMonthStart.toISOString().split('T')[0]
+      dateRange.value.end = today.toISOString().split('T')[0]
+      break
+  }
+}
+
+const isDatePresetActive = (preset: string) => {
+  const today = new Date()
+  const yesterday = new Date(today)
+  yesterday.setDate(yesterday.getDate() - 1)
+
+  switch (preset) {
+    case 'today':
+      return dateRange.value.start === today.toISOString().split('T')[0] &&
+        dateRange.value.end === today.toISOString().split('T')[0]
+    case 'yesterday':
+      return dateRange.value.start === yesterday.toISOString().split('T')[0] &&
+        dateRange.value.end === yesterday.toISOString().split('T')[0]
+    // 其他预设的判断逻辑可以后续完善
+    default:
+      return false
+  }
+}
+
+const formatDateRange = () => {
+  if (!dateRange.value.start || !dateRange.value.end) return ''
+  const start = new Date(dateRange.value.start).toLocaleDateString('zh-CN')
+  const end = new Date(dateRange.value.end).toLocaleDateString('zh-CN')
+  return start === end ? start : `${start} - ${end}`
+}
+
+const calculateDaysDiff = () => {
+  if (!dateRange.value.start || !dateRange.value.end) return 0
+  const start = new Date(dateRange.value.start)
+  const end = new Date(dateRange.value.end)
+  const diffTime = Math.abs(end.getTime() - start.getTime())
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1
+}
+
+const getRepoDisplayName = (repoPath: string) => {
+  const repo = availableRepos.value.find(r => r.path === repoPath)
+  return repo ? repo.name : repoPath.split('/').pop() || repoPath
+}
+
+const getUserName = (userEmail: string) => {
+  const user = availableUsers.value.find(u => u.email === userEmail)
+  return user ? user.name : userEmail
+}
+
+const generateReport = async () => {
+  try {
+    generatingReport.value = true
+    reportProgress.value.currentStep = '正在分析提交记录...'
+
+    // 模拟生成过程
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    reportProgress.value.currentStep = '正在生成报告内容...'
+
+    await new Promise(resolve => setTimeout(resolve, 2000))
+    reportProgress.value.currentStep = '正在格式化输出...'
+
+    await new Promise(resolve => setTimeout(resolve, 1000))
+
+    reportGenerated.value = true
+  } catch (error) {
+    console.error('Failed to generate report:', error)
+    toast.error('生成日报失败: ' + error, '操作失败')
+  } finally {
+    generatingReport.value = false
+  }
+}
+
+const viewReport = () => {
+  // 查看报告的逻辑
+  toast.success('查看报告功能待实现', '提示')
+}
+
+const exportReport = () => {
+  // 导出报告的逻辑
+  toast.success('导出报告功能待实现', '提示')
+}
+
+const resetWizard = () => {
+  dailyReportStep.value = 1
+  selectedRepos.value = []
+  selectedUsers.value = []
+  dateRange.value = { start: '', end: '' }
+  repoSearchQuery.value = ''
+  userSearchQuery.value = ''
+  availableUsers.value = []
+  generatingReport.value = false
+  reportGenerated.value = false
+  reportProgress.value = { currentStep: '' }
+}
+
+// 历史报告相关方法 - Author: Evilek, Date: 2025-08-21
+const formatHistoryDate = (dateStr: string) => {
+  const date = new Date(dateStr)
+  const now = new Date()
+  const diffTime = now.getTime() - date.getTime()
+  const diffDays = Math.floor(diffTime / (1000 * 60 * 60 * 24))
+
+  if (diffDays === 0) {
+    return '今天'
+  } else if (diffDays === 1) {
+    return '昨天'
+  } else if (diffDays < 7) {
+    return `${diffDays}天前`
+  } else {
+    return date.toLocaleDateString('zh-CN')
+  }
+}
+
+const viewHistoryReport = (report: any) => {
+  // TODO: 实现查看历史报告功能
+  toast.success(`查看报告: ${report.title}`, '功能待实现')
+}
+
+const exportHistoryReport = (report: any) => {
+  // TODO: 实现导出历史报告功能
+  toast.success(`导出报告: ${report.title}`, '功能待实现')
+}
+
+const deleteHistoryReport = (report: any) => {
+  // TODO: 实现删除历史报告功能
+  const index = historyReports.value.findIndex(r => r.id === report.id)
+  if (index > -1) {
+    historyReports.value.splice(index, 1)
+    toast.success(`已删除报告: ${report.title}`, '删除成功')
+  }
+}
+
+const clearAllHistory = () => {
+  // TODO: 实现清空所有历史报告功能
+  historyReports.value = []
+  toast.success('已清空所有历史报告', '清空成功')
+}
+
+// 初始化历史报告数据（模拟数据）
+const initializeHistoryReports = () => {
+  // TODO: 从本地存储或后端API加载历史报告
+  historyReports.value = [
+    {
+      id: '1',
+      title: '2025-08-20 开发日报',
+      createdAt: '2025-08-20T18:30:00Z',
+      repos: ['GitMentor', 'ProjectA'],
+      users: ['Evilek', 'John'],
+      dayCount: 1
+    },
+    {
+      id: '2',
+      title: '2025-08-19 周报',
+      createdAt: '2025-08-19T17:45:00Z',
+      repos: ['GitMentor'],
+      users: ['Evilek'],
+      dayCount: 7
+    }
+  ]
 }
 </script>
 
@@ -3698,5 +4432,919 @@ const handleContextMenuAction = async (action: string) => {
   height: 1px;
   background: var(--color-border);
   margin: 5px 0;
+}
+
+/* 日报生成功能样式 - Author: Evilek, Date: 2025-08-21 */
+.daily-report-container {
+  padding: 20px;
+  max-width: 1000px;
+  margin: 0 auto;
+}
+
+/* 步骤指示器 */
+.steps-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 32px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.step-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  opacity: 0.5;
+  transition: all 0.3s ease;
+}
+
+.step-item.active {
+  opacity: 1;
+}
+
+.step-item.completed {
+  opacity: 1;
+}
+
+.step-number {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #e2e8f0;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  transition: all 0.3s ease;
+}
+
+.step-item.active .step-number {
+  background: #3b82f6;
+  color: white;
+}
+
+.step-item.completed .step-number {
+  background: #10b981;
+  color: white;
+}
+
+.step-label {
+  font-size: 12px;
+  color: #64748b;
+  font-weight: 500;
+  text-align: center;
+}
+
+.step-item.active .step-label {
+  color: #1f2937;
+}
+
+.step-connector {
+  width: 60px;
+  height: 2px;
+  background: #e2e8f0;
+  margin: 0 16px;
+  transition: all 0.3s ease;
+}
+
+.step-connector.active {
+  background: #3b82f6;
+}
+
+/* 主要内容区域 */
+.daily-report-content {
+  min-height: 500px;
+}
+
+.content-layout {
+  display: flex;
+  gap: 24px;
+  align-items: flex-start;
+}
+
+.main-flow {
+  flex: 1;
+  min-width: 0;
+}
+
+.step-content {
+  animation: fadeInUp 0.3s ease;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 步骤卡片 */
+.step-card {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.card-header {
+  padding: 24px 24px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.card-header h3 {
+  margin: 0 0 8px 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.card-header p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.card-body {
+  padding: 24px;
+}
+
+.card-footer {
+  padding: 16px 24px;
+  background: #f8fafc;
+  border-top: 1px solid #f1f5f9;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+/* 搜索输入框 */
+.repo-search,
+.user-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.search-input-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.search-icon {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  color: #9ca3af;
+}
+
+.search-input {
+  width: 100%;
+  padding: 10px 12px 10px 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.select-all-btn {
+  padding: 10px 16px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.select-all-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.select-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* 仓库和用户列表 */
+.repo-list,
+.user-list {
+  max-height: 300px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: white;
+}
+
+.repo-item,
+.user-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.repo-item:last-child,
+.user-item:last-child {
+  border-bottom: none;
+}
+
+.repo-item:hover,
+.user-item:hover {
+  background: #f8fafc;
+}
+
+.repo-item.selected,
+.user-item.selected {
+  background: #eff6ff;
+  border-color: #dbeafe;
+}
+
+.repo-checkbox,
+.user-checkbox {
+  width: 20px;
+  height: 20px;
+  border: 2px solid #d1d5db;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+}
+
+.repo-item.selected .repo-checkbox,
+.user-item.selected .user-checkbox {
+  background: #3b82f6;
+  border-color: #3b82f6;
+}
+
+.check-icon {
+  width: 12px;
+  height: 12px;
+  color: white;
+}
+
+.repo-info,
+.user-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.repo-name,
+.user-name {
+  font-weight: 500;
+  color: #1f2937;
+  margin-bottom: 2px;
+}
+
+.repo-path,
+.user-email {
+  font-size: 12px;
+  color: #6b7280;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+}
+
+.repo-status,
+.user-stats {
+  flex-shrink: 0;
+}
+
+.status-badge,
+.commit-count {
+  background: #f0fdf4;
+  color: #166534;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.user-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+/* 空状态 */
+.empty-state {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.empty-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+/* 加载状态 */
+.loading-users {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #e5e7eb;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.loading-spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+/* 按钮样式 */
+.prev-btn,
+.next-btn,
+.generate-btn,
+.reset-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.prev-btn {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+.prev-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.next-btn,
+.generate-btn {
+  background: #3b82f6;
+  color: white;
+}
+
+.next-btn:hover:not(:disabled),
+.generate-btn:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.reset-btn {
+  background: #6b7280;
+  color: white;
+}
+
+.reset-btn:hover {
+  background: #4b5563;
+}
+
+.prev-btn:disabled,
+.next-btn:disabled,
+.generate-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.arrow-icon,
+.btn-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.selection-summary {
+  font-size: 14px;
+  color: #6b7280;
+  flex: 1;
+  text-align: center;
+}
+
+/* 日期选择样式 */
+.date-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.date-presets {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.preset-btn {
+  padding: 8px 16px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preset-btn:hover {
+  background: #e5e7eb;
+}
+
+.preset-btn.active {
+  background: #3b82f6;
+  color: white;
+  border-color: #3b82f6;
+}
+
+.date-inputs {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.date-input-group {
+  flex: 1;
+}
+
+.date-input-group label {
+  display: block;
+  font-size: 13px;
+  font-weight: 500;
+  color: #374151;
+  margin-bottom: 6px;
+}
+
+.date-input {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 14px;
+  transition: all 0.2s ease;
+}
+
+.date-input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.date-separator {
+  font-size: 14px;
+  color: #6b7280;
+  margin-top: 20px;
+}
+
+.date-summary {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.summary-item {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.summary-item:last-child {
+  margin-bottom: 0;
+}
+
+.summary-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.summary-value {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+}
+
+/* 配置摘要样式 */
+.config-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  margin-bottom: 24px;
+}
+
+.summary-section h4 {
+  margin: 0 0 12px 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.summary-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.summary-item-small {
+  background: #f3f4f6;
+  color: #374151;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.summary-value-large {
+  font-size: 16px;
+  font-weight: 500;
+  color: #1f2937;
+  background: #f8fafc;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+}
+
+/* 生成状态样式 */
+.generating-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 40px 20px;
+  text-align: center;
+}
+
+.progress-details {
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.progress-step {
+  font-weight: 500;
+}
+
+/* 报告结果样式 */
+.report-result {
+  text-align: center;
+  padding: 32px 20px;
+}
+
+.result-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.success-icon {
+  width: 48px;
+  height: 48px;
+  color: #10b981;
+}
+
+.result-header h4 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.result-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.action-btn.primary {
+  background: #3b82f6;
+  color: white;
+}
+
+.action-btn.primary:hover {
+  background: #2563eb;
+}
+
+.action-btn.secondary {
+  background: #f3f4f6;
+  color: #374151;
+  border-color: #d1d5db;
+}
+
+.action-btn.secondary:hover {
+  background: #e5e7eb;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+  .daily-report-container {
+    padding: 16px;
+  }
+
+  .steps-indicator {
+    padding: 16px;
+    margin-bottom: 24px;
+  }
+
+  .step-connector {
+    width: 40px;
+    margin: 0 8px;
+  }
+
+  .date-inputs {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .date-separator {
+    text-align: center;
+    margin: 0;
+  }
+
+  .result-actions {
+    flex-direction: column;
+  }
+
+  .card-footer {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .selection-summary {
+    text-align: left;
+  }
+
+  .content-layout {
+    flex-direction: column;
+  }
+
+  .history-sidebar {
+    order: -1;
+    width: 100%;
+  }
+}
+
+/* 历史报告侧边栏样式 - Author: Evilek, Date: 2025-08-21 */
+.history-sidebar {
+  width: 320px;
+  flex-shrink: 0;
+}
+
+.history-card {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  height: fit-content;
+  position: sticky;
+  top: 20px;
+}
+
+.history-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.history-header h3 {
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.history-header p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.history-content {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.history-empty {
+  text-align: center;
+  padding: 40px 20px;
+  color: #6b7280;
+}
+
+.history-empty .empty-icon {
+  font-size: 36px;
+  margin-bottom: 12px;
+}
+
+.history-empty p {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.empty-hint {
+  font-size: 12px;
+  color: #9ca3af;
+}
+
+.history-list {
+  padding: 8px 0;
+}
+
+.history-item {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f3f4f6;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.history-item:last-child {
+  border-bottom: none;
+}
+
+.history-item:hover {
+  background: #f8fafc;
+}
+
+.history-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 8px;
+}
+
+.history-title {
+  font-size: 13px;
+  font-weight: 500;
+  color: #1f2937;
+  flex: 1;
+  margin-right: 8px;
+}
+
+.history-date {
+  font-size: 11px;
+  color: #6b7280;
+  flex-shrink: 0;
+}
+
+.history-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.meta-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.meta-icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.history-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.action-btn-small {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  border: 1px solid transparent;
+}
+
+.action-btn-small.view {
+  background: #eff6ff;
+  color: #2563eb;
+  border-color: #dbeafe;
+}
+
+.action-btn-small.view:hover {
+  background: #dbeafe;
+}
+
+.action-btn-small.export {
+  background: #f0fdf4;
+  color: #16a34a;
+  border-color: #dcfce7;
+}
+
+.action-btn-small.export:hover {
+  background: #dcfce7;
+}
+
+.action-btn-small.delete {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: #fecaca;
+}
+
+.action-btn-small.delete:hover {
+  background: #fecaca;
+}
+
+.btn-icon-small {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+}
+
+.history-footer {
+  padding: 16px 20px;
+  border-top: 1px solid #f1f5f9;
+  background: #f8fafc;
+}
+
+.clear-all-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  width: 100%;
+  justify-content: center;
+}
+
+.clear-all-btn:hover:not(:disabled) {
+  background: #e5e7eb;
+}
+
+.clear-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 </style>
