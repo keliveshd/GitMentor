@@ -2401,7 +2401,7 @@ const handleContextMenuAction = async (action: string) => {
   line-height: 1.5;
 }
 
-/* 仓库头部 - 修复定位和overflow问题 */
+/* 仓库头部 - 与commit-area宽度对齐 */
 /* Author: Evilek, Date: 2025-08-21 */
 .repo-header {
   display: flex;
@@ -2411,7 +2411,7 @@ const handleContextMenuAction = async (action: string) => {
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   border: 1px solid rgba(226, 232, 240, 0.6);
   border-radius: 16px;
-  margin-bottom: 20px;
+  margin: 0 16px 20px 16px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 

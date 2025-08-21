@@ -15,53 +15,38 @@
 
       <!-- 对话框内容 -->
       <div class="dialog-content">
-        <!-- 应用描述 -->
-        <div class="section">
-          <h3>📝 应用简介</h3>
-          <p>{{ appInfo.description || 'AI驱动的Git提交信息生成工具，让代码提交更规范、更高效。' }}</p>
-        </div>
-
         <!-- 作者信息 -->
         <div class="section">
           <h3>👨‍💻 开发者</h3>
           <p>{{ appInfo.authors || 'Evilek' }}</p>
         </div>
 
-        <!-- 技术栈 -->
-        <div class="section">
-          <h3>🛠️ 技术栈</h3>
-          <div class="tech-stack">
-            <span class="tech-tag">Tauri v2</span>
-            <span class="tech-tag">Vue 3</span>
-            <span class="tech-tag">TypeScript</span>
-            <span class="tech-tag">Rust</span>
-            <span class="tech-tag">Git2</span>
-          </div>
-        </div>
-
         <!-- Git仓库 -->
         <div class="section">
           <h3>📦 源代码</h3>
-          <div class="repo-card">
-            <div class="repo-card-content">
-              <div class="repo-icon">
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+          <div class="repo-link-card" @click="openRepository" :class="{ disabled: isOpening }">
+            <div class="repo-link-content">
+              <div class="repo-link-icon">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path
+                    d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                 </svg>
               </div>
-              <div class="repo-details">
-                <p class="repo-url">{{ appInfo.repository_url || 'https://github.com/keliveshd/GitMentor' }}</p>
-                <p class="repo-description">在GitHub上查看源代码、提交问题或贡献代码</p>
+              <div class="repo-link-info">
+                <div class="repo-link-title">GitHub 仓库</div>
+                <div class="repo-link-url">{{ (appInfo.repository_url ||
+                  'https://github.com/keliveshd/GitMentor').replace('https://', '') }}</div>
+              </div>
+              <div class="repo-link-arrow">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                </svg>
               </div>
             </div>
-            <button @click="openRepository" class="btn-modern btn-primary" :disabled="isOpening">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-              </svg>
-              {{ isOpening ? '打开中...' : '访问仓库' }}
-            </button>
+            <div v-if="isOpening" class="repo-link-loading">
+              <div class="loading-spinner-small"></div>
+            </div>
           </div>
         </div>
 
@@ -256,64 +241,112 @@ onMounted(() => {
   line-height: 1.5;
 }
 
-.tech-stack {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
 
-.tech-tag {
-  background: #f0f0f0;
-  padding: 4px 8px;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #666;
-}
 
-/* 现代化仓库卡片 */
-.repo-card {
+/* 现代化仓库链接卡片 */
+.repo-link-card {
   background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
   border: 1px solid #e2e8f0;
   border-radius: 12px;
-  padding: 16px;
+  padding: 0;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
 }
 
-.repo-card-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 16px;
+.repo-link-card:hover:not(.disabled) {
+  background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%);
+  border-color: #cbd5e1;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.repo-icon {
-  width: 40px;
-  height: 40px;
-  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
-  border-radius: 8px;
+.repo-link-card.disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.repo-link-content {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: white;
+  gap: 12px;
+  padding: 14px 16px;
+}
+
+.repo-link-icon {
+  width: 24px;
+  height: 24px;
+  color: #1f2937;
   flex-shrink: 0;
 }
 
-.repo-details {
+.repo-link-icon svg {
+  width: 100%;
+  height: 100%;
+}
+
+.repo-link-info {
   flex: 1;
+  min-width: 0;
 }
 
-.repo-url {
-  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+.repo-link-title {
   font-size: 13px;
-  color: #475569;
-  margin: 0 0 4px 0;
-  word-break: break-all;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 2px;
 }
 
-.repo-description {
-  font-size: 12px;
-  color: #64748b;
-  margin: 0;
-  line-height: 1.4;
+.repo-link-url {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 11px;
+  color: #6b7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.repo-link-arrow {
+  color: #9ca3af;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.repo-link-card:hover:not(.disabled) .repo-link-arrow {
+  color: #6b7280;
+  transform: translateX(2px);
+}
+
+.repo-link-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(248, 250, 252, 0.9);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-spinner-small {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #e5e7eb;
+  border-top: 2px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* 现代化对话框底部 */
@@ -376,6 +409,11 @@ onMounted(() => {
   border-color: #cbd5e1;
 }
 
+.btn-modern.btn-small {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
 .btn-modern svg {
   width: 16px;
   height: 16px;
@@ -383,6 +421,11 @@ onMounted(() => {
 }
 
 /* SVG图标样式 */
+.w-3 {
+  width: 0.75rem;
+  height: 0.75rem;
+}
+
 .w-4 {
   width: 1rem;
   height: 1rem;
@@ -391,6 +434,10 @@ onMounted(() => {
 .w-5 {
   width: 1.25rem;
   height: 1.25rem;
+}
+
+.h-3 {
+  height: 0.75rem;
 }
 
 .h-4 {
