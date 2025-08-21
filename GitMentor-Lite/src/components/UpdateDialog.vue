@@ -60,7 +60,7 @@
               <div class="progress-fill" :style="{ width: downloadProgress + '%' }"></div>
             </div>
             <div class="progress-text">
-              {{ downloadProgress.toFixed(1) }}% 
+              {{ downloadProgress.toFixed(1) }}%
               ({{ formatBytes(downloadedBytes) }} / {{ formatBytes(totalBytes) }})
             </div>
           </div>
@@ -77,42 +77,37 @@
         <div v-else-if="status === 'error'" class="error-section">
           <div class="error-icon">❌</div>
           <p class="error-message">{{ errorMessage }}</p>
-          <button @click="retryCheck" class="retry-btn">重试检查</button>
+          <div class="error-actions">
+            <button @click="retryCheck" class="retry-btn">重试检查</button>
+            <button @click="openDownloadPage" class="download-page-btn" :disabled="isOpeningBrowser">
+              {{ isOpeningBrowser ? '打开中...' : '🔗 手动下载' }}
+            </button>
+          </div>
+          <div class="manual-download-info">
+            <p class="info-text">
+              💡 如果自动更新失败，您可以手动访问以下地址下载最新版本：
+            </p>
+            <p class="repo-url">https://github.com/keliveshd/GitMentor/releases</p>
+          </div>
         </div>
       </div>
 
       <!-- 对话框按钮 -->
       <div class="dialog-actions">
-        <button 
-          v-if="status === 'update-available'" 
-          @click="startDownload" 
-          class="primary-btn"
-          :disabled="!downloadUrl"
-        >
+        <button v-if="status === 'update-available'" @click="startDownload" class="primary-btn"
+          :disabled="!downloadUrl">
           立即更新
         </button>
-        
-        <button 
-          v-if="status === 'downloading'" 
-          @click="cancelDownload" 
-          class="secondary-btn"
-        >
+
+        <button v-if="status === 'downloading'" @click="cancelDownload" class="secondary-btn">
           取消下载
         </button>
-        
-        <button 
-          v-if="['no-update', 'error'].includes(status)" 
-          @click="closeDialog" 
-          class="secondary-btn"
-        >
+
+        <button v-if="['no-update', 'error'].includes(status)" @click="closeDialog" class="secondary-btn">
           关闭
         </button>
-        
-        <button 
-          v-if="status === 'update-available'" 
-          @click="closeDialog" 
-          class="secondary-btn"
-        >
+
+        <button v-if="status === 'update-available'" @click="closeDialog" class="secondary-btn">
           稍后更新
         </button>
       </div>
@@ -160,6 +155,7 @@ const downloadedBytes = ref(0)
 const totalBytes = ref(0)
 const isDownloading = ref(false)
 const isInstalling = ref(false)
+const isOpeningBrowser = ref(false)
 
 // 计算属性
 const dialogTitle = computed(() => {
@@ -308,6 +304,24 @@ const retryCheck = async () => {
   await checkForUpdates()
 }
 
+const openDownloadPage = async () => {
+  if (isOpeningBrowser.value) return
+
+  try {
+    isOpeningBrowser.value = true
+    const downloadPageUrl = 'https://github.com/keliveshd/GitMentor/releases'
+
+    console.log('🔗 [UpdateDialog] 打开下载页面:', downloadPageUrl)
+    await invoke('open_browser_url', { url: downloadPageUrl })
+    console.log('✅ [UpdateDialog] 成功打开下载页面')
+  } catch (error) {
+    console.error('❌ [UpdateDialog] 打开下载页面失败:', error)
+    alert(`打开下载页面失败: ${error}`)
+  } finally {
+    isOpeningBrowser.value = false
+  }
+}
+
 const closeDialog = () => {
   if (isDownloading.value || isInstalling.value) {
     return // 下载或安装过程中不允许关闭
@@ -445,6 +459,8 @@ onMounted(async () => {
   padding: 20px;
   flex: 1;
   overflow-y: auto;
+  min-height: 200px;
+  /* 设置最小高度避免滚动条抖动 */
 }
 
 .status-section {
@@ -456,20 +472,33 @@ onMounted(async () => {
   font-size: 24px;
   margin-bottom: 12px;
   animation: spin 1s linear infinite;
+  display: inline-block;
+  width: 24px;
+  height: 24px;
+  line-height: 24px;
+  text-align: center;
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
-.success-icon, .error-icon {
+.success-icon,
+.error-icon {
   font-size: 24px;
   margin-bottom: 12px;
 }
 
 .update-info {
-  space-y: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
 .version-info {
@@ -638,5 +667,57 @@ onMounted(async () => {
 
 .retry-btn:hover {
   background: #0860ca;
+}
+
+.error-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 12px;
+}
+
+.download-page-btn {
+  background: #6f42c1;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.download-page-btn:hover:not(:disabled) {
+  background: #5a32a3;
+}
+
+.download-page-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.manual-download-info {
+  margin-top: 16px;
+  padding: 12px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border-left: 4px solid #0969da;
+}
+
+.info-text {
+  margin: 0 0 8px 0;
+  font-size: 13px;
+  color: #656d76;
+}
+
+.repo-url {
+  margin: 0;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  color: #0969da;
+  background: white;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid #d0d7de;
 }
 </style>

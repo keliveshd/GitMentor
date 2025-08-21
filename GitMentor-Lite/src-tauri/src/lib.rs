@@ -43,7 +43,10 @@ macro_rules! info_log {
 }
 
 use chrono::Local;
-use commands::{ai_commands, debug_commands, git_commands, git_config_commands, update_commands};
+use commands::{
+    ai_commands, debug_commands, git_commands, git_config_commands, system_commands,
+    update_commands,
+};
 use core::{
     ai_manager::AIManager,
     git_config::GitConfigManager,
@@ -259,6 +262,9 @@ pub fn run() {
             update_commands::check_update_file_exists,
             update_commands::get_update_settings,
             update_commands::save_update_settings,
+            // System commands
+            system_commands::open_browser_url,
+            system_commands::get_app_info,
         ])
         .run(tauri::generate_context!());
 

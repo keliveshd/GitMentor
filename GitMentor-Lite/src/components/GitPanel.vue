@@ -375,6 +375,9 @@
   <!-- 更新对话框 -->
   <UpdateDialog :visible="showUpdateDialog" @close="closeUpdateDialog" @updateStarted="handleUpdateStarted"
     @updateCompleted="handleUpdateCompleted" />
+
+  <!-- 关于对话框 -->
+  <AboutDialog :visible="showAboutDialog" @close="closeAboutDialog" />
 </template>
 
 <script setup lang="ts">
@@ -389,6 +392,7 @@ import LayeredCommitProgress from './LayeredCommitProgress.vue'
 import BranchSwitcher from './BranchSwitcher.vue'
 import DebugSettings from './DebugSettings.vue'
 import UpdateDialog from './UpdateDialog.vue'
+import AboutDialog from './AboutDialog.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
@@ -443,6 +447,9 @@ const showMenu = ref(false)
 
 // 更新对话框状态
 const showUpdateDialog = ref(false)
+
+// 关于对话框状态
+const showAboutDialog = ref(false)
 
 // Tab页状态管理
 // Author: Evilek
@@ -1484,9 +1491,14 @@ const closeDebugSettings = () => {
 
 // 关于功能
 const openAbout = () => {
-  // TODO: 实现关于对话框
-  console.log('打开关于对话框')
+  console.log('🔍 [GitPanel] 打开关于对话框')
+  showAboutDialog.value = true
   showMenu.value = false
+}
+
+const closeAboutDialog = () => {
+  console.log('🔍 [GitPanel] 关闭关于对话框')
+  showAboutDialog.value = false
 }
 
 // 自动加载上次打开的仓库
