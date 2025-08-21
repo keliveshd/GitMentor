@@ -2190,7 +2190,7 @@ const handleContextMenuAction = async (action: string) => {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
 }
 
-/* 下拉菜单内容 - 超高z-index */
+/* 下拉菜单内容 - 回到absolute定位，移除了所有层叠上下文问题 */
 /* Author: Evilek, Date: 2025-08-21 */
 .menu-dropdown-content {
   position: absolute;
@@ -2261,15 +2261,13 @@ const handleContextMenuAction = async (action: string) => {
   cursor: not-allowed;
 }
 
-/* Tab导航样式 - 现代化设计 */
+/* Tab导航样式 - 移除定位避免层叠上下文问题 */
 /* Author: Evilek, Date: 2025-01-08, Updated: 2025-08-21 */
 .tab-navigation {
   background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
   border-bottom: 1px solid rgba(226, 232, 240, 0.8);
   padding: 0 16px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
-  position: relative;
-  z-index: 2;
 }
 
 .tab-list {
@@ -2277,6 +2275,7 @@ const handleContextMenuAction = async (action: string) => {
   gap: 4px;
 }
 
+/* 简化tab-item避免层叠上下文问题 */
 .tab-item {
   display: flex;
   align-items: center;
@@ -2289,32 +2288,12 @@ const handleContextMenuAction = async (action: string) => {
   font-size: 14px;
   font-weight: 600;
   color: #6b7280;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  position: relative;
-  overflow: hidden;
-}
-
-.tab-item::before {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  width: 0;
-  height: 3px;
-  background: linear-gradient(135deg, #667eea, #764ba2);
   transition: all 0.3s ease;
-  transform: translateX(-50%);
-  border-radius: 2px 2px 0 0;
 }
 
 .tab-item:hover {
   background: rgba(102, 126, 234, 0.08);
   color: #4f46e5;
-  transform: translateY(-2px);
-}
-
-.tab-item:hover::before {
-  width: 60%;
 }
 
 .tab-item.active {
@@ -2324,11 +2303,6 @@ const handleContextMenuAction = async (action: string) => {
   border-bottom: 1px solid white;
   margin-bottom: -1px;
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.15);
-}
-
-.tab-item.active::before {
-  width: 80%;
-  height: 4px;
 }
 
 .tab-icon {
@@ -2427,7 +2401,7 @@ const handleContextMenuAction = async (action: string) => {
   line-height: 1.5;
 }
 
-/* 仓库头部 - 现代化卡片设计（移除backdrop-filter避免层叠上下文冲突） */
+/* 仓库头部 - 修复定位和overflow问题 */
 /* Author: Evilek, Date: 2025-08-21 */
 .repo-header {
   display: flex;
@@ -2439,33 +2413,9 @@ const handleContextMenuAction = async (action: string) => {
   border-radius: 16px;
   margin-bottom: 20px;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-  position: relative;
-  overflow: hidden;
 }
 
-.repo-header::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, #667eea, #764ba2, #667eea);
-  background-size: 200% 100%;
-  animation: shimmer 3s ease-in-out infinite;
-}
-
-@keyframes shimmer {
-
-  0%,
-  100% {
-    background-position: 200% 0;
-  }
-
-  50% {
-    background-position: -200% 0;
-  }
-}
+/* 移除伪元素和动画避免层叠上下文问题 */
 
 .repo-info {
   display: flex;
@@ -2531,7 +2481,7 @@ const handleContextMenuAction = async (action: string) => {
 
 
 
-/* 选择仓库按钮 - 超高z-index确保可点击 */
+/* 选择仓库按钮 - 正常层级，低于菜单 */
 /* Author: Evilek, Date: 2025-08-21 */
 .select-repo-btn {
   padding: 8px 16px;
@@ -2548,7 +2498,7 @@ const handleContextMenuAction = async (action: string) => {
   min-width: 90px;
   box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
   position: relative;
-  z-index: 999999;
+  z-index: 10;
 }
 
 .select-repo-btn:hover:not(:disabled) {
@@ -2870,13 +2820,14 @@ const handleContextMenuAction = async (action: string) => {
 
 
 
-/* Git状态面板 */
+/* Git状态面板 - 修复下拉菜单被裁剪问题 */
+/* Author: Evilek, Date: 2025-08-21 */
 .git-status-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
   flex: 1;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* 主要内容区域 - 修改为根据内容自适应高度，避免暂存区为空时占用大量空间 */
@@ -2996,7 +2947,7 @@ const handleContextMenuAction = async (action: string) => {
   max-height: 248px;
 }
 
-/* 提交区域 - 现代化渐变设计（移除backdrop-filter避免层叠上下文冲突） */
+/* 提交区域 - 移除overflow避免裁剪问题 */
 /* Author: Evilek, Date: 2025-08-21 */
 .commit-area {
   position: relative;
@@ -3011,32 +2962,9 @@ const handleContextMenuAction = async (action: string) => {
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.08), 0 2px 8px rgba(0, 0, 0, 0.04);
-  overflow: hidden;
 }
 
-.commit-area::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, #667eea, #764ba2, #f093fb, #f5576c, #667eea);
-  background-size: 300% 100%;
-  animation: gradientShift 4s ease-in-out infinite;
-}
-
-@keyframes gradientShift {
-
-  0%,
-  100% {
-    background-position: 0% 50%;
-  }
-
-  50% {
-    background-position: 100% 50%;
-  }
-}
+/* 移除伪元素和动画避免层叠上下文问题 */
 
 /* 现代化提交输入框样式（移除backdrop-filter避免层叠上下文冲突） */
 /* Author: Evilek, Date: 2025-08-21 */

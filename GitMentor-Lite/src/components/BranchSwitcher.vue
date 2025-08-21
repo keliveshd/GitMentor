@@ -291,7 +291,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* 简化方案 - 最小化层叠上下文 */
+/* 分支按钮 - 正常层级，低于菜单 */
 /* Author: Evilek, Date: 2025-08-21 */
 .branch-switcher {
   position: relative;
@@ -311,7 +311,7 @@ onUnmounted(() => {
   color: var(--text-color, #24292f);
   transition: all 0.2s ease;
   position: relative;
-  z-index: 999999;
+  z-index: 20;
 }
 
 .branch-button:hover {
@@ -344,7 +344,7 @@ onUnmounted(() => {
   transform: rotate(180deg);
 }
 
-/* 简化方案 - 超高z-index */
+/* 分支下拉菜单 - 正常层级，低于主菜单 */
 /* Author: Evilek, Date: 2025-08-21 */
 .branch-dropdown {
   position: absolute;
@@ -357,7 +357,7 @@ onUnmounted(() => {
   border: 1px solid var(--border-color, #e1e5e9);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(140, 149, 159, 0.2);
-  z-index: 999998;
+  z-index: 30;
   overflow: hidden;
 }
 
