@@ -42,10 +42,25 @@
         <!-- Git仓库 -->
         <div class="section">
           <h3>📦 源代码</h3>
-          <div class="repo-info">
-            <span class="repo-url">{{ appInfo.repository_url || 'https://github.com/keliveshd/GitMentor' }}</span>
-            <button @click="openRepository" class="open-repo-btn" :disabled="isOpening">
-              {{ isOpening ? '打开中...' : '🔗 访问仓库' }}
+          <div class="repo-card">
+            <div class="repo-card-content">
+              <div class="repo-icon">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path>
+                </svg>
+              </div>
+              <div class="repo-details">
+                <p class="repo-url">{{ appInfo.repository_url || 'https://github.com/keliveshd/GitMentor' }}</p>
+                <p class="repo-description">在GitHub上查看源代码、提交问题或贡献代码</p>
+              </div>
+            </div>
+            <button @click="openRepository" class="btn-modern btn-primary" :disabled="isOpening">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+              {{ isOpening ? '打开中...' : '访问仓库' }}
             </button>
           </div>
         </div>
@@ -64,8 +79,13 @@
       </div>
 
       <!-- 对话框底部 -->
-      <div class="dialog-footer">
-        <button @click="closeDialog" class="close-button">关闭</button>
+      <div class="dialog-footer-modern">
+        <button @click="closeDialog" class="btn-modern btn-secondary">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+          关闭
+        </button>
       </div>
     </div>
   </div>
@@ -112,11 +132,11 @@ const closeDialog = () => {
 
 const openRepository = async () => {
   if (isOpening.value) return
-  
+
   try {
     isOpening.value = true
     const repoUrl = appInfo.value.repository_url || 'https://github.com/keliveshd/GitMentor'
-    
+
     await invoke('open_browser_url', { url: repoUrl })
     console.log('✅ [AboutDialog] 成功打开仓库链接:', repoUrl)
   } catch (error) {
@@ -250,59 +270,134 @@ onMounted(() => {
   color: #666;
 }
 
-.repo-info {
+/* 现代化仓库卡片 */
+.repo-card {
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.repo-card-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.repo-icon {
+  width: 40px;
+  height: 40px;
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border-radius: 8px;
   display: flex;
   align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.repo-details {
+  flex: 1;
 }
 
 .repo-url {
-  color: #666;
-  font-family: monospace;
-  font-size: 14px;
-  flex: 1;
-  min-width: 200px;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 13px;
+  color: #475569;
+  margin: 0 0 4px 0;
+  word-break: break-all;
 }
 
-.open-repo-btn {
-  background: #667eea;
-  color: white;
-  border: none;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
+.repo-description {
   font-size: 12px;
-  transition: background-color 0.2s;
+  color: #64748b;
+  margin: 0;
+  line-height: 1.4;
 }
 
-.open-repo-btn:hover:not(:disabled) {
-  background: #5a6fd8;
+/* 现代化对话框底部 */
+.dialog-footer-modern {
+  padding: 20px 24px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  justify-content: flex-end;
 }
 
-.open-repo-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.dialog-footer {
-  padding: 15px 20px;
-  border-top: 1px solid #eee;
-  text-align: right;
-}
-
-.close-button {
-  background: #667eea;
-  color: white;
-  border: none;
-  padding: 8px 20px;
-  border-radius: 4px;
-  cursor: pointer;
+/* 现代化按钮样式 - 复用UpdateDialog的样式 */
+.btn-modern {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
   font-size: 14px;
-  transition: background-color 0.2s;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  outline: none;
 }
 
-.close-button:hover {
-  background: #5a6fd8;
+.btn-modern:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.btn-modern:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-modern.btn-primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border-color: #2563eb;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+}
+
+.btn-modern.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-modern.btn-secondary {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+.btn-modern.btn-secondary:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.btn-modern svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* SVG图标样式 */
+.w-4 {
+  width: 1rem;
+  height: 1rem;
+}
+
+.w-5 {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.h-4 {
+  height: 1rem;
+}
+
+.h-5 {
+  height: 1.25rem;
 }
 </style>

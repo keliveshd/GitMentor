@@ -16,14 +16,28 @@
       <div class="dialog-content">
         <!-- 检查更新状态 -->
         <div v-if="status === 'checking'" class="status-section">
-          <div class="loading-spinner">🔄</div>
-          <p>正在检查更新...</p>
+          <div class="loading-container">
+            <div class="loading-spinner-modern"></div>
+            <div class="loading-text">
+              <h3 class="status-title">检查更新中</h3>
+              <p class="status-description">正在从GitHub获取最新版本信息...</p>
+            </div>
+          </div>
         </div>
 
         <!-- 无更新状态 -->
         <div v-else-if="status === 'no-update'" class="status-section">
-          <div class="success-icon">✅</div>
-          <p>您已使用最新版本 {{ currentVersion }}</p>
+          <div class="status-container success">
+            <div class="status-icon-modern success">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path>
+              </svg>
+            </div>
+            <div class="status-text">
+              <h3 class="status-title">已是最新版本</h3>
+              <p class="status-description">当前版本 {{ currentVersion }} 是最新的</p>
+            </div>
+          </div>
         </div>
 
         <!-- 有更新可用 -->
@@ -74,40 +88,78 @@
         </div>
 
         <!-- 错误状态 -->
-        <div v-else-if="status === 'error'" class="error-section">
-          <div class="error-icon">❌</div>
-          <p class="error-message">{{ errorMessage }}</p>
-          <div class="error-actions">
-            <button @click="retryCheck" class="retry-btn">重试检查</button>
-            <button @click="openDownloadPage" class="download-page-btn" :disabled="isOpeningBrowser">
-              {{ isOpeningBrowser ? '打开中...' : '🔗 手动下载' }}
+        <div v-else-if="status === 'error'" class="status-section">
+          <div class="status-container error">
+            <div class="status-icon-modern error">
+              <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+              </svg>
+            </div>
+            <div class="status-text">
+              <h3 class="status-title">更新检查失败</h3>
+              <p class="status-description">{{ errorMessage }}</p>
+            </div>
+          </div>
+
+          <div class="error-actions-modern">
+            <button @click="retryCheck" class="btn-modern btn-secondary">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15">
+                </path>
+              </svg>
+              重试检查
+            </button>
+            <button @click="openDownloadPage" class="btn-modern btn-primary" :disabled="isOpeningBrowser">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+              </svg>
+              {{ isOpeningBrowser ? '打开中...' : '手动下载' }}
             </button>
           </div>
-          <div class="manual-download-info">
-            <p class="info-text">
-              💡 如果自动更新失败，您可以手动访问以下地址下载最新版本：
+
+          <div class="info-card">
+            <div class="info-card-header">
+              <svg class="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+              </svg>
+              <span class="info-card-title">手动下载说明</span>
+            </div>
+            <p class="info-card-description">
+              如果自动更新失败，您可以访问GitHub Releases页面手动下载最新版本
             </p>
-            <p class="repo-url">https://github.com/keliveshd/GitMentor/releases</p>
+            <div class="info-card-url">
+              <code>https://github.com/keliveshd/GitMentor/releases</code>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- 对话框按钮 -->
-      <div class="dialog-actions">
-        <button v-if="status === 'update-available'" @click="startDownload" class="primary-btn"
+      <div class="dialog-actions-modern">
+        <button v-if="status === 'update-available'" @click="startDownload" class="btn-modern btn-primary btn-large"
           :disabled="!downloadUrl">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+          </svg>
           立即更新
         </button>
 
-        <button v-if="status === 'downloading'" @click="cancelDownload" class="secondary-btn">
+        <button v-if="status === 'downloading'" @click="cancelDownload" class="btn-modern btn-destructive">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
           取消下载
         </button>
 
-        <button v-if="['no-update', 'error'].includes(status)" @click="closeDialog" class="secondary-btn">
+        <button v-if="['no-update', 'error'].includes(status)" @click="closeDialog" class="btn-modern btn-secondary">
           关闭
         </button>
 
-        <button v-if="status === 'update-available'" @click="closeDialog" class="secondary-btn">
+        <button v-if="status === 'update-available'" @click="closeDialog" class="btn-modern btn-ghost">
           稍后更新
         </button>
       </div>
@@ -463,20 +515,29 @@ onMounted(async () => {
   /* 设置最小高度避免滚动条抖动 */
 }
 
+/* 现代化状态区域样式 */
 .status-section {
-  text-align: center;
-  padding: 20px 0;
+  padding: 24px 0;
 }
 
-.loading-spinner {
-  font-size: 24px;
-  margin-bottom: 12px;
-  animation: spin 1s linear infinite;
-  display: inline-block;
+.loading-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+}
+
+.loading-spinner-modern {
   width: 24px;
   height: 24px;
-  line-height: 24px;
-  text-align: center;
+  border: 3px solid #e2e8f0;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  flex-shrink: 0;
 }
 
 @keyframes spin {
@@ -489,10 +550,65 @@ onMounted(async () => {
   }
 }
 
-.success-icon,
-.error-icon {
-  font-size: 24px;
-  margin-bottom: 12px;
+.loading-text {
+  flex: 1;
+}
+
+.status-container {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid;
+}
+
+.status-container.success {
+  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  border-color: #bbf7d0;
+}
+
+.status-container.error {
+  background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+  border-color: #fecaca;
+}
+
+.status-icon-modern {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.status-icon-modern.success {
+  background: #22c55e;
+  color: white;
+}
+
+.status-icon-modern.error {
+  background: #ef4444;
+  color: white;
+}
+
+.status-text {
+  flex: 1;
+}
+
+.status-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 4px 0;
+}
+
+.status-description {
+  font-size: 14px;
+  color: #6b7280;
+  margin: 0;
+  line-height: 1.5;
 }
 
 .update-info {
@@ -719,5 +835,188 @@ onMounted(async () => {
   padding: 4px 8px;
   border-radius: 4px;
   border: 1px solid #d0d7de;
+}
+
+/* 现代化按钮样式 */
+.btn-modern {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-decoration: none;
+  outline: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.btn-modern:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: 2px;
+}
+
+.btn-modern:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.btn-modern.btn-primary {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  border-color: #2563eb;
+  box-shadow: 0 1px 3px rgba(59, 130, 246, 0.3);
+}
+
+.btn-modern.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-modern.btn-secondary {
+  background: #f8fafc;
+  color: #475569;
+  border-color: #e2e8f0;
+}
+
+.btn-modern.btn-secondary:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #cbd5e1;
+}
+
+.btn-modern.btn-ghost {
+  background: transparent;
+  color: #64748b;
+  border-color: transparent;
+}
+
+.btn-modern.btn-ghost:hover:not(:disabled) {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.btn-modern.btn-destructive {
+  background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+  color: white;
+  border-color: #dc2626;
+  box-shadow: 0 1px 3px rgba(239, 68, 68, 0.3);
+}
+
+.btn-modern.btn-destructive:hover:not(:disabled) {
+  background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-modern.btn-large {
+  padding: 12px 20px;
+  font-size: 16px;
+}
+
+.btn-modern svg {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+/* 现代化对话框动作区域 */
+.dialog-actions-modern {
+  padding: 20px 24px;
+  border-top: 1px solid #e2e8f0;
+  background: #f8fafc;
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+/* 现代化错误动作区域 */
+.error-actions-modern {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  margin: 20px 0;
+}
+
+/* 现代化信息卡片 */
+.info-card {
+  margin-top: 20px;
+  padding: 16px;
+  background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+  border: 1px solid #bae6fd;
+  border-radius: 12px;
+}
+
+.info-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.info-card-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0369a1;
+}
+
+.info-card-description {
+  font-size: 13px;
+  color: #0c4a6e;
+  margin: 0 0 12px 0;
+  line-height: 1.5;
+}
+
+.info-card-url {
+  background: white;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid #bae6fd;
+}
+
+.info-card-url code {
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+  font-size: 12px;
+  color: #0369a1;
+  background: none;
+  padding: 0;
+}
+
+/* SVG图标样式 */
+.w-4 {
+  width: 1rem;
+  height: 1rem;
+}
+
+.w-5 {
+  width: 1.25rem;
+  height: 1.25rem;
+}
+
+.w-6 {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+
+.h-4 {
+  height: 1rem;
+}
+
+.h-5 {
+  height: 1.25rem;
+}
+
+.h-6 {
+  height: 1.5rem;
+}
+
+.text-blue-500 {
+  color: #3b82f6;
 }
 </style>
