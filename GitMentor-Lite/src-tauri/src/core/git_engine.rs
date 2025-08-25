@@ -2880,4 +2880,233 @@ impl GitEngine {
             },
         })
     }
+
+    // 日报生成相关方法 - Author: Evilek, Date: 2025-08-21
+
+    /// 获取可用仓库列表
+    pub fn get_available_repositories(
+        &self,
+        repo_paths: Vec<String>,
+    ) -> Result<Vec<crate::types::git_types::Repository>> {
+        let mut repositories = Vec::new();
+
+        let git_command = self.get_git_command();
+
+        for path in repo_paths {
+            // 检查是否为Git仓库
+            if let Ok(output) = Self::create_hidden_command(&git_command)
+                .current_dir(&path)
+                .args(&["rev-parse", "--git-dir"])
+                .output()
+            {
+                if output.status.success() {
+                    let name = Path::new(&path)
+                        .file_name()
+                        .and_then(|n| n.to_str())
+                        .unwrap_or("Unknown")
+                        .to_string();
+
+                    // 检查是否为bare仓库
+                    let is_bare = Self::create_hidden_command(&git_command)
+                        .current_dir(&path)
+                        .args(&["rev-parse", "--is-bare-repository"])
+                        .output()
+                        .map(|out| String::from_utf8_lossy(&out.stdout).trim() == "true")
+                        .unwrap_or(false);
+
+                    let status = if is_bare {
+                        "Bare Repository".to_string()
+                    } else {
+                        "Ready".to_string()
+                    };
+
+                    repositories.push(crate::types::git_types::Repository { name, path, status });
+                }
+            }
+        }
+
+        Ok(repositories)
+    }
+
+    /// 获取仓库贡献者列表
+    pub fn get_repo_contributors(
+        &self,
+        repo_paths: Vec<String>,
+    ) -> Result<Vec<crate::types::git_types::Contributor>> {
+        let mut contributors = std::collections::HashMap::new();
+
+        let git_command = self.get_git_command();
+
+        for repo_path in repo_paths {
+            // 使用git log命令获取提交者信息
+            if let Ok(output) = Self::create_hidden_command(&git_command)
+                .current_dir(&repo_path)
+                .args(&["log", "--format=%an|%ae", "--all"])
+                .output()
+            {
+                if output.status.success() {
+                    let log_output = String::from_utf8_lossy(&output.stdout);
+                    for line in log_output.lines() {
+                        if let Some((name, email)) = line.split_once('|') {
+                            let name = name.trim().to_string();
+                            let email = email.trim().to_string();
+
+                            if !email.is_empty() && !name.is_empty() {
+                                let entry = contributors.entry(email.clone()).or_insert(
+                                    crate::types::git_types::Contributor {
+                                        name,
+                                        email,
+                                        commit_count: 0,
+                                    },
+                                );
+                                entry.commit_count += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(contributors.into_values().collect())
+    }
+
+    /// 分析提交记录
+    pub fn analyze_commits(
+        &self,
+        config: crate::types::git_types::AnalysisConfig,
+    ) -> Result<crate::types::git_types::CommitAnalysis> {
+        // 日期处理相关导入已移除，使用Git命令行的日期过滤
+
+        let mut commits_by_user = std::collections::HashMap::new();
+        let mut commits_by_repo = std::collections::HashMap::new();
+        let mut file_changes = std::collections::HashMap::new();
+        let mut total_commits = 0;
+        let git_command = self.get_git_command();
+
+        for repo_path in &config.repoPaths {
+            let repo_name = Path::new(repo_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("Unknown")
+                .to_string();
+
+            let mut repo_commits = Vec::new();
+
+            // 构建git log命令参数
+            let mut args = vec!["log", "--format=%H|%h|%an|%ae|%at|%s", "--all"];
+
+            // 添加日期过滤
+            if !config.startDate.is_empty() && !config.endDate.is_empty() {
+                args.push("--since");
+                args.push(&config.startDate);
+                args.push("--until");
+                args.push(&config.endDate);
+            }
+
+            // 执行git log命令
+            if let Ok(output) = Self::create_hidden_command(&git_command)
+                .current_dir(repo_path)
+                .args(&args)
+                .output()
+            {
+                if output.status.success() {
+                    let log_output = String::from_utf8_lossy(&output.stdout);
+                    for line in log_output.lines() {
+                        if let Some(parts) = Self::parse_commit_line(line) {
+                            let (hash, short_hash, author, email, timestamp_str, message) = parts;
+
+                            // 检查用户过滤
+                            if config.userEmails.is_empty() || config.userEmails.contains(&email) {
+                                let timestamp = timestamp_str.parse::<i64>().unwrap_or(0);
+
+                                // 获取提交涉及的文件
+                                let files_changed =
+                                    self.get_commit_files_with_command(repo_path, &hash)?;
+
+                                let commit_info = CommitInfo {
+                                    hash,
+                                    short_hash,
+                                    message,
+                                    author,
+                                    email: email.clone(),
+                                    timestamp,
+                                    files_changed: files_changed.clone(),
+                                };
+
+                                // 统计文件变更
+                                for file in &files_changed {
+                                    *file_changes.entry(file.clone()).or_insert(0) += 1;
+                                }
+
+                                // 按用户分组
+                                commits_by_user
+                                    .entry(email)
+                                    .or_insert_with(Vec::new)
+                                    .push(commit_info.clone());
+
+                                repo_commits.push(commit_info);
+                                total_commits += 1;
+                            }
+                        }
+                    }
+                }
+            }
+
+            commits_by_repo.insert(repo_name, repo_commits);
+        }
+
+        Ok(crate::types::git_types::CommitAnalysis {
+            total_commits,
+            commits_by_user,
+            commits_by_repo,
+            file_changes,
+            analysis_period: format!("{} to {}", config.startDate, config.endDate),
+        })
+    }
+
+    /// 解析git log输出行
+    fn parse_commit_line(line: &str) -> Option<(String, String, String, String, String, String)> {
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() >= 6 {
+            Some((
+                parts[0].to_string(),             // hash
+                parts[1].to_string(),             // short_hash
+                parts[2].to_string(),             // author
+                parts[3].to_string(),             // email
+                parts[4].to_string(),             // timestamp
+                parts[5..].join("|").to_string(), // message (可能包含|字符)
+            ))
+        } else {
+            None
+        }
+    }
+
+    /// 使用Git命令获取提交涉及的文件列表
+    fn get_commit_files_with_command(
+        &self,
+        repo_path: &str,
+        commit_hash: &str,
+    ) -> Result<Vec<String>> {
+        let git_command = self.get_git_command();
+        let mut files = Vec::new();
+
+        // 使用git show命令获取提交涉及的文件
+        if let Ok(output) = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["show", "--name-only", "--format=", commit_hash])
+            .output()
+        {
+            if output.status.success() {
+                let files_output = String::from_utf8_lossy(&output.stdout);
+                for line in files_output.lines() {
+                    let line = line.trim();
+                    if !line.is_empty() {
+                        files.push(line.to_string());
+                    }
+                }
+            }
+        }
+
+        Ok(files)
+    }
 }

@@ -2642,16 +2642,9 @@ const loadUsersFromRepos = async () => {
 
   try {
     loadingUsers.value = true
-    // 这里应该调用后端API获取用户列表
-    // const users = await invoke('get_repo_contributors', { repoPaths: selectedRepos.value })
-    // availableUsers.value = users
-
-    // 临时模拟数据
-    availableUsers.value = [
-      { name: 'Evilek', email: 'evilek@example.com', commitCount: 156 },
-      { name: 'John Doe', email: 'john@example.com', commitCount: 89 },
-      { name: 'Jane Smith', email: 'jane@example.com', commitCount: 234 }
-    ]
+    // 调用后端API获取用户列表
+    const users = await invoke('get_repo_contributors', { repoPaths: selectedRepos.value }) as any[]
+    availableUsers.value = users
   } catch (error) {
     console.error('Failed to load users:', error)
     toast.error('获取用户列表失败: ' + error, '操作失败')
@@ -2661,13 +2654,31 @@ const loadUsersFromRepos = async () => {
 }
 
 // 初始化可用仓库列表
-const initializeAvailableRepos = () => {
-  // 这里应该从最近仓库列表或其他来源获取
-  availableRepos.value = recentRepos.value.map(repo => ({
-    name: repo.name,
-    path: repo.path,
-    status: '就绪'
-  }))
+const initializeAvailableRepos = async () => {
+  try {
+    // 从最近仓库列表获取路径
+    const repoPaths = recentRepos.value.map(repo => repo.path)
+    if (repoPaths.length > 0) {
+      // 调用后端API验证仓库状态
+      const repos = await invoke('get_available_repositories', { repoPaths }) as any[]
+      availableRepos.value = repos
+    } else {
+      // 如果没有最近仓库，使用本地数据
+      availableRepos.value = recentRepos.value.map(repo => ({
+        name: repo.name,
+        path: repo.path,
+        status: '就绪'
+      }))
+    }
+  } catch (error) {
+    console.error('Failed to initialize repositories:', error)
+    // 出错时使用本地数据作为备选
+    availableRepos.value = recentRepos.value.map(repo => ({
+      name: repo.name,
+      path: repo.path,
+      status: '就绪'
+    }))
+  }
 }
 
 // 日期相关方法 - Author: Evilek, Date: 2025-08-21
@@ -2755,16 +2766,35 @@ const generateReport = async () => {
     generatingReport.value = true
     reportProgress.value.currentStep = '正在分析提交记录...'
 
-    // 模拟生成过程
-    await new Promise(resolve => setTimeout(resolve, 2000))
+    // 构建分析配置
+    const config = {
+      repoPaths: selectedRepos.value,
+      userEmails: selectedUsers.value,
+      startDate: dateRange.value.start,
+      endDate: dateRange.value.end
+    }
+
+    // 调用后端分析提交记录
+    const analysis = await invoke('analyze_commits', { config }) as any
+
     reportProgress.value.currentStep = '正在生成报告内容...'
 
-    await new Promise(resolve => setTimeout(resolve, 2000))
-    reportProgress.value.currentStep = '正在格式化输出...'
+    // 调用后端生成报告
+    const report = await invoke('generate_daily_report', {
+      analysis,
+      template: null
+    }) as any
 
-    await new Promise(resolve => setTimeout(resolve, 1000))
+    reportProgress.value.currentStep = '正在保存报告...'
+
+    // 保存报告到历史记录
+    await invoke('save_report', { report })
+
+    // 更新历史报告列表
+    await loadHistoryReports()
 
     reportGenerated.value = true
+    toast.success('日报生成成功！', '操作成功')
   } catch (error) {
     console.error('Failed to generate report:', error)
     toast.error('生成日报失败: ' + error, '操作失败')
@@ -2824,12 +2854,20 @@ const exportHistoryReport = (report: any) => {
   toast.success(`导出报告: ${report.title}`, '功能待实现')
 }
 
-const deleteHistoryReport = (report: any) => {
-  // TODO: 实现删除历史报告功能
-  const index = historyReports.value.findIndex(r => r.id === report.id)
-  if (index > -1) {
-    historyReports.value.splice(index, 1)
-    toast.success(`已删除报告: ${report.title}`, '删除成功')
+const deleteHistoryReport = async (report: any) => {
+  try {
+    // 调用后端删除报告
+    await invoke('delete_report', { reportId: report.id })
+
+    // 从本地列表中移除
+    const index = historyReports.value.findIndex(r => r.id === report.id)
+    if (index > -1) {
+      historyReports.value.splice(index, 1)
+      toast.success(`已删除报告: ${report.title}`, '删除成功')
+    }
+  } catch (error) {
+    console.error('Failed to delete report:', error)
+    toast.error('删除报告失败: ' + error, '操作失败')
   }
 }
 
@@ -2839,27 +2877,38 @@ const clearAllHistory = () => {
   toast.success('已清空所有历史报告', '清空成功')
 }
 
-// 初始化历史报告数据（模拟数据）
-const initializeHistoryReports = () => {
-  // TODO: 从本地存储或后端API加载历史报告
-  historyReports.value = [
-    {
-      id: '1',
-      title: '2025-08-20 开发日报',
-      createdAt: '2025-08-20T18:30:00Z',
-      repos: ['GitMentor', 'ProjectA'],
-      users: ['Evilek', 'John'],
-      dayCount: 1
-    },
-    {
-      id: '2',
-      title: '2025-08-19 周报',
-      createdAt: '2025-08-19T17:45:00Z',
-      repos: ['GitMentor'],
-      users: ['Evilek'],
-      dayCount: 7
-    }
-  ]
+// 加载历史报告数据
+const loadHistoryReports = async () => {
+  try {
+    const reports = await invoke('get_history_reports') as any[]
+    historyReports.value = reports
+  } catch (error) {
+    console.error('Failed to load history reports:', error)
+    // 使用模拟数据作为备选
+    historyReports.value = [
+      {
+        id: '1',
+        title: '2025-08-20 开发日报',
+        createdAt: '2025-08-20T18:30:00Z',
+        repos: ['GitMentor', 'ProjectA'],
+        users: ['Evilek', 'John'],
+        dayCount: 1
+      },
+      {
+        id: '2',
+        title: '2025-08-19 周报',
+        createdAt: '2025-08-19T17:45:00Z',
+        repos: ['GitMentor'],
+        users: ['Evilek'],
+        dayCount: 7
+      }
+    ]
+  }
+}
+
+// 初始化历史报告数据
+const initializeHistoryReports = async () => {
+  await loadHistoryReports()
 }
 </script>
 
