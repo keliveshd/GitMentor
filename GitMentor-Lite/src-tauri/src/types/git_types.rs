@@ -173,3 +173,62 @@ pub struct FileDiffResult {
     pub is_new_file: bool,
     pub is_deleted_file: bool,
 }
+
+// 日报生成相关数据结构 - Author: Evilek, Date: 2025-08-21
+
+/// 仓库信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Repository {
+    pub name: String,
+    pub path: String,
+    pub status: String,
+}
+
+/// 贡献者信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Contributor {
+    pub name: String,
+    pub email: String,
+    pub commit_count: u32,
+}
+
+/// 分析配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalysisConfig {
+    pub repoPaths: Vec<String>,
+    pub userEmails: Vec<String>,
+    pub startDate: String,
+    pub endDate: String,
+}
+
+/// 提交分析结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitAnalysis {
+    pub total_commits: u32,
+    pub commits_by_user: std::collections::HashMap<String, Vec<CommitInfo>>,
+    pub commits_by_repo: std::collections::HashMap<String, Vec<CommitInfo>>,
+    pub file_changes: std::collections::HashMap<String, u32>,
+    pub analysis_period: String,
+}
+
+/// 生成的报告
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Report {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    pub format: String,
+    pub created_at: String,
+    pub config: AnalysisConfig,
+}
+
+/// 报告元数据
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ReportMeta {
+    pub id: String,
+    pub title: String,
+    pub created_at: String,
+    pub repos: Vec<String>,
+    pub users: Vec<String>,
+    pub day_count: u32,
+}
