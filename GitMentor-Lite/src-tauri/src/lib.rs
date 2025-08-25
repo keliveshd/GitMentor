@@ -44,8 +44,8 @@ macro_rules! info_log {
 
 use chrono::Local;
 use commands::{
-    ai_commands, debug_commands, git_commands, git_config_commands, system_commands,
-    update_commands,
+    ai_commands, daily_report_commands, debug_commands, git_commands, git_config_commands,
+    system_commands, update_commands,
 };
 use core::{
     ai_manager::AIManager,
@@ -220,6 +220,14 @@ pub fn run() {
             git_commands::delete_untracked_files,
             git_commands::delete_tracked_files,
             git_commands::get_file_stats,
+            // Daily report commands
+            daily_report_commands::get_available_repositories,
+            daily_report_commands::get_repo_contributors,
+            daily_report_commands::analyze_commits,
+            daily_report_commands::generate_daily_report,
+            daily_report_commands::save_report,
+            daily_report_commands::get_history_reports,
+            daily_report_commands::delete_report,
             // AI commands
             ai_commands::get_ai_config,
             ai_commands::update_ai_config,
