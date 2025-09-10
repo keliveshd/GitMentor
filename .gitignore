@@ -11,6 +11,7 @@ GitMentor-Lite/src-tauri/.config/ai_config.json
 
 # === Project ignores added by Evilek on 2025-08-11 ===
 # Node/Vite outputs
+node_modules/
 GitMentor-Lite/node_modules/
 GitMentor-Lite/dist/
 
