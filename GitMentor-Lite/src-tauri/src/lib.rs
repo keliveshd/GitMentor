@@ -228,6 +228,11 @@ pub fn run() {
             daily_report_commands::save_report,
             daily_report_commands::get_history_reports,
             daily_report_commands::delete_report,
+            // Enhanced daily report commands
+            daily_report_commands::analyze_and_cache_commit,
+            daily_report_commands::generate_enhanced_daily_report,
+            daily_report_commands::get_commit_cache_status,
+            daily_report_commands::cleanup_cache,
             // AI commands
             ai_commands::get_ai_config,
             ai_commands::update_ai_config,

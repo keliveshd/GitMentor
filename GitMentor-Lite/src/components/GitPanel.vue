@@ -343,12 +343,12 @@
           <div class="step-connector" :class="{ active: dailyReportStep > 1 }"></div>
           <div class="step-item" :class="{ active: dailyReportStep >= 2, completed: dailyReportStep > 2 }">
             <div class="step-number">2</div>
-            <div class="step-label">选择用户</div>
+            <div class="step-label">选择日期</div>
           </div>
           <div class="step-connector" :class="{ active: dailyReportStep > 2 }"></div>
           <div class="step-item" :class="{ active: dailyReportStep >= 3, completed: dailyReportStep > 3 }">
             <div class="step-number">3</div>
-            <div class="step-label">选择日期</div>
+            <div class="step-label">选择用户</div>
           </div>
           <div class="step-connector" :class="{ active: dailyReportStep > 3 }"></div>
           <div class="step-item" :class="{ active: dailyReportStep >= 4 }">
@@ -413,79 +413,6 @@
                       已选择 {{ selectedRepos.length }} 个仓库
                     </div>
                     <button @click="nextStep" class="next-btn" :disabled="!selectedRepos.length">
-                      下一步：选择用户
-                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="m9 18 6-6-6-6" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              <!-- 步骤2: 用户选择 -->
-              <div v-if="dailyReportStep === 2" class="step-content">
-                <div class="step-card">
-                  <div class="card-header">
-                    <h3>👥 选择提交用户</h3>
-                    <p>从所选仓库的提交记录中选择需要生成日报的用户</p>
-                  </div>
-                  <div class="card-body">
-                    <div class="loading-users" v-if="loadingUsers">
-                      <div class="loading-spinner"></div>
-                      <p>正在获取用户列表...</p>
-                    </div>
-
-                    <div v-else class="user-selection">
-                      <div class="user-search">
-                        <div class="search-input-wrapper">
-                          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <path d="m21 21-4.35-4.35"></path>
-                          </svg>
-                          <input v-model="userSearchQuery" type="text" placeholder="搜索用户..." class="search-input" />
-                        </div>
-                      </div>
-
-                      <div class="user-list">
-                        <div v-for="user in filteredUsers" :key="user.email" class="user-item"
-                          :class="{ selected: selectedUsers.includes(user.email) }"
-                          @click="toggleUserSelection(user.email)">
-                          <div class="user-checkbox">
-                            <svg v-if="selectedUsers.includes(user.email)" class="check-icon" viewBox="0 0 24 24"
-                              fill="currentColor">
-                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
-                            </svg>
-                          </div>
-                          <div class="user-avatar">
-                            {{ user.name.charAt(0).toUpperCase() }}
-                          </div>
-                          <div class="user-info">
-                            <div class="user-name">{{ user.name }}</div>
-                            <div class="user-email">{{ user.email }}</div>
-                          </div>
-                          <div class="user-stats">
-                            <span class="commit-count">{{ user.commitCount }} 次提交</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div v-if="!filteredUsers.length" class="empty-state">
-                        <div class="empty-icon">👤</div>
-                        <p>{{ userSearchQuery ? '未找到匹配的用户' : '暂无用户数据' }}</p>
-                      </div>
-                    </div>
-                  </div>
-                  <div class="card-footer">
-                    <button @click="prevStep" class="prev-btn">
-                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                        <path d="m15 18-6-6 6-6" />
-                      </svg>
-                      上一步
-                    </button>
-                    <div class="selection-summary">
-                      已选择 {{ selectedUsers.length }} 个用户
-                    </div>
-                    <button @click="nextStep" class="next-btn" :disabled="!selectedUsers.length">
                       下一步：选择日期
                       <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path d="m9 18 6-6-6-6" />
@@ -495,8 +422,8 @@
                 </div>
               </div>
 
-              <!-- 步骤3: 日期选择 -->
-              <div v-if="dailyReportStep === 3" class="step-content">
+              <!-- 步骤2: 日期选择 -->
+              <div v-if="dailyReportStep === 2" class="step-content">
                 <div class="step-card">
                   <div class="card-header">
                     <h3>📅 选择日期范围</h3>
@@ -564,6 +491,87 @@
                       {{ dateRange.start && dateRange.end ? '已选择日期范围' : '请选择日期范围' }}
                     </div>
                     <button @click="nextStep" class="next-btn" :disabled="!dateRange.start || !dateRange.end">
+                      下一步：选择用户
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m9 18 6-6-6-6" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 步骤3: 用户选择 -->
+              <div v-if="dailyReportStep === 3" class="step-content">
+                <div class="step-card">
+                  <div class="card-header">
+                    <h3>👥 选择提交用户</h3>
+                    <p>从所选仓库的提交记录中选择需要生成日报的用户（可多选，留空表示所有用户）</p>
+                  </div>
+                  <div class="card-body">
+                    <div class="loading-users" v-if="loadingUsers">
+                      <div class="loading-spinner"></div>
+                      <p>正在获取用户列表...</p>
+                    </div>
+
+                    <div v-else class="user-selection">
+                      <div class="user-search">
+                        <div class="search-input-wrapper">
+                          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <path d="m21 21-4.35-4.35"></path>
+                          </svg>
+                          <input v-model="userSearchQuery" type="text" placeholder="搜索用户..." class="search-input" />
+                        </div>
+                        <div class="user-selection-actions">
+                          <button @click="selectAllUsers" class="select-all-btn" :disabled="!availableUsers.length">
+                            {{ selectedUsers.length === availableUsers.length ? '取消全选' : '全选' }}
+                          </button>
+                          <button @click="clearUserSelection" class="clear-btn" :disabled="!selectedUsers.length">
+                            清空选择
+                          </button>
+                        </div>
+                      </div>
+
+                      <div class="user-list">
+                        <div v-for="user in filteredUsers" :key="user.email" class="user-item"
+                          :class="{ selected: selectedUsers.includes(user.email) }"
+                          @click="toggleUserSelection(user.email)">
+                          <div class="user-checkbox">
+                            <svg v-if="selectedUsers.includes(user.email)" class="check-icon" viewBox="0 0 24 24"
+                              fill="currentColor">
+                              <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z" />
+                            </svg>
+                          </div>
+                          <div class="user-avatar">
+                            {{ user.name.charAt(0).toUpperCase() }}
+                          </div>
+                          <div class="user-info">
+                            <div class="user-name">{{ user.name }}</div>
+                            <div class="user-email">{{ user.email }}</div>
+                          </div>
+                          <div class="user-stats">
+                            <span class="commit-count">{{ user.commitCount }} 次提交</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div v-if="!filteredUsers.length" class="empty-state">
+                        <div class="empty-icon">👤</div>
+                        <p>{{ userSearchQuery ? '未找到匹配的用户' : '暂无用户数据' }}</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="card-footer">
+                    <button @click="prevStep" class="prev-btn">
+                      <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                        <path d="m15 18-6-6 6-6" />
+                      </svg>
+                      上一步
+                    </button>
+                    <div class="selection-summary">
+                      已选择 {{ selectedUsers.length }} 个用户
+                    </div>
+                    <button @click="nextStep" class="next-btn">
                       下一步：生成报告
                       <svg class="arrow-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
                         <path d="m9 18 6-6-6-6" />
@@ -638,6 +646,17 @@
                             <line x1="12" y1="15" x2="12" y2="3" />
                           </svg>
                           导出报告
+                        </button>
+                        
+                        <!-- 增强功能按钮 -->
+                        <button @click="generateEnhancedReport" class="action-btn enhanced" 
+                                :disabled="generatingEnhancedReport" 
+                                title="使用新的分析引擎生成更详细的报告">
+                          <svg v-if="!generatingEnhancedReport" class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                          </svg>
+                          <div v-else class="loading-spinner-small"></div>
+                          {{ generatingEnhancedReport ? '生成中...' : '增强版报告' }}
                         </button>
                       </div>
                     </div>
@@ -867,10 +886,12 @@ const availableRepos = ref<any[]>([])
 const availableUsers = ref<any[]>([])
 const loadingUsers = ref(false)
 const generatingReport = ref(false)
+const generatingEnhancedReport = ref(false)
 const reportGenerated = ref(false)
 const reportProgress = ref({ currentStep: '' })
 const today = ref(new Date().toISOString().split('T')[0])
 const historyReports = ref<any[]>([]) // 历史报告列表
+const currentReportContent = ref('') // 当前报告内容
 
 // 模板相关状态
 const availableTemplates = ref<any[]>([])
@@ -2599,7 +2620,7 @@ const handleContextMenuAction = async (action: string) => {
 const nextStep = () => {
   if (dailyReportStep.value < 4) {
     dailyReportStep.value++
-    if (dailyReportStep.value === 2) {
+    if (dailyReportStep.value === 3) {
       loadUsersFromRepos()
     }
   }
@@ -2635,6 +2656,18 @@ const toggleUserSelection = (userEmail: string) => {
   } else {
     selectedUsers.value.push(userEmail)
   }
+}
+
+const selectAllUsers = () => {
+  if (selectedUsers.value.length === availableUsers.value.length) {
+    selectedUsers.value = []
+  } else {
+    selectedUsers.value = availableUsers.value.map(user => user.email)
+  }
+}
+
+const clearUserSelection = () => {
+  selectedUsers.value = []
 }
 
 const loadUsersFromRepos = async () => {
@@ -2763,36 +2796,47 @@ const getUserName = (userEmail: string) => {
 
 const generateReport = async () => {
   try {
+    console.log('开始生成日报...')
+    console.log('选择的仓库:', selectedRepos.value)
+    console.log('选择的用户:', selectedUsers.value)
+    console.log('日期范围:', dateRange.value)
+    
     generatingReport.value = true
     reportProgress.value.currentStep = '正在分析提交记录...'
 
     // 构建分析配置
     const config = {
       repoPaths: selectedRepos.value,
-      userEmails: selectedUsers.value,
+      userEmails: selectedUsers.value, // 可以为空，表示所有用户
       startDate: dateRange.value.start,
       endDate: dateRange.value.end
     }
+    
+    console.log('分析配置:', config)
 
-    // 调用后端分析提交记录
-    const analysis = await invoke('analyze_commits', { config }) as any
-
+    // 直接调用增强版日报生成命令
     reportProgress.value.currentStep = '正在生成报告内容...'
-
-    // 调用后端生成报告
-    const report = await invoke('generate_daily_report', {
-      analysis,
-      template: null
-    }) as any
-
+    console.log('调用 generate_enhanced_daily_report 命令...')
+    
+    const report = await invoke('generate_enhanced_daily_report', { config }) as any
+    
+    console.log('报告生成成功:', report)
+    
     reportProgress.value.currentStep = '正在保存报告...'
 
     // 保存报告到历史记录
     await invoke('save_report', { report })
+    
+    console.log('报告已保存')
 
     // 更新历史报告列表
     await loadHistoryReports()
+    
+    console.log('历史报告列表已更新')
 
+    // 更新当前报告内容
+    currentReportContent.value = report.content
+    
     reportGenerated.value = true
     toast.success('日报生成成功！', '操作成功')
   } catch (error) {
@@ -2803,14 +2847,115 @@ const generateReport = async () => {
   }
 }
 
+// 生成增强版日报
+const generateEnhancedReport = async () => {
+  try {
+    generatingEnhancedReport.value = true
+    
+    // 构建分析配置
+    const config = {
+      repoPaths: selectedRepos.value,
+      userEmails: selectedUsers.value,
+      startDate: dateRange.value.start,
+      endDate: dateRange.value.end
+    }
+
+    // 调用新的增强版报告生成命令
+    const report = await invoke('generate_enhanced_daily_report', { 
+      config 
+    }) as any
+
+    // 保存报告到历史记录
+    await invoke('save_report', { report })
+
+    // 更新历史报告列表
+    await loadHistoryReports()
+
+    // 更新当前报告内容
+    currentReportContent.value = report.content
+    
+    toast.success('增强版日报生成成功！', '操作成功')
+  } catch (error) {
+    console.error('Failed to generate enhanced report:', error)
+    toast.error('生成增强版日报失败: ' + error, '操作失败')
+  } finally {
+    generatingEnhancedReport.value = false
+  }
+}
+
 const viewReport = () => {
   // 查看报告的逻辑
-  toast.success('查看报告功能待实现', '提示')
+  if (currentReportContent.value) {
+    // 创建新窗口显示报告
+    const reportWindow = window.open('', '_blank')
+    if (reportWindow) {
+      // 简单的 Markdown 转 HTML（仅支持基本格式）
+      const htmlContent = currentReportContent.value
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+        .replace(/^\*\*(.*)\*\*/gim, '<strong>$1</strong>')
+        .replace(/^\*(.*)\*/gim, '<em>$1</em>')
+        .replace(/^\* (.*$)/gim, '<li>$1</li>')
+        .replace(/\n/gim, '<br>')
+      
+      reportWindow.document.write(`
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <title>开发日报</title>
+          <style>
+            body { 
+              font-family: 'Segoe UI', Arial, sans-serif; 
+              max-width: 800px; 
+              margin: 0 auto; 
+              padding: 20px;
+              line-height: 1.6;
+              color: #333;
+            }
+            h1, h2, h3 { color: #2c3e50; margin-top: 24px; margin-bottom: 16px; }
+            h1 { font-size: 28px; border-bottom: 2px solid #eee; padding-bottom: 10px; }
+            h2 { font-size: 22px; border-bottom: 1px solid #eee; padding-bottom: 8px; }
+            h3 { font-size: 18px; }
+            strong { color: #2c3e50; }
+            li { margin-left: 20px; }
+            pre { 
+              background: #f5f5f5; 
+              padding: 15px; 
+              border-radius: 5px; 
+              overflow-x: auto; 
+              white-space: pre-wrap;
+            }
+          </style>
+        </head>
+        <body>
+          ${htmlContent}
+        </body>
+        </html>
+      `)
+      reportWindow.document.close()
+    }
+  } else {
+    toast.error('没有可查看的报告内容', '错误')
+  }
 }
 
 const exportReport = () => {
   // 导出报告的逻辑
-  toast.success('导出报告功能待实现', '提示')
+  if (currentReportContent.value) {
+    const blob = new Blob([currentReportContent.value], { type: 'text/markdown' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `daily-report-${dateRange.value.start}-to-${dateRange.value.end}.md`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast.success('报告导出成功', '操作成功')
+  } else {
+    toast.error('没有可导出的报告内容', '错误')
+  }
 }
 
 const resetWizard = () => {
@@ -5138,6 +5283,18 @@ const initializeHistoryReports = async () => {
 
 .action-btn.secondary:hover {
   background: #e5e7eb;
+}
+
+.action-btn.enhanced {
+  background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+  color: white;
+  border: none;
+}
+
+.action-btn.enhanced:hover:not(:disabled) {
+  background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.3);
 }
 
 /* 响应式设计 */

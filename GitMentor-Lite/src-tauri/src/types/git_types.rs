@@ -232,3 +232,66 @@ pub struct ReportMeta {
     pub users: Vec<String>,
     pub day_count: u32,
 }
+
+/// 单个提交的详细分析
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitDetailAnalysis {
+    pub commit_id: String,
+    pub repo_path: String,
+    pub author: String,
+    pub email: String,
+    pub timestamp: i64,
+    pub message: String,
+    pub files_changed: Vec<CommitFileChange>,
+    pub insertions: u32,
+    pub deletions: u32,
+    pub summary: String,
+    pub impact_level: ImpactLevel,
+    pub tags: Vec<String>,
+}
+
+/// 文件变更详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CommitFileChange {
+    pub file_path: String,
+    pub change_type: FileChangeType,
+    pub insertions: u32,
+    pub deletions: u32,
+    pub is_binary: bool,
+    pub language: Option<String>,
+}
+
+/// 文件变更类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum FileChangeType {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+    Copied,
+}
+
+/// 提交影响级别
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum ImpactLevel {
+    Low,      // 小改动（格式、注释等）
+    Medium,   // 一般功能改动
+    High,     // 重要功能改动
+    Critical, // 核心功能或架构改动
+}
+
+/// 模板类型
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TemplateType {
+    CommitAnalysis, // 单个提交分析模板
+    DailySummary,   // 日报汇总模板
+}
+
+/// 模板配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TemplateConfig {
+    pub template_type: TemplateType,
+    pub template_content: String,
+    pub variables: Vec<String>,
+    pub is_default: bool,
+}

@@ -3109,4 +3109,135 @@ impl GitEngine {
 
         Ok(files)
     }
+
+    /// 获取指定仓库的提交信息
+    pub fn get_commit_info(&self, repo_path: &str, commit_id: &str) -> Result<CommitInfo> {
+        let git_command = self.get_git_command();
+        
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&[
+                "show",
+                "--format=%H|%h|%an|%ae|%ct|%s",
+                "--no-patch",
+                commit_id
+            ])
+            .output()
+            .map_err(|e| anyhow!("Failed to get commit info: {}", e))?;
+
+        if !output.status.success() {
+            return Err(anyhow!("Git command failed: {}", String::from_utf8_lossy(&output.stderr)));
+        }
+
+        let output = String::from_utf8_lossy(&output.stdout);
+        let line = output.lines().next().ok_or_else(|| anyhow!("No commit info found"))?;
+        
+        if let Some((hash, short_hash, author, email, timestamp, message)) = Self::parse_commit_line(line) {
+            let timestamp = timestamp.parse().unwrap_or(0);
+            let files_changed = self.get_commit_files_with_command(repo_path, commit_id)?;
+            
+            Ok(CommitInfo {
+                hash,
+                short_hash,
+                message,
+                author,
+                email,
+                timestamp,
+                files_changed,
+            })
+        } else {
+            Err(anyhow!("Failed to parse commit info"))
+        }
+    }
+
+    /// 获取指定仓库的提交差异
+    pub fn get_commit_diff(&self, repo_path: &str, commit_id: &str) -> Result<FileDiffResult> {
+        let git_command = self.get_git_command();
+        
+        // 获取文件变更列表
+        let files_output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["show", "--name-only", "--format=", commit_id])
+            .output()
+            .map_err(|e| anyhow!("Failed to get changed files: {}", e))?;
+
+        let mut files_changed = Vec::new();
+        if files_output.status.success() {
+            let output = String::from_utf8_lossy(&files_output.stdout);
+            for line in output.lines() {
+                let line = line.trim();
+                if !line.is_empty() {
+                    files_changed.push(line.to_string());
+                }
+            }
+        }
+
+        // 简化处理：返回基本的差异信息
+        Ok(FileDiffResult {
+            file_path: files_changed.first().cloned().unwrap_or_default(),
+            old_content: None,
+            new_content: None,
+            old_file_name: None,
+            new_file_name: None,
+            file_language: None,
+            hunks: Vec::new(),
+            is_binary: false,
+            is_new_file: false,
+            is_deleted_file: false,
+        })
+    }
+
+    /// 获取日期范围内的提交列表
+    pub fn get_commits_in_date_range(
+        &self,
+        repo_path: &str,
+        start_date: &str,
+        end_date: &str,
+    ) -> Result<Vec<CommitInfo>> {
+        let git_command = self.get_git_command();
+        
+        println!("执行 git log 命令获取 {} 至 {} 的提交", start_date, end_date);
+        
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&[
+                "log",
+                &format!("--since={}", start_date),
+                &format!("--until={}", end_date),
+                "--format=%H|%h|%an|%ae|%ct|%s",
+                "--date=iso"
+            ])
+            .output()
+            .map_err(|e| anyhow!("Failed to get commits in date range: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            println!("Git log 命令失败: {}", stderr);
+            return Err(anyhow!("Git command failed: {}", stderr));
+        }
+
+        let mut commits = Vec::new();
+        let output = String::from_utf8_lossy(&output.stdout);
+        
+        println!("Git log 输出行数: {}", output.lines().count());
+        
+        for line in output.lines() {
+            if let Some((hash, short_hash, author, email, timestamp, message)) = Self::parse_commit_line(line) {
+                let timestamp = timestamp.parse().unwrap_or(0);
+                let files_changed = self.get_commit_files_with_command(repo_path, &hash)?;
+                
+                commits.push(CommitInfo {
+                    hash,
+                    short_hash,
+                    message,
+                    author,
+                    email,
+                    timestamp,
+                    files_changed,
+                });
+            }
+        }
+
+        Ok(commits)
+    }
 }

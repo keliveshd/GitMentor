@@ -5,6 +5,7 @@
 // - git_engine / git_config：Git 操作与执行模式管理
 // - layered_commit_manager：分层提交编排与取消
 // - conversation_logger：AI 请求/响应记录
+// - report_engine：日报生成与缓存管理
 // 别tm在这里写业务，写清楚模块边界，改就加注释。
 
 pub mod ai_config;
@@ -17,4 +18,5 @@ pub mod layered_commit_manager;
 pub mod llm_client;
 pub mod prompt_manager;
 pub mod providers;
+pub mod report_engine;
 pub mod update_manager;
