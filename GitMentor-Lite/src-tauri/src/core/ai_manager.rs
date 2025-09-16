@@ -93,6 +93,15 @@ impl AIManager {
         factory.generate_commit(provider_id, &request).await
     }
 
+    /// 生成AI分析报告
+    pub async fn generate_analysis_report(&self, request: AIRequest) -> Result<AIResponse> {
+        let config = self.get_config().await;
+        let provider_id = &config.base.provider;
+
+        let factory = self.provider_factory.read().await;
+        factory.generate_commit(provider_id, &request).await
+    }
+
     /// 获取指定提供商的模型列表
     pub async fn get_models_for_provider(&self, provider_id: &str) -> Result<Vec<AIModel>> {
         let factory = self.provider_factory.read().await;

@@ -8,6 +8,7 @@
 // - report_engine：日报生成与缓存管理
 // 别tm在这里写业务，写清楚模块边界，改就加注释。
 
+pub mod ai_analysis_prompts;
 pub mod ai_config;
 pub mod ai_manager;
 pub mod ai_provider;

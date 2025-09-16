@@ -85,6 +85,104 @@
           </div>
         </div>
 
+        <!-- AI分析模板管理 -->
+        <div v-if="selectedMenu === 'ai_analysis'" class="template-section">
+          <div class="ai-template-header">
+            <div class="ai-description">
+              <h4>🤖 AI分析模板配置</h4>
+              <p>配置单体提交分析和日报汇总的AI提示模板</p>
+            </div>
+            <div class="ai-actions">
+              <button @click="refreshAITemplates" class="refresh-btn" title="刷新模板">
+                🔄 刷新
+              </button>
+              <button @click="resetToDefaultTemplates" class="reset-btn" title="重置为默认">
+                🔄 重置默认
+              </button>
+            </div>
+          </div>
+          
+          <!-- 单体分析模板 -->
+          <div class="ai-template-group">
+            <h5>📝 单体提交分析模板</h5>
+            <div class="ai-template-list">
+              <div v-for="template in commitAnalysisTemplates" :key="template.id" class="ai-template-item">
+                <div class="ai-template-info">
+                  <h6>{{ template.name }}</h6>
+                  <p>{{ template.description }}</p>
+                  <div class="ai-template-meta">
+                    <span class="template-type">{{ getTemplateTypeName(template.template_type) }}</span>
+                    <span class="template-version">v{{ template.version }}</span>
+                  </div>
+                </div>
+                <div class="ai-template-actions">
+                  <button @click="viewAITemplate(template)" class="view-btn" title="查看模板">
+                    👁️ 查看
+                  </button>
+                  <button @click="editAITemplate(template)" class="edit-btn" title="编辑模板">
+                    ✏️ 编辑
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 日报汇总模板 -->
+          <div class="ai-template-group">
+            <h5>📊 日报汇总模板</h5>
+            <div class="ai-template-list">
+              <div v-for="template in summaryTemplates" :key="template.id" class="ai-template-item">
+                <div class="ai-template-info">
+                  <h6>{{ template.name }}</h6>
+                  <p>{{ template.description }}</p>
+                  <div class="ai-template-meta">
+                    <span class="template-type">{{ getTemplateTypeName(template.template_type) }}</span>
+                    <span class="template-version">v{{ template.version }}</span>
+                  </div>
+                </div>
+                <div class="ai-template-actions">
+                  <button @click="viewAITemplate(template)" class="view-btn" title="查看模板">
+                    👁️ 查看
+                  </button>
+                  <button @click="editAITemplate(template)" class="edit-btn" title="编辑模板">
+                    ✏️ 编辑
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+          <!-- AI分析配置 -->
+          <div class="ai-config-section">
+            <h5>⚙️ AI分析配置</h5>
+            <div class="config-form">
+              <div class="config-item">
+                <label>分析深度</label>
+                <select v-model="aiConfig.depth" @change="saveAIConfig">
+                  <option value="Simple">简单分析</option>
+                  <option value="Detailed">详细分析</option>
+                  <option value="Deep">深度分析</option>
+                </select>
+              </div>
+              <div class="config-item">
+                <label>启用代码审查</label>
+                <label class="switch">
+                  <input type="checkbox" v-model="aiConfig.enable_code_review" @change="saveAIConfig">
+                  <span class="slider"></span>
+                </label>
+              </div>
+              <div class="config-item">
+                <label>最大代码长度</label>
+                <input type="number" v-model="aiConfig.max_code_length" @change="saveAIConfig" min="1000" max="100000">
+              </div>
+              <div class="config-item">
+                <label>超时时间（秒）</label>
+                <input type="number" v-model="aiConfig.timeout_seconds" @change="saveAIConfig" min="10" max="300">
+              </div>
+            </div>
+          </div>
+        </div>
+        
         <!-- 自定义模板管理 -->
         <div v-if="selectedMenu === 'custom'" class="template-section">
           <div v-if="customTemplates.length === 0" class="empty-state">
@@ -311,6 +409,17 @@ const showEditDialog = ref(false)
 const saving = ref(false)
 const globalLanguage = ref('Simplified Chinese')
 
+// AI分析相关数据
+const commitAnalysisTemplates = ref<any[]>([])
+const summaryTemplates = ref<any[]>([])
+const aiConfig = ref({
+  model: 'gpt-4',
+  depth: 'Detailed',
+  enable_code_review: true,
+  max_code_length: 50000,
+  timeout_seconds: 60
+})
+
 // 编辑中的模板（更新为两段式）
 const editingTemplate = ref<PromptTemplate>({
   id: '',
@@ -337,7 +446,8 @@ const editingTemplate = ref<PromptTemplate>({
 // 菜单项配置
 const menuItems = ref([
   { key: 'default', icon: '🏠', label: '默认模板' },
-  { key: 'custom', icon: '🎨', label: '自定义模板' }
+  { key: 'custom', icon: '🎨', label: '自定义模板' },
+  { key: 'ai_analysis', icon: '🤖', label: 'AI分析模板' }
 ])
 
 // 计算属性和方法
@@ -504,10 +614,75 @@ const closeDialogs = () => {
   }
 }
 
+// AI分析方法
+const loadAITemplates = async () => {
+  try {
+    const templates: any[] = await invoke('get_ai_analysis_templates')
+    // 分类模板
+    commitAnalysisTemplates.value = templates.filter((t: any) => 
+      t.template_type?.CommitAnalysis
+    )
+    summaryTemplates.value = templates.filter((t: any) => 
+      t.template_type?.DailySummary
+    )
+  } catch (error) {
+    console.error('加载AI模板失败:', error)
+  }
+}
+
+const loadAIConfig = async () => {
+  try {
+    const config: any = await invoke('get_ai_analysis_config')
+    aiConfig.value = { ...aiConfig.value, ...config }
+  } catch (error) {
+    console.error('加载AI配置失败:', error)
+  }
+}
+
+const saveAIConfig = async () => {
+  try {
+    await invoke('set_ai_analysis_config', { config: aiConfig.value })
+    // 显示保存成功提示
+  } catch (error) {
+    console.error('保存AI配置失败:', error)
+  }
+}
+
+const refreshAITemplates = () => {
+  loadAITemplates()
+}
+
+const resetToDefaultTemplates = () => {
+  // TODO: 实现重置为默认模板
+  console.log('重置为默认模板')
+}
+
+const getTemplateTypeName = (templateType: any) => {
+  if (templateType.CommitAnalysis) {
+    const depth = templateType.CommitAnalysis.depth
+    return `提交分析-${depth}`
+  } else if (templateType.DailySummary) {
+    return '日报汇总'
+  }
+  return '未知类型'
+}
+
+const viewAITemplate = (template: any) => {
+  // TODO: 实现查看模板详情
+  console.log('查看模板:', template)
+}
+
+const editAITemplate = (template: any) => {
+  // TODO: 实现编辑模板
+  console.log('编辑模板:', template)
+}
+
 // 生命周期
 onMounted(() => {
   loadTemplates()
   loadLanguageSettings()
+  loadAITemplates()
+  loadAIConfig()
 })
 </script>
 
@@ -1002,5 +1177,240 @@ onMounted(() => {
 .save-btn:disabled {
   background: #ccc;
   cursor: not-allowed;
+}
+
+/* AI分析模板样式 */
+.ai-template-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 20px 30px 0 30px;
+  padding: 20px;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ai-description h4 {
+  margin: 0 0 5px 0;
+  color: #333;
+}
+
+.ai-description p {
+  margin: 0;
+  color: #666;
+  font-size: 14px;
+}
+
+.ai-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.refresh-btn, .reset-btn {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.refresh-btn:hover {
+  background: #f5f5f5;
+  border-color: #2196f3;
+  color: #2196f3;
+}
+
+.reset-btn:hover {
+  background: #fff3cd;
+  border-color: #ffc107;
+  color: #856404;
+}
+
+.ai-template-group {
+  margin: 20px 30px 0 30px;
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ai-template-group h5 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.ai-template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ai-template-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 15px;
+  background: #f8f9fa;
+  border-radius: 6px;
+  border: 1px solid #e9ecef;
+  transition: all 0.2s;
+}
+
+.ai-template-item:hover {
+  background: #e9ecef;
+  border-color: #dee2e6;
+}
+
+.ai-template-info h6 {
+  margin: 0 0 5px 0;
+  color: #333;
+  font-size: 14px;
+}
+
+.ai-template-info p {
+  margin: 0 0 8px 0;
+  color: #666;
+  font-size: 13px;
+}
+
+.ai-template-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 12px;
+}
+
+.template-type {
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.template-version {
+  background: #f3e5f5;
+  color: #7b1fa2;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.ai-template-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.view-btn, .edit-btn {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.view-btn:hover {
+  background: #e3f2fd;
+  border-color: #2196f3;
+}
+
+.edit-btn:hover {
+  background: #fff3cd;
+  border-color: #ffc107;
+}
+
+.ai-config-section {
+  margin: 20px 30px 0 30px;
+  background: white;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.ai-config-section h5 {
+  margin: 0 0 15px 0;
+  color: #333;
+  font-size: 16px;
+}
+
+.config-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 15px;
+}
+
+.config-item {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.config-item label {
+  font-size: 14px;
+  color: #555;
+  font-weight: 500;
+}
+
+.config-item select,
+.config-item input {
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.config-item select:focus,
+.config-item input:focus {
+  outline: none;
+  border-color: #2196f3;
+}
+
+/* 开关样式 */
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  transition: .4s;
+  border-radius: 24px;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  transition: .4s;
+  border-radius: 50%;
+}
+
+input:checked + .slider {
+  background-color: #2196f3;
+}
+
+input:checked + .slider:before {
+  transform: translateX(20px);
 }
 </style>
