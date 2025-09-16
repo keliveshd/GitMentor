@@ -39,3 +39,12 @@ Thumbs.db
 # Large vendor icon set (we use public/icons instead)
 GitMentor-Lite/src/assets/static-webp/
 
+nextjs-shadcn-migration-analysis.md
+INITIALIZATION_REPORT.md
+GitMentor-Lite/src-tauri/src/CLAUDE.md
+CLAUDE.md
+.claude/update.py
+.claude/project_stats.md
+.claude/stats.py
+.claude/README.md
+.claude/index.json
