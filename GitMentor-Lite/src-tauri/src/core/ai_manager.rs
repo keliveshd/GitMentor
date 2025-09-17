@@ -95,11 +95,37 @@ impl AIManager {
 
     /// 生成AI分析报告
     pub async fn generate_analysis_report(&self, request: AIRequest) -> Result<AIResponse> {
+        let start_time = std::time::Instant::now();
         let config = self.get_config().await;
         let provider_id = &config.base.provider;
 
         let factory = self.provider_factory.read().await;
-        factory.generate_commit(provider_id, &request).await
+        let result = factory.generate_commit(provider_id, &request).await;
+        
+        // 记录对话
+        let mut logger = self.conversation_logger.write().await;
+        match &result {
+            Ok(response) => {
+                let _ = logger.log_success(
+                    "ai_analysis_report".to_string(),
+                    None, // 仓库路径
+                    request.clone(),
+                    response.clone(),
+                    start_time.elapsed().as_millis() as u64,
+                );
+            }
+            Err(error) => {
+                let _ = logger.log_failure(
+                    "ai_analysis_report".to_string(),
+                    None, // 仓库路径
+                    request.clone(),
+                    error.to_string(),
+                    start_time.elapsed().as_millis() as u64,
+                );
+            }
+        }
+        
+        result
     }
 
     /// 获取指定提供商的模型列表

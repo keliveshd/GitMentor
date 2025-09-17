@@ -315,6 +315,7 @@ pub async fn generate_ai_enhanced_report(
     let content = if use_ai_summary.unwrap_or(true) && !all_analyses.is_empty() {
         // 使用AI生成汇总
         match analysis_engine.generate_ai_summary_report(
+            &all_analyses,
             &config.repoPaths,
             &config.startDate,
             &config.endDate,

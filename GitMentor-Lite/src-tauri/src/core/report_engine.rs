@@ -678,6 +678,7 @@ impl AnalysisEngine {
     /// 批量分析提交并生成AI汇总报告
     pub async fn generate_ai_summary_report(
         &self,
+        all_analyses: &[CommitDetailAnalysis],
         repo_paths: &[String],
         start_date: &str,
         end_date: &str,
@@ -687,15 +688,6 @@ impl AnalysisEngine {
     ) -> Result<String> {
         // 如果有AI管理器，生成AI汇总报告
         if let Some(ref ai_manager) = self.ai_manager {
-            // 收集所有提交分析
-            let mut all_analyses = Vec::new();
-            
-            // 从缓存中加载已分析的提交
-            for repo_path in repo_paths {
-                // 这里需要从Git引擎获取提交列表，然后从缓存加载
-                // 由于没有直接访问Git引擎，这里假设已经通过其他方式获取了分析结果
-                // 实际实现需要在命令层获取提交列表后传递给这里
-            }
             
             // 生成AI汇总提示
             let prompt = self.prompt_manager.get_daily_summary_prompt(
