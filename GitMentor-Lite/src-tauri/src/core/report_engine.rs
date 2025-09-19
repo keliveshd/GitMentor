@@ -496,7 +496,7 @@ impl AnalysisEngine {
         include_code_review: bool,
     ) -> Result<AIAnalysisResult> {
         // 生成AI提示
-        let prompt = self.prompt_manager.get_commit_analysis_prompt(
+        let _prompt = self.prompt_manager.get_commit_analysis_prompt(
             analysis,
             depth,
             include_code_review,
@@ -686,16 +686,41 @@ impl AnalysisEngine {
         include_tech_analysis: bool,
         include_risk_assessment: bool,
     ) -> Result<String> {
+        self.generate_ai_summary_report_with_template(
+            all_analyses,
+            repo_paths,
+            start_date,
+            end_date,
+            user_emails,
+            include_tech_analysis,
+            include_risk_assessment,
+            "daily_summary_enhanced",
+        ).await
+    }
+
+    /// 批量分析提交并使用指定模板生成AI汇总报告
+    pub async fn generate_ai_summary_report_with_template(
+        &self,
+        all_analyses: &[CommitDetailAnalysis],
+        _repo_paths: &[String],
+        start_date: &str,
+        end_date: &str,
+        _user_emails: &[String],
+        include_tech_analysis: bool,
+        include_risk_assessment: bool,
+        template_id: &str,
+    ) -> Result<String> {
         // 如果有AI管理器，生成AI汇总报告
         if let Some(ref ai_manager) = self.ai_manager {
             
             // 生成AI汇总提示
-            let prompt = self.prompt_manager.get_daily_summary_prompt(
+            let prompt = self.prompt_manager.get_daily_summary_prompt_with_template(
                 &all_analyses,
                 start_date,
                 end_date,
                 include_tech_analysis,
-                include_risk_assessment
+                include_risk_assessment,
+                template_id
             ).map_err(|e| anyhow::anyhow!(e))?;
             
             // 调用AI服务生成汇总

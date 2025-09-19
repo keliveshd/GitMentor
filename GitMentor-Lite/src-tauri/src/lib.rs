@@ -287,6 +287,10 @@ pub fn run() {
             ai_analysis_commands::get_ai_analysis_config,
             ai_analysis_commands::set_ai_analysis_config,
             ai_analysis_commands::clear_analysis_cache,
+            // Template management commands
+            ai_analysis_commands::get_ai_templates,
+            ai_analysis_commands::update_ai_template,
+            ai_analysis_commands::reset_ai_template,
         ])
         .run(tauri::generate_context!());
 

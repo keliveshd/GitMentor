@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "mcp__cunzhi__ji",
+      "mcp__cunzhi__zhi"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

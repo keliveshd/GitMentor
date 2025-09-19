@@ -8,6 +8,8 @@
 use crate::types::git_types::{AIAnalysisTemplate, AnalysisDepth, CommitDetailAnalysis};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use handlebars;
+use chrono;
 
 /// 提示模板配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -24,17 +26,42 @@ pub struct PromptTemplate {
 /// 提示模板管理器
 pub struct PromptTemplateManager {
     templates: HashMap<String, PromptTemplate>,
+    cache_dir: std::path::PathBuf,
 }
 
 impl PromptTemplateManager {
     /// 创建新的模板管理器
     pub fn new() -> Self {
+        let cache_dir = std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(".config")
+            .join("ai_templates");
+        
         let mut manager = Self {
             templates: HashMap::new(),
+            cache_dir,
         };
         
         // 初始化默认模板
         manager.init_default_templates();
+        
+        manager
+    }
+    
+    /// 创建新的模板管理器（指定应用目录）
+    pub fn with_app_dir(app_dir: &std::path::Path) -> Self {
+        let cache_dir = app_dir.join("ai_templates");
+        
+        let mut manager = Self {
+            templates: HashMap::new(),
+            cache_dir,
+        };
+        
+        // 初始化默认模板
+        manager.init_default_templates();
+        
+        // 尝试加载自定义模板
+        manager.load_custom_templates();
         
         manager
     }
@@ -163,6 +190,83 @@ impl PromptTemplateManager {
                 version: "1.0.0".to_string(),
             },
         );
+
+        // 日报汇总模板 - 优化版本
+        self.templates.insert(
+            "daily_summary_optimized".to_string(),
+            PromptTemplate {
+                id: "daily_summary_optimized".to_string(),
+                name: "日报汇总（优化版）".to_string(),
+                description: "经过优化的日报汇总模板，提供更智能的分析归纳和结构化输出".to_string(),
+                template_type: AIAnalysisTemplate::DailySummary {
+                    include_tech_analysis: true,
+                    include_risk_assessment: true,
+                },
+                template_content: include_str!("../../templates/daily_summary_optimized.hbs").to_string(),
+                variables: vec![
+                    "analyses".to_string(),
+                    "start_date".to_string(),
+                    "end_date".to_string(),
+                    "total_commits".to_string(),
+                    "contributors".to_string(),
+                    "tech_stack".to_string(),
+                    "risk_factors".to_string(),
+                ],
+                version: "2.0.0".to_string(),
+            },
+        );
+
+        // 日报汇总模板 - 执行摘要版
+        self.templates.insert(
+            "daily_summary_executive".to_string(),
+            PromptTemplate {
+                id: "daily_summary_executive".to_string(),
+                name: "日报汇总（执行摘要版）".to_string(),
+                description: "为管理层和技术决策者准备的简洁执行摘要".to_string(),
+                template_type: AIAnalysisTemplate::DailySummary {
+                    include_tech_analysis: true,
+                    include_risk_assessment: true,
+                },
+                template_content: include_str!("../../templates/daily_summary_executive.hbs").to_string(),
+                variables: vec![
+                    "analyses".to_string(),
+                    "start_date".to_string(),
+                    "end_date".to_string(),
+                    "total_commits".to_string(),
+                    "contributors".to_string(),
+                    "tech_stack".to_string(),
+                    "risk_factors".to_string(),
+                ],
+                version: "2.0.0".to_string(),
+            },
+        );
+    }
+    
+    /// 加载自定义模板
+    fn load_custom_templates(&mut self) {
+        let custom_dir = self.cache_dir.join("custom_templates");
+        
+        if !custom_dir.exists() {
+            return;
+        }
+        
+        if let Ok(entries) = std::fs::read_dir(&custom_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                    if let Ok(content) = std::fs::read_to_string(&path) {
+                        if let Ok(template) = serde_json::from_str::<PromptTemplate>(&content) {
+                            // 只更新已存在模板的内容，不添加新模板
+                            if self.templates.contains_key(&template.id) {
+                                if let Some(existing_template) = self.templates.get_mut(&template.id) {
+                                    existing_template.template_content = template.template_content;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
     
     /// 获取所有模板
@@ -289,10 +393,36 @@ impl PromptTemplateManager {
         include_tech_analysis: bool,
         include_risk_assessment: bool,
     ) -> Result<String, String> {
-        let template_id = match (include_tech_analysis, include_risk_assessment) {
-            (false, false) => "daily_summary_basic",
-            (true, false) | (false, true) => "daily_summary_enhanced",
-            (true, true) => "daily_summary_enhanced",
+        self.get_daily_summary_prompt_with_template(
+            analyses,
+            start_date,
+            end_date,
+            include_tech_analysis,
+            include_risk_assessment,
+            "daily_summary_enhanced",
+        )
+    }
+
+    /// 使用指定模板获取日报汇总的提示词
+    pub fn get_daily_summary_prompt_with_template(
+        &self,
+        analyses: &[CommitDetailAnalysis],
+        start_date: &str,
+        end_date: &str,
+        include_tech_analysis: bool,
+        include_risk_assessment: bool,
+        template_id: &str,
+    ) -> Result<String, String> {
+        // 如果用户指定了有效的模板ID，使用指定的模板
+        // 否则根据参数自动选择
+        let template_id_to_use = if self.templates.contains_key(template_id) {
+            template_id
+        } else {
+            match (include_tech_analysis, include_risk_assessment) {
+                (false, false) => "daily_summary_basic",
+                (true, false) | (false, true) => "daily_summary_enhanced",
+                (true, true) => "daily_summary_optimized",
+            }
         };
         
         let mut context = HashMap::new();
@@ -320,8 +450,8 @@ impl PromptTemplateManager {
         // 风险因素
         let risk_factors = self.analyze_risk_factors(analyses);
         context.insert("risk_factors".to_string(), risk_factors);
-        
-        self.render_template(template_id, &context)
+
+        self.render_template(template_id_to_use, &context)
     }
     
     /// 格式化变更类型
@@ -410,6 +540,61 @@ impl PromptTemplateManager {
         } else {
             risks.join("\n")
         }
+    }
+    
+    /// 更新模板内容
+    pub fn update_template_content(&mut self, template_id: &str, template_content: &str) -> Result<(), String> {
+        if let Some(template) = self.templates.get_mut(template_id) {
+            template.template_content = template_content.to_string();
+            // 保存到文件
+            self.save_templates_to_file()?;
+            Ok(())
+        } else {
+            Err("模板不存在".to_string())
+        }
+    }
+    
+    /// 重置模板为默认内容
+    pub fn reset_template(&mut self, template_id: &str) -> Result<(), String> {
+        // 获取默认模板内容
+        let default_content = match template_id {
+            "commit_simple" => include_str!("../templates/commit_analysis_simple.hbs"),
+            "commit_detailed" => include_str!("../templates/commit_analysis_detailed.hbs"),
+            "commit_deep" => include_str!("../templates/commit_analysis_deep.hbs"),
+            "daily_summary_basic" => include_str!("../templates/daily_summary_basic.hbs"),
+            "daily_summary_enhanced" => include_str!("../templates/daily_summary_enhanced.hbs"),
+            "daily_summary_optimized" => include_str!("../../templates/daily_summary_optimized.hbs"),
+            "daily_summary_executive" => include_str!("../../templates/daily_summary_executive.hbs"),
+            _ => return Err("未知的模板ID".to_string()),
+        };
+        
+        if let Some(template) = self.templates.get_mut(template_id) {
+            template.template_content = default_content.to_string();
+            // 保存到文件
+            self.save_templates_to_file()?;
+            Ok(())
+        } else {
+            Err("模板不存在".to_string())
+        }
+    }
+    
+    /// 保存模板到文件
+    fn save_templates_to_file(&self) -> Result<(), String> {
+        // 创建自定义模板目录
+        let custom_dir = self.cache_dir.join("custom_templates");
+        std::fs::create_dir_all(&custom_dir)
+            .map_err(|e| format!("Failed to create custom templates directory: {}", e))?;
+        
+        // 保存每个自定义模板
+        for (id, template) in &self.templates {
+            let template_file = custom_dir.join(format!("{}.json", id));
+            let content = serde_json::to_string_pretty(template)
+                .map_err(|e| format!("Failed to serialize template: {}", e))?;
+            std::fs::write(&template_file, content)
+                .map_err(|e| format!("Failed to write template file: {}", e))?;
+        }
+        
+        Ok(())
     }
 }
 

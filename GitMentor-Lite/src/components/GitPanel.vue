@@ -360,8 +360,8 @@
         <!-- 主要内容区域 -->
         <div class="daily-report-content">
           <div class="content-layout">
-            <!-- 左侧主要流程 -->
-            <div class="main-flow">
+            <!-- 上方：选择代码仓库区域 -->
+            <div class="repo-section">
               <!-- 步骤1: 仓库选择 -->
               <div v-if="dailyReportStep === 1" class="step-content">
                 <div class="step-card">
@@ -617,41 +617,15 @@
                     </div>
 
                     <!-- AI分析选项 -->
-                    <div class="ai-options-section">
-                      <h4>🤖 AI增强分析选项</h4>
-                      <div class="ai-options-grid">
-                        <label class="ai-option-item">
-                          <input type="checkbox" v-model="useAIAnalysis" :disabled="generatingReport">
-                          <span class="ai-option-label">
-                            <span class="ai-option-icon">🧠</span>
-                            启用AI分析
-                          </span>
-                        </label>
-                        
-                        <label v-if="useAIAnalysis" class="ai-option-item">
-                          <input type="checkbox" v-model="useAISummary" :disabled="generatingReport">
-                          <span class="ai-option-label">
-                            <span class="ai-option-icon">📝</span>
-                            AI智能汇总
-                          </span>
-                        </label>
-                        
-                        <label v-if="useAIAnalysis && useAISummary" class="ai-option-item">
-                          <input type="checkbox" v-model="includeTechAnalysis" :disabled="generatingReport">
-                          <span class="ai-option-label">
-                            <span class="ai-option-icon">🔧</span>
-                            技术栈分析
-                          </span>
-                        </label>
-                        
-                        <label v-if="useAIAnalysis && useAISummary" class="ai-option-item">
-                          <input type="checkbox" v-model="includeRiskAssessment" :disabled="generatingReport">
-                          <span class="ai-option-label">
-                            <span class="ai-option-icon">⚠️</span>
-                            风险评估
-                          </span>
-                        </label>
-                      </div>
+                    <div class="ai-option-simple">
+                      <label class="ai-simple-toggle">
+                        <input type="checkbox" v-model="useAIAnalysis" :disabled="generatingReport">
+                        <span class="toggle-label">
+                          <span class="toggle-icon">🤖</span>
+                          启用AI增强分析
+                          <span class="toggle-description">使用AI智能分析和汇总提交内容</span>
+                        </span>
+                      </label>
                     </div>
 
                     <div v-if="generatingReport" class="generating-state">
@@ -684,17 +658,6 @@
                             <line x1="12" y1="15" x2="12" y2="3" />
                           </svg>
                           导出报告
-                        </button>
-                        
-                        <!-- 增强功能按钮 -->
-                        <button @click="generateEnhancedReport" class="action-btn enhanced" 
-                                :disabled="generatingEnhancedReport" 
-                                title="使用新的分析引擎生成更详细的报告">
-                          <svg v-if="!generatingEnhancedReport" class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
-                          </svg>
-                          <div v-else class="loading-spinner-small"></div>
-                          {{ generatingEnhancedReport ? '生成中...' : '增强版报告' }}
                         </button>
                       </div>
                     </div>
@@ -732,8 +695,8 @@
               </div>
             </div>
 
-            <!-- 右侧历史报告区域 -->
-            <div class="history-sidebar">
+            <!-- 下方：历史报告区域 -->
+            <div class="history-section">
               <div class="history-card">
                 <div class="history-header">
                   <h3>📋 历史报告</h3>
@@ -924,7 +887,6 @@ const availableRepos = ref<any[]>([])
 const availableUsers = ref<any[]>([])
 const loadingUsers = ref(false)
 const generatingReport = ref(false)
-const generatingEnhancedReport = ref(false)
 const reportGenerated = ref(false)
 const reportProgress = ref({ currentStep: '' })
 const today = ref(new Date().toISOString().split('T')[0])
@@ -933,9 +895,6 @@ const currentReportContent = ref('') // 当前报告内容
 
 // AI增强分析选项
 const useAIAnalysis = ref(true)
-const useAISummary = ref(true)
-const includeTechAnalysis = ref(true)
-const includeRiskAssessment = ref(true)
 
 // 模板相关状态
 const availableTemplates = ref<any[]>([])
@@ -2845,10 +2804,7 @@ const generateReport = async () => {
     console.log('选择的用户:', selectedUsers.value)
     console.log('日期范围:', dateRange.value)
     console.log('AI分析选项:', {
-      useAIAnalysis: useAIAnalysis.value,
-      useAISummary: useAISummary.value,
-      includeTechAnalysis: includeTechAnalysis.value,
-      includeRiskAssessment: includeRiskAssessment.value
+      useAIAnalysis: useAIAnalysis.value
     })
     
     generatingReport.value = true
@@ -2870,11 +2826,12 @@ const generateReport = async () => {
     let report: any
     if (useAIAnalysis.value) {
       console.log('调用 generate_ai_enhanced_report 命令...')
-      report = await invoke('generate_ai_enhanced_report', { 
+      report = await invoke('generate_ai_enhanced_report', {
         config,
-        include_tech_analysis: includeTechAnalysis.value,
-        include_risk_assessment: includeRiskAssessment.value,
-        use_ai_summary: useAISummary.value
+        use_ai_summary: true,
+        include_tech_analysis: true,
+        include_risk_assessment: true,
+        report_template: 'daily_summary_optimized'
       }) as any
     } else {
       console.log('调用 generate_enhanced_daily_report 命令...')
@@ -2905,42 +2862,6 @@ const generateReport = async () => {
     toast.error('生成日报失败: ' + error, '操作失败')
   } finally {
     generatingReport.value = false
-  }
-}
-
-// 生成增强版日报
-const generateEnhancedReport = async () => {
-  try {
-    generatingEnhancedReport.value = true
-    
-    // 构建分析配置
-    const config = {
-      repoPaths: selectedRepos.value,
-      userEmails: selectedUsers.value,
-      startDate: dateRange.value.start,
-      endDate: dateRange.value.end
-    }
-
-    // 调用新的增强版报告生成命令
-    const report = await invoke('generate_enhanced_daily_report', { 
-      config 
-    }) as any
-
-    // 保存报告到历史记录
-    await invoke('save_report', { report })
-
-    // 更新历史报告列表
-    await loadHistoryReports()
-
-    // 更新当前报告内容
-    currentReportContent.value = report.content
-    
-    toast.success('增强版日报生成成功！', '操作成功')
-  } catch (error) {
-    console.error('Failed to generate enhanced report:', error)
-    toast.error('生成增强版日报失败: ' + error, '操作失败')
-  } finally {
-    generatingEnhancedReport.value = false
   }
 }
 
@@ -4779,13 +4700,25 @@ const initializeHistoryReports = async () => {
 
 .content-layout {
   display: flex;
+  flex-direction: column;
   gap: 24px;
-  align-items: flex-start;
 }
 
-.main-flow {
+.repo-section {
   flex: 1;
   min-width: 0;
+}
+
+.history-section {
+  width: 100%;
+}
+
+.history-card {
+  background: white;
+  border-radius: 16px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
 }
 
 .step-content {
@@ -5401,16 +5334,21 @@ const initializeHistoryReports = async () => {
     flex-direction: column;
   }
 
-  .history-sidebar {
-    order: -1;
+  .history-section {
+    order: 2;
     width: 100%;
+    margin-top: 16px;
+  }
+
+  .repo-section {
+    order: 1;
   }
 }
 
-/* 历史报告侧边栏样式 - Author: Evilek, Date: 2025-08-21 */
-.history-sidebar {
-  width: 320px;
-  flex-shrink: 0;
+/* 历史报告区域样式 - 修改为上下布局 */
+.history-section {
+  width: 100%;
+  margin-top: 20px;
 }
 
 .history-card {
@@ -5419,9 +5357,6 @@ const initializeHistoryReports = async () => {
   border: 1px solid #e2e8f0;
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   overflow: hidden;
-  height: fit-content;
-  position: sticky;
-  top: 20px;
 }
 
 .history-header {
@@ -5615,69 +5550,48 @@ const initializeHistoryReports = async () => {
   cursor: not-allowed;
 }
 
-/* AI分析选项样式 */
-.ai-options-section {
+/* AI分析选项样式 - 简化版 */
+.ai-option-simple {
   margin: 24px 0;
-  padding: 20px;
+  padding: 16px;
   background: #f8fafc;
   border-radius: 12px;
   border: 1px solid #e2e8f0;
 }
 
-.ai-options-section h4 {
-  margin: 0 0 16px 0;
-  font-size: 16px;
-  color: #334155;
+.ai-simple-toggle {
   display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ai-options-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  align-items: flex-start;
   gap: 12px;
-}
-
-.ai-option-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 12px;
-  background: white;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
   cursor: pointer;
-  transition: all 0.2s ease;
 }
 
-.ai-option-item:hover {
-  background: #f1f5f9;
-  border-color: #cbd5e1;
+.ai-simple-toggle input[type="checkbox"] {
+  width: 20px;
+  height: 20px;
+  accent-color: #3b82f6;
+  margin-top: 2px;
 }
 
-.ai-option-item:has(input:disabled) {
+.ai-simple-toggle:has(input:disabled) {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
-.ai-option-item input[type="checkbox"] {
-  width: 18px;
-  height: 18px;
-  accent-color: #3b82f6;
-  cursor: pointer;
-}
-
-.ai-option-label {
+.toggle-label {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-  color: #475569;
-  user-select: none;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
 }
 
-.ai-option-icon {
-  font-size: 16px;
+.toggle-icon {
+  font-size: 20px;
+}
+
+.toggle-description {
+  font-size: 14px;
+  color: #64748b;
+  margin-top: 2px;
 }
 </style>

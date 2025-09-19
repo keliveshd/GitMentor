@@ -222,11 +222,13 @@
     </div>
 
     <!-- 创建/编辑模板对话框 -->
-    <div v-if="showCreateDialog || showEditDialog" class="dialog-overlay" @click="closeDialogs">
+    <div v-if="showCreateDialog || showEditDialog" class="dialog-overlay" @click="handleOverlay">
       <div class="dialog-content" @click.stop>
         <div class="dialog-header">
           <h3>{{ showCreateDialog ? '新建模板' : '编辑模板' }}</h3>
-          <button @click="closeDialogs" class="close-btn">✕</button>
+          <button @click="closeDialogs" class="dialog-close-btn" aria-label="关闭对话框">
+            <span class="close-icon">✕</span>
+          </button>
         </div>
 
         <div class="dialog-body">
@@ -353,9 +355,134 @@
 
         <div class="dialog-footer">
           <button @click="closeDialogs" class="cancel-btn">取消</button>
-          <button @click="saveTemplate" class="save-btn" :disabled="saving">
+          <button @click.stop="saveTemplate" class="save-btn" :disabled="saving">
             {{ saving ? '保存中...' : '保存' }}
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI模板编辑对话框 -->
+    <div v-if="showTemplateEditDialog" class="dialog-overlay" @click="handleOverlayClick(closeTemplateEditDialog)">
+      <div class="dialog-content template-edit-dialog">
+        <div class="dialog-header">
+          <h3>编辑AI分析模板 - {{ currentEditingTemplate?.name }}</h3>
+          <div class="header-actions">
+            <button @click.stop="resetAITemplate" class="reset-btn" title="重置为默认">
+              🔄 重置默认
+            </button>
+            <button @click="closeTemplateEditDialog" class="dialog-close-btn" aria-label="关闭对话框">
+              <span class="close-icon">✕</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="dialog-body">
+          <div class="template-info">
+            <div class="info-item">
+              <strong>模板ID：</strong>{{ currentEditingTemplate?.id }}
+            </div>
+            <div class="info-item">
+              <strong>描述：</strong>{{ currentEditingTemplate?.description }}
+            </div>
+            <div class="info-item">
+              <strong>当前版本：</strong>v{{ selectedVersion }}
+            </div>
+            <div class="info-item">
+              <strong>支持的变量：</strong>
+              <span class="variable-tag">{commit_id}</span>
+              <span class="variable-tag">{author}</span>
+              <span class="variable-tag">{timestamp}</span>
+              <span class="variable-tag">{message}</span>
+              <span class="variable-tag">{files_changed}</span>
+              <span class="variable-tag">{diff_content}</span>
+              <span class="variable-tag">{code_language}</span>
+              <span class="variable-tag">{repo_context}</span>
+            </div>
+          </div>
+
+          <div class="template-editor">
+            <label for="template-content">模板内容 (支持Handlebars语法)</label>
+            <textarea 
+              id="template-content"
+              v-model="templateEditContent"
+              class="template-textarea"
+              rows="20"
+              placeholder="请输入模板内容..."
+            ></textarea>
+          </div>
+
+          <div class="template-preview">
+            <h4>参数说明</h4>
+            <ul class="variable-list">
+              <li><code>{commit_id}</code> - Git提交的哈希值</li>
+              <li><code>{author}</code> - 提交者姓名和邮箱</li>
+              <li><code>{timestamp}</code> - 提交时间戳</li>
+              <li><code>{message}</code> - 提交信息</li>
+              <li><code>{files_changed}</code> - 变更的文件列表</li>
+              <li><code>{diff_content}</code> - 代码差异内容</li>
+              <li><code>{code_language}</code> - 代码语言类型</li>
+              <li><code>{repo_context}</code> - 仓库上下文信息（深度分析模板）</li>
+            </ul>
+          </div>
+        </div>
+
+        <div class="dialog-footer">
+          <button @click="closeTemplateEditDialog" class="cancel-btn">取消</button>
+          <button @click.stop="saveAITemplate" class="save-btn" :disabled="saving">
+            {{ saving ? '保存中...' : '保存' }}
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AI模板查看对话框 -->
+    <div v-if="showTemplateViewDialog" class="dialog-overlay" @click="handleOverlayClick(closeTemplateViewDialog)">
+      <div class="dialog-content template-view-dialog">
+        <div class="dialog-header">
+          <h3>查看AI分析模板 - {{ viewingTemplate?.name }}</h3>
+          <button @click="closeTemplateViewDialog" class="dialog-close-btn" aria-label="关闭对话框">
+            <span class="close-icon">✕</span>
+          </button>
+        </div>
+
+        <div class="dialog-body">
+          <div class="template-info">
+            <div class="info-item">
+              <strong>模板ID：</strong>{{ viewingTemplate?.id }}
+            </div>
+            <div class="info-item">
+              <strong>描述：</strong>{{ viewingTemplate?.description }}
+            </div>
+            <div class="info-item">
+              <strong>模板类型：</strong>{{ getTemplateTypeName(viewingTemplate?.template_type) }}
+            </div>
+            <div class="info-item">
+              <strong>版本：</strong>v{{ viewingTemplate?.version }}
+            </div>
+            <div class="info-item">
+              <strong>支持的变量：</strong>
+              <span class="variable-tag">{commit_id}</span>
+              <span class="variable-tag">{author}</span>
+              <span class="variable-tag">{timestamp}</span>
+              <span class="variable-tag">{message}</span>
+              <span class="variable-tag">{files_changed}</span>
+              <span class="variable-tag">{diff_content}</span>
+              <span class="variable-tag">{code_language}</span>
+              <span class="variable-tag">{repo_context}</span>
+            </div>
+          </div>
+
+          <div class="template-content-viewer">
+            <label>模板内容</label>
+            <div class="template-content-display">
+              <pre>{{ templateViewContent }}</pre>
+            </div>
+          </div>
+        </div>
+
+        <div class="dialog-footer">
+          <button @click="closeTemplateViewDialog" class="cancel-btn">关闭</button>
         </div>
       </div>
     </div>
@@ -363,7 +490,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 
 /**
@@ -419,6 +546,13 @@ const aiConfig = ref({
   max_code_length: 50000,
   timeout_seconds: 60
 })
+
+// AI模板编辑相关
+const currentEditingTemplate = ref<any>(null)
+const showTemplateEditDialog = ref(false)
+const templateEditContent = ref('')
+const templateVersions = ref<any[]>([])
+const selectedVersion = ref('')
 
 // 编辑中的模板（更新为两段式）
 const editingTemplate = ref<PromptTemplate>({
@@ -667,15 +801,131 @@ const getTemplateTypeName = (templateType: any) => {
   return '未知类型'
 }
 
+// AI模板查看相关
+const showTemplateViewDialog = ref(false)
+const viewingTemplate = ref<any>(null)
+const templateViewContent = ref('')
+
 const viewAITemplate = (template: any) => {
-  // TODO: 实现查看模板详情
-  console.log('查看模板:', template)
+  viewingTemplate.value = template
+  templateViewContent.value = template.template_content
+  showTemplateViewDialog.value = true
 }
 
 const editAITemplate = (template: any) => {
-  // TODO: 实现编辑模板
-  console.log('编辑模板:', template)
+  currentEditingTemplate.value = template
+  showTemplateEditDialog.value = true
+  templateEditContent.value = template.template_content
+  
+  // 初始化版本列表（当前只有默认版本）
+  templateVersions.value = [
+    { version: template.version, content: template.template_content, isDefault: true }
+  ]
+  selectedVersion.value = template.version
 }
+
+
+// 处理遮罩层点击（创建/编辑对话框）
+const handleOverlay = (event: Event) => {
+  // 只有点击遮罩层本身才关闭，不冒泡
+  if (event.target === event.currentTarget) {
+    // 阻止事件传播到window级别
+    event.stopImmediatePropagation()
+    closeDialogs()
+  }
+}
+
+// 统一的遮罩层点击处理函数（AI模板对话框）
+const handleOverlayClick = (closeFn: () => void) => (event: MouseEvent) => {
+  // 只有点击遮罩层本身才关闭，不冒泡
+  if (event.target === event.currentTarget) {
+    // 阻止事件传播到window级别
+    event.stopImmediatePropagation()
+    closeFn()
+  }
+}
+
+const closeTemplateViewDialog = () => {
+  showTemplateViewDialog.value = false
+  viewingTemplate.value = null
+  templateViewContent.value = ''
+}
+
+const closeTemplateEditDialog = () => {
+  showTemplateEditDialog.value = false
+  currentEditingTemplate.value = null
+  templateEditContent.value = ''
+  templateVersions.value = []
+  selectedVersion.value = ''
+}
+
+const saveAITemplate = async () => {
+  if (!currentEditingTemplate.value) return
+  
+  try {
+    saving.value = true
+    await invoke('update_ai_template', {
+      template_id: currentEditingTemplate.value.id,
+      template_content: templateEditContent.value
+    })
+    
+    // 重新加载模板
+    await loadAITemplates()
+    closeTemplateEditDialog()
+    
+    // 显示成功提示
+    // TODO: 添加toast提示
+    console.log('模板保存成功')
+  } catch (error) {
+    console.error('保存AI模板失败:', error)
+    // TODO: 显示错误提示
+  } finally {
+    saving.value = false
+  }
+}
+
+const resetAITemplate = async () => {
+  if (!currentEditingTemplate.value) return
+  
+  try {
+    if (confirm('确定要重置此模板为默认内容吗？当前修改将丢失。')) {
+      await invoke('reset_ai_template', {
+        template_id: currentEditingTemplate.value.id
+      })
+      
+      // 重新加载模板内容
+      await loadAITemplates()
+      
+      // 更新编辑器内容
+      const updatedTemplate = [...commitAnalysisTemplates.value, ...summaryTemplates.value]
+        .find(t => t.id === currentEditingTemplate.value.id)
+      if (updatedTemplate) {
+        templateEditContent.value = updatedTemplate.template_content
+        // 更新版本信息
+        selectedVersion.value = updatedTemplate.version
+        templateVersions.value = [
+          { version: updatedTemplate.version, content: updatedTemplate.template_content, isDefault: true }
+        ]
+      }
+      
+      console.log('模板重置成功')
+    }
+  } catch (error) {
+    console.error('重置AI模板失败:', error)
+    // TODO: 显示错误提示
+  }
+}
+
+// 监控创建对话框状态变化
+watch(showCreateDialog, () => {
+  // 可以在这里添加创建对话框状态变化的处理逻辑
+}, { immediate: true })
+
+// 监控编辑对话框状态变化
+watch(showEditDialog, () => {
+  // 可以在这里添加编辑对话框状态变化的处理逻辑
+}, { immediate: true })
+
 
 // 生命周期
 onMounted(() => {
@@ -683,7 +933,30 @@ onMounted(() => {
   loadLanguageSettings()
   loadAITemplates()
   loadAIConfig()
+  
+  // 添加键盘事件监听
+  document.addEventListener('keydown', handleKeyDown)
+  
+  })
+
+// 组件卸载时移除事件监听
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', handleKeyDown)
 })
+
+// 键盘事件处理
+const handleKeyDown = (event: KeyboardEvent) => {
+  // ESC键关闭当前打开的对话框
+  if (event.key === 'Escape') {
+    if (showTemplateViewDialog.value) {
+      closeTemplateViewDialog()
+    } else if (showTemplateEditDialog.value) {
+      closeTemplateEditDialog()
+    } else if (showCreateDialog.value || showEditDialog.value) {
+      closeDialogs()
+    }
+  }
+}
 </script>
 
 <style scoped>
@@ -968,6 +1241,8 @@ onMounted(() => {
   position: fixed;
   top: 0;
   left: 0;
+  /* 确保遮罩层能够捕获所有事件 */
+  pointer-events: all;
   right: 0;
   bottom: 0;
   background: rgba(0, 0, 0, 0.5);
@@ -986,6 +1261,8 @@ onMounted(() => {
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  /* 确保对话框内容能够接收事件 */
+  pointer-events: auto;
 }
 
 .dialog-header {
@@ -1009,11 +1286,52 @@ onMounted(() => {
   padding: 4px;
   border-radius: 4px;
   transition: background 0.2s;
+  /* 确保按钮可点击 */
+  pointer-events: auto;
+  position: relative;
+  z-index: 1001;
 }
 
 .close-btn:hover {
   background: #f5f5f5;
 }
+
+/* 统一的对话框关闭按钮样式 */
+.dialog-close-btn {
+  background: none;
+  border: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+
+.dialog-close-btn:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.dialog-close-btn:active {
+  background: rgba(0, 0, 0, 0.12);
+  transform: scale(0.95);
+}
+
+.close-icon {
+  font-size: 18px;
+  line-height: 1;
+  color: #666;
+  transition: color 0.2s ease;
+}
+
+.dialog-close-btn:hover .close-icon {
+  color: #333;
+}
+
 
 .dialog-body {
   flex: 1;
@@ -1412,5 +1730,164 @@ input:checked + .slider {
 
 input:checked + .slider:before {
   transform: translateX(20px);
+}
+
+/* AI模板编辑对话框样式 */
+.template-edit-dialog {
+  max-width: 900px;
+  width: 90%;
+  max-height: 90vh;
+}
+
+.template-edit-dialog .dialog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 24px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.template-edit-dialog .header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.template-edit-dialog .header-actions .reset-btn {
+  background: #ff9800;
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.2s;
+}
+
+.template-edit-dialog .header-actions .reset-btn:hover {
+  background: #f57c00;
+}
+
+.template-info {
+  background: #f5f5f5;
+  padding: 16px 24px;
+  border-bottom: 1px solid #e0e0e0;
+}
+
+.template-info .info-item {
+  margin-bottom: 8px;
+  font-size: 14px;
+}
+
+.template-info .info-item:last-child {
+  margin-bottom: 0;
+}
+
+.variable-tag {
+  display: inline-block;
+  background: #e3f2fd;
+  color: #1976d2;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 12px;
+  margin: 2px;
+}
+
+.template-editor {
+  padding: 20px 24px;
+}
+
+.template-editor label {
+  display: block;
+  margin-bottom: 8px;
+  font-weight: 500;
+  color: #333;
+}
+
+.template-textarea {
+  width: 100%;
+  min-height: 400px;
+  padding: 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+  background: #fafafa;
+}
+
+.template-textarea:focus {
+  outline: none;
+  border-color: #2196f3;
+  background: white;
+}
+
+.template-preview {
+  padding: 16px 24px;
+  background: #f9f9f9;
+  border-top: 1px solid #e0e0e0;
+}
+
+.template-preview h4 {
+  margin: 0 0 12px 0;
+  color: #666;
+  font-size: 16px;
+}
+
+.variable-list {
+  margin: 0;
+  padding-left: 20px;
+  font-size: 14px;
+  line-height: 1.8;
+}
+
+.variable-list li {
+  margin-bottom: 4px;
+}
+
+.variable-list code {
+  background: #e8e8e8;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+}
+
+/* AI模板查看对话框样式 */
+.template-view-dialog {
+  max-width: 900px;
+  width: 90%;
+  max-height: 90vh;
+}
+
+.template-content-viewer {
+  padding: 20px 24px;
+}
+
+.template-content-viewer label {
+  display: block;
+  margin-bottom: 12px;
+  font-weight: 500;
+  color: #333;
+  font-size: 16px;
+}
+
+.template-content-display {
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  border-radius: 4px;
+  padding: 20px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.template-content-display pre {
+  margin: 0;
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 14px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-wrap: break-word;
 }
 </style>

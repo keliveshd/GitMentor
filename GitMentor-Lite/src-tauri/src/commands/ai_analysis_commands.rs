@@ -15,6 +15,7 @@ use crate::types::git_types::{
     CommitDetailAnalysis, AnalysisDepth, AIAnalysisConfig,
     AnalysisProgress, AnalysisConfig, Report
 };
+use crate::core::ai_analysis_prompts::PromptTemplate;
 use uuid::Uuid;
 use chrono::Utc;
 
@@ -226,6 +227,7 @@ pub async fn generate_ai_enhanced_report(
     include_tech_analysis: Option<bool>,
     include_risk_assessment: Option<bool>,
     use_ai_summary: Option<bool>,
+    report_template: Option<String>,
 ) -> Result<Report, String> {
     println!("开始生成AI增强日报...");
     println!("配置: 仓库数={}, 用户数={}, 日期范围={} 到 {}", 
@@ -314,7 +316,8 @@ pub async fn generate_ai_enhanced_report(
     let title = format!("AI增强日报 - {} 至 {}", config.startDate, config.endDate);
     let content = if use_ai_summary.unwrap_or(true) && !all_analyses.is_empty() {
         // 使用AI生成汇总
-        match analysis_engine.generate_ai_summary_report(
+        let template_id = report_template.unwrap_or_else(|| "daily_summary_optimized".to_string());
+        match analysis_engine.generate_ai_summary_report_with_template(
             &all_analyses,
             &config.repoPaths,
             &config.startDate,
@@ -322,6 +325,7 @@ pub async fn generate_ai_enhanced_report(
             &config.userEmails,
             include_tech_analysis.unwrap_or(true),
             include_risk_assessment.unwrap_or(true),
+            &template_id,
         ).await {
             Ok(ai_summary) => ai_summary,
             Err(e) => {
@@ -407,6 +411,7 @@ pub async fn get_ai_analysis_templates() -> Result<Vec<serde_json::Value>, Strin
             "name": template.name,
             "description": template.description,
             "template_type": template.template_type,
+            "template_content": template.template_content,
             "variables": template.variables,
             "version": template.version
         });
@@ -485,6 +490,53 @@ pub async fn clear_analysis_cache(
             return Err("无效的参数组合".to_string());
         }
     }
+    
+    Ok(true)
+}
+
+/// 获取所有AI分析模板
+#[tauri::command]
+pub async fn get_ai_templates(app_handle: tauri::AppHandle) -> Result<Vec<PromptTemplate>, String> {
+    let app_dir = app_handle.path().app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    
+    let template_manager = PromptTemplateManager::with_app_dir(&app_dir);
+    
+    let templates = template_manager.get_all_templates();
+    Ok(templates.into_iter().cloned().collect())
+}
+
+/// 更新AI分析模板
+#[tauri::command]
+pub async fn update_ai_template(
+    template_id: String,
+    template_content: String,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    let app_dir = app_handle.path().app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    
+    let mut template_manager = PromptTemplateManager::with_app_dir(&app_dir);
+    
+    template_manager.update_template_content(&template_id, &template_content)
+        .map_err(|e| format!("Failed to update template: {}", e))?;
+    
+    Ok(true)
+}
+
+/// 重置AI分析模板为默认
+#[tauri::command]
+pub async fn reset_ai_template(
+    template_id: String,
+    app_handle: tauri::AppHandle,
+) -> Result<bool, String> {
+    let app_dir = app_handle.path().app_data_dir()
+        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+    
+    let mut template_manager = PromptTemplateManager::with_app_dir(&app_dir);
+    
+    template_manager.reset_template(&template_id)
+        .map_err(|e| format!("Failed to reset template: {}", e))?;
     
     Ok(true)
 }

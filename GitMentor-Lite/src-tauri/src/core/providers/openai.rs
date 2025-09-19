@@ -153,21 +153,22 @@ impl AIProvider for OpenAIProvider {
     }
     
     async fn get_models(&self) -> Result<Vec<AIModel>> {
+        let url = &format!("{}/models", self.config.base_url);
+
         let response = self.client
-            .get(&format!("{}/models", self.config.base_url))
+            .get(url)
             .headers(self.get_headers())
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow::anyhow!("Failed to get models: {}", error_text));
         }
-        
+
         let models_response: OpenAIModelsResponse = response.json().await?;
-        
-        let models = models_response.data.into_iter()
-            .filter(|model| model.id.contains("gpt") || model.id.contains("text"))
+
+        let models: Vec<AIModel> = models_response.data.into_iter()
             .map(|model| AIModel {
                 id: model.id.clone(),
                 name: model.id,
@@ -182,7 +183,7 @@ impl AIProvider for OpenAIProvider {
                 cost: None,
             })
             .collect();
-        
+
         Ok(models)
     }
     
