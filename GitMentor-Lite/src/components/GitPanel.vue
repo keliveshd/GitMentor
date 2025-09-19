@@ -1589,6 +1589,19 @@ const executeLayeredCommit = async (stagedFiles: string[], branchName: string | 
   } catch (error) {
     layeredProgress.value.visible = false
     generationProgress.value = '分层提交失败'
+    // 打印详细错误信息便于调试
+    console.error('分层提交执行失败:', error)
+    if (typeof error === 'string') {
+      console.log('错误字符串:', error)
+    } else if (error && typeof error === 'object') {
+      console.log('错误对象:', JSON.stringify(error, null, 2))
+      if ('code' in error) {
+        console.log('错误代码:', error.code)
+      }
+      if ('message' in error) {
+        console.log('错误消息:', error.message)
+      }
+    }
     setTimeout(() => {
       generationProgress.value = ''
     }, 2000)

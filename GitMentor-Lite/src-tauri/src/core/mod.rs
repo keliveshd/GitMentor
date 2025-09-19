@@ -20,4 +20,5 @@ pub mod llm_client;
 pub mod prompt_manager;
 pub mod providers;
 pub mod report_engine;
+pub mod response_cleaner;
 pub mod update_manager;

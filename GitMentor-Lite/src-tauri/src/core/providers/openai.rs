@@ -119,26 +119,134 @@ impl AIProvider for OpenAIProvider {
             stream: Some(false),
         };
         
+        let url = &format!("{}/chat/completions", self.config.base_url);
+        println!("🔍 [OpenAI] 请求URL: {}", url);
+        println!("🔍 [OpenAI] 请求头: {:?}", self.get_headers());
+        println!("🔍 [OpenAI] 请求模型: {}", openai_request.model);
+
         let response = self.client
-            .post(&format!("{}/chat/completions", self.config.base_url))
+            .post(url)
             .headers(self.get_headers())
             .json(&openai_request)
             .send()
             .await?;
-        
-        if !response.status().is_success() {
-            let error_text = response.text().await?;
-            return Err(anyhow::anyhow!("OpenAI API error: {}", error_text));
+
+        let status = response.status();
+        let headers = response.headers().clone();
+
+        println!("🔍 [OpenAI] HTTP状态码: {}", status);
+        println!("🔍 [OpenAI] 响应头: {:?}", headers);
+
+        // 检查响应内容是否为空
+        let response_text = response.text().await?;
+        if response_text.trim().is_empty() {
+            return Err(anyhow::anyhow!("OpenAI API returned empty response"));
         }
-        
-        let openai_response: OpenAIResponse = response.json().await?;
+
+        if !status.is_success() {
+            println!("❌ [OpenAI] API错误响应: {}", response_text);
+            return Err(anyhow::anyhow!("OpenAI API error: {}", response_text));
+        }
+
+        // 处理可能的SSE响应格式
+        let final_json = if response_text.starts_with("data: ") {
+            println!("🔍 [OpenAI] SSE响应内容: {}", response_text);
+
+            // 处理流式响应，聚合所有内容
+            let lines: Vec<&str> = response_text.lines().collect();
+            let mut final_content = String::new();
+            let mut final_role = None;
+            let mut model_name = String::new();
+            let mut usage_info = None;
+
+            for line in lines {
+                if line.starts_with("data: ") && !line.trim_end_matches('\n').ends_with("[DONE]") {
+                    let json_str = &line[6..]; // 移除 "data: " 前缀
+                    if !json_str.trim().is_empty() {
+                        if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(json_str) {
+                            // 保存模型名称
+                            if let Some(model) = chunk.get("model").and_then(|m| m.as_str()) {
+                                model_name = model.to_string();
+                            }
+
+                            // 保存使用量信息
+                            if let Some(usage) = chunk.get("usage") {
+                                usage_info = Some(usage.clone());
+                            }
+
+                            // 处理choices数组
+                            if let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) {
+                                if let Some(choice) = choices.first() {
+                                    // 处理角色信息（通常只在第一个delta中）
+                                    if let Some(delta) = choice.get("delta") {
+                                        if let Some(role) = delta.get("role").and_then(|r| r.as_str()) {
+                                            final_role = Some(role.to_string());
+                                        }
+                                        // 累积内容
+                                        if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                                            final_content.push_str(content);
+                                        }
+                                    }
+                                    // 处理完整的message（非delta格式）
+                                    else if let Some(message) = choice.get("message") {
+                                        if let Some(role) = message.get("role").and_then(|r| r.as_str()) {
+                                            final_role = Some(role.to_string());
+                                        }
+                                        if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
+                                            final_content = content.to_string();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if final_content.is_empty() {
+                return Err(anyhow::anyhow!("No content found in SSE response. Response: {}", response_text));
+            }
+
+            // 构造最终的OpenAI响应格式
+            let final_response = serde_json::json!({
+                "model": model_name,
+                "choices": [{
+                    "index": 0,
+                    "message": {
+                        "role": final_role.unwrap_or_else(|| "assistant".to_string()),
+                        "content": final_content
+                    },
+                    "finish_reason": "stop"
+                }],
+                "usage": usage_info.unwrap_or(serde_json::json!({
+                    "prompt_tokens": 0,
+                    "completion_tokens": 0,
+                    "total_tokens": 0
+                }))
+            });
+
+            println!("✅ [OpenAI] 构造的最终响应: {}", final_response);
+            final_response.to_string()
+        } else {
+            response_text.clone()
+        };
+
+        // 解析JSON响应
+        let openai_response: OpenAIResponse = serde_json::from_str(&final_json)
+            .map_err(|e| anyhow::anyhow!("Failed to parse OpenAI response: {}. Response text: {}", e, if final_json.len() > 200 { &final_json[..200] } else { &final_json }))?;
         
         if let Some(choice) = openai_response.choices.first() {
             // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
             use crate::core::ai_provider::ReasoningParser;
 
+            // 清理响应内容，移除思考过程 - Author: Evilek, Date: 2025-01-19
+            use crate::core::response_cleaner::ResponseCleaner;
+            let cleaned_content = ResponseCleaner::clean_commit_message(&choice.message.content);
+
+            println!("✅ [OpenAI] 原始响应长度: {}, 清理后长度: {}", choice.message.content.len(), cleaned_content.len());
+
             Ok(ReasoningParser::create_response(
-                choice.message.content.clone(),
+                cleaned_content,
                 openai_response.model,
                 openai_response.usage.map(|u| TokenUsage {
                     prompt_tokens: u.prompt_tokens,
@@ -166,7 +274,15 @@ impl AIProvider for OpenAIProvider {
             return Err(anyhow::anyhow!("Failed to get models: {}", error_text));
         }
 
-        let models_response: OpenAIModelsResponse = response.json().await?;
+        // 检查响应内容是否为空
+        let response_text = response.text().await?;
+        if response_text.trim().is_empty() {
+            return Err(anyhow::anyhow!("OpenAI API returned empty response for models"));
+        }
+
+        // 解析JSON响应
+        let models_response: OpenAIModelsResponse = serde_json::from_str(&response_text)
+            .map_err(|e| anyhow::anyhow!("Failed to parse OpenAI models response: {}. Response text: {}", e, if response_text.len() > 200 { &response_text[..200] } else { &response_text }))?;
 
         let models: Vec<AIModel> = models_response.data.into_iter()
             .map(|model| AIModel {

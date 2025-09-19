@@ -602,6 +602,9 @@ pub async fn execute_layered_commit(
             Ok(result)
         },
         Err(e) => {
+            // 打印详细错误信息便于调试
+            eprintln!("❌ [分层提交] 执行失败: {:?}", e);
+            eprintln!("❌ [分层提交] 错误类型: {}", std::any::type_name_of_val(&e));
             Err(format!("分层提交执行失败: {}", e))
         }
     }
