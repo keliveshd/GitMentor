@@ -6,12 +6,14 @@
 // - layered_commit_manager：分层提交编排与取消
 // - conversation_logger：AI 请求/响应记录
 // - report_engine：日报生成与缓存管理
+// - ai_response_cache：AI响应缓存管理
 // 别tm在这里写业务，写清楚模块边界，改就加注释。
 
 pub mod ai_analysis_prompts;
 pub mod ai_config;
 pub mod ai_manager;
 pub mod ai_provider;
+pub mod ai_response_cache;
 pub mod conversation_logger;
 pub mod git_config;
 pub mod git_engine;
