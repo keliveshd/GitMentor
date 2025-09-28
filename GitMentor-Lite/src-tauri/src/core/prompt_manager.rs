@@ -821,8 +821,8 @@ config.js: 更新配置参数
             let summaries_text = file_summaries.join("\n\n");
             CommitContext {
                 diff: format!(
-                    "File Analysis Summary:\n{}\n\nOriginal Diff:\n{}",
-                    summaries_text, context.diff
+                    "Original Diff:\n{}",
+                    context.diff
                 ),
                 staged_files: context.staged_files.clone(),
                 branch_name: context.branch_name.clone(),
