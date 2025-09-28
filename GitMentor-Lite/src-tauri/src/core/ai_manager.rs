@@ -198,7 +198,7 @@ impl AIManager {
             .collect();
 
         let cache_key_repo_path = repository_path.as_deref();
-        let mut cache = self.response_cache.write().await;
+        let cache = self.response_cache.write().await;
 
         if let Some(cached_entry) = cache.get(
             template_id,

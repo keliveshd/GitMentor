@@ -108,6 +108,7 @@ impl AIProvider for OpenAIProvider {
     }
     
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse> {
+        // 所有模型都使用流式请求以避免超时
         let openai_request = OpenAIRequest {
             model: request.model.clone(),
             messages: request.messages.iter().map(|msg| OpenAIMessage {
@@ -116,15 +117,17 @@ impl AIProvider for OpenAIProvider {
             }).collect(),
             temperature: request.temperature,
             max_tokens: request.max_tokens,
-            stream: Some(false),
+            stream: Some(true),  // 强制使用流式请求
         };
-        
+
         let url = &format!("{}/chat/completions", self.config.base_url);
         println!("🔍 [OpenAI] 请求URL: {}", url);
         println!("🔍 [OpenAI] 请求头: {:?}", self.get_headers());
-        println!("🔍 [OpenAI] 请求模型: {}", openai_request.model);
+        println!("🔍 [OpenAI] 请求模型: {} (流式: 是)", openai_request.model);
 
-        let response = self.client
+        println!("🔍 [OpenAI] 开始流式请求...");
+
+        let mut response = self.client
             .post(url)
             .headers(self.get_headers())
             .json(&openai_request)
@@ -134,132 +137,100 @@ impl AIProvider for OpenAIProvider {
         let status = response.status();
         let headers = response.headers().clone();
 
-        println!("🔍 [OpenAI] HTTP状态码: {}", status);
-        println!("🔍 [OpenAI] 响应头: {:?}", headers);
-
-        // 检查响应内容是否为空
-        let response_text = response.text().await?;
-        if response_text.trim().is_empty() {
-            return Err(anyhow::anyhow!("OpenAI API returned empty response"));
-        }
+        println!("🔍 [OpenAI] 流式请求HTTP状态码: {}", status);
+        println!("🔍 [OpenAI] 流式请求响应头: {:?}", headers);
 
         if !status.is_success() {
-            println!("❌ [OpenAI] API错误响应: {}", response_text);
-            return Err(anyhow::anyhow!("OpenAI API error: {}", response_text));
+            let error_text = response.text().await?;
+            println!("❌ [OpenAI] 流式请求错误: {}", error_text);
+            return Err(anyhow::anyhow!("OpenAI streaming error: {}", error_text));
         }
 
-        // 处理可能的SSE响应格式
-        let final_json = if response_text.starts_with("data: ") {
-            println!("🔍 [OpenAI] SSE响应内容: {}", response_text);
+        // 读取流式响应
+        let mut final_content = String::new();
+        let mut model_name = String::new();
+        let mut usage_info = None;
 
-            // 处理流式响应，聚合所有内容
-            let lines: Vec<&str> = response_text.lines().collect();
-            let mut final_content = String::new();
-            let mut final_role = None;
-            let mut model_name = String::new();
-            let mut usage_info = None;
+        while let Some(chunk) = response.chunk().await? {
+            let chunk_str = String::from_utf8_lossy(&chunk);
 
-            for line in lines {
-                if line.starts_with("data: ") && !line.trim_end_matches('\n').ends_with("[DONE]") {
-                    let json_str = &line[6..]; // 移除 "data: " 前缀
-                    if !json_str.trim().is_empty() {
-                        if let Ok(chunk) = serde_json::from_str::<serde_json::Value>(json_str) {
-                            // 保存模型名称
-                            if let Some(model) = chunk.get("model").and_then(|m| m.as_str()) {
-                                model_name = model.to_string();
-                            }
+            // 解析SSE格式
+            for line in chunk_str.lines() {
+                if line.starts_with("data: ") {
+                    let data = &line[6..]; // 移除 "data: " 前缀
 
-                            // 保存使用量信息
-                            if let Some(usage) = chunk.get("usage") {
-                                usage_info = Some(usage.clone());
-                            }
+                    if data.trim() == "[DONE]" {
+                        println!("🔍 [OpenAI] 流式响应完成");
+                        continue;
+                    }
 
-                            // 处理choices数组
-                            if let Some(choices) = chunk.get("choices").and_then(|c| c.as_array()) {
-                                if let Some(choice) = choices.first() {
-                                    // 处理角色信息（通常只在第一个delta中）
-                                    if let Some(delta) = choice.get("delta") {
-                                        if let Some(role) = delta.get("role").and_then(|r| r.as_str()) {
-                                            final_role = Some(role.to_string());
-                                        }
-                                        // 累积内容
-                                        if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
-                                            final_content.push_str(content);
-                                        }
+                    if let Ok(chunk_data) = serde_json::from_str::<serde_json::Value>(data) {
+                        // 保存模型名称
+                        if let Some(model) = chunk_data.get("model").and_then(|m| m.as_str()) {
+                            model_name = model.to_string();
+                        }
+
+                        // 处理choices数组
+                        if let Some(choices) = chunk_data.get("choices").and_then(|c| c.as_array()) {
+                            if let Some(choice) = choices.first() {
+                                // 处理delta内容
+                                if let Some(delta) = choice.get("delta") {
+                                    // 累积内容
+                                    if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                                        final_content.push_str(content);
+                                        // 实时打印接收到的内容（用于调试）
+                                        print!("{}", content);
+                                        std::io::Write::flush(&mut std::io::stdout()).unwrap();
                                     }
-                                    // 处理完整的message（非delta格式）
-                                    else if let Some(message) = choice.get("message") {
-                                        if let Some(role) = message.get("role").and_then(|r| r.as_str()) {
-                                            final_role = Some(role.to_string());
-                                        }
-                                        if let Some(content) = message.get("content").and_then(|c| c.as_str()) {
-                                            final_content = content.to_string();
-                                        }
-                                    }
+                                }
+
+                                // 处理使用量信息（通常在最后一个chunk中）
+                                if let Some(usage) = chunk_data.get("usage") {
+                                    usage_info = Some(usage.clone());
                                 }
                             }
                         }
                     }
                 }
             }
-
-            if final_content.is_empty() {
-                return Err(anyhow::anyhow!("No content found in SSE response. Response: {}", response_text));
-            }
-
-            // 构造最终的OpenAI响应格式
-            let final_response = serde_json::json!({
-                "model": model_name,
-                "choices": [{
-                    "index": 0,
-                    "message": {
-                        "role": final_role.unwrap_or_else(|| "assistant".to_string()),
-                        "content": final_content
-                    },
-                    "finish_reason": "stop"
-                }],
-                "usage": usage_info.unwrap_or(serde_json::json!({
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0
-                }))
-            });
-
-            println!("✅ [OpenAI] 构造的最终响应: {}", final_response);
-            final_response.to_string()
-        } else {
-            response_text.clone()
-        };
-
-        // 解析JSON响应
-        let openai_response: OpenAIResponse = serde_json::from_str(&final_json)
-            .map_err(|e| anyhow::anyhow!("Failed to parse OpenAI response: {}. Response text: {}", e, if final_json.len() > 200 { &final_json[..200] } else { &final_json }))?;
-        
-        if let Some(choice) = openai_response.choices.first() {
-            // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
-            use crate::core::ai_provider::ReasoningParser;
-
-            // 清理响应内容，移除思考过程 - Author: Evilek, Date: 2025-01-19
-            use crate::core::response_cleaner::ResponseCleaner;
-            let cleaned_content = ResponseCleaner::clean_commit_message(&choice.message.content);
-
-            println!("✅ [OpenAI] 原始响应长度: {}, 清理后长度: {}", choice.message.content.len(), cleaned_content.len());
-
-            Ok(ReasoningParser::create_response(
-                cleaned_content,
-                openai_response.model,
-                openai_response.usage.map(|u| TokenUsage {
-                    prompt_tokens: u.prompt_tokens,
-                    completion_tokens: u.completion_tokens,
-                    total_tokens: u.total_tokens,
-                }),
-                choice.finish_reason.clone(),
-            ))
-        } else {
-            Err(anyhow::anyhow!("No response from OpenAI"))
         }
+
+        println!("\n🔍 [OpenAI] 流式接收完成，总长度: {}", final_content.len());
+
+        // 如果没有收到任何内容，返回错误
+        if final_content.is_empty() {
+            return Err(anyhow::anyhow!("No content received from streaming response"));
+        }
+
+        // 首先使用 ReasoningParser 分离思考内容和实际内容
+        let (actual_content, reasoning_content) = crate::core::ai_provider::ReasoningParser::parse_content(&final_content);
+
+        // 如果有思考内容，打印日志
+        if let Some(ref reasoning) = reasoning_content {
+            println!("🔍 [DEBUG] 提取到思考内容，长度: {}", reasoning.len());
+        }
+
+        // 然后对实际内容进行进一步清理
+        use crate::core::response_cleaner::ResponseCleaner;
+        let cleaned_content = ResponseCleaner::clean_commit_message(&actual_content);
+
+        println!("🔍 [DEBUG] 原始响应长度: {}, 移除思考后长度: {}, 清理后长度: {}",
+                 final_content.len(), actual_content.len(), cleaned_content.len());
+
+        // 构造AI响应，直接使用已清理的内容
+        Ok(AIResponse {
+            content: cleaned_content,
+            reasoning_content,
+            model: model_name,
+            usage: usage_info.map(|u| TokenUsage {
+                prompt_tokens: u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                completion_tokens: u.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                total_tokens: u.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+            }),
+            finish_reason: Some("stop".to_string()),
+        })
     }
-    
+
     async fn get_models(&self) -> Result<Vec<AIModel>> {
         let url = &format!("{}/models", self.config.base_url);
 
