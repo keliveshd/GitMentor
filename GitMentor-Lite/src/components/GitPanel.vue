@@ -2745,20 +2745,24 @@ const setDatePreset = (preset: string) => {
       dateRange.value.start = yesterday.toISOString().split('T')[0]
       dateRange.value.end = yesterday.toISOString().split('T')[0]
       break
-    case 'thisWeek':
+    case 'thisWeek': {
       const thisWeekStart = new Date(today)
-      thisWeekStart.setDate(today.getDate() - today.getDay())
+      const dayOfWeek = today.getDay() || 7 // 将周日(0)转换为7
+      thisWeekStart.setDate(today.getDate() - dayOfWeek + 1) // 周一
       dateRange.value.start = thisWeekStart.toISOString().split('T')[0]
       dateRange.value.end = today.toISOString().split('T')[0]
       break
-    case 'lastWeek':
+    }
+    case 'lastWeek': {
       const lastWeekEnd = new Date(today)
-      lastWeekEnd.setDate(today.getDate() - today.getDay() - 1)
+      const dayOfWeek = today.getDay() || 7 // 将周日(0)转换为7
+      lastWeekEnd.setDate(today.getDate() - dayOfWeek) // 上周日
       const lastWeekStart = new Date(lastWeekEnd)
-      lastWeekStart.setDate(lastWeekEnd.getDate() - 6)
+      lastWeekStart.setDate(lastWeekEnd.getDate() - 6) // 上周一
       dateRange.value.start = lastWeekStart.toISOString().split('T')[0]
       dateRange.value.end = lastWeekEnd.toISOString().split('T')[0]
       break
+    }
     case 'thisMonth':
       const thisMonthStart = new Date(today.getFullYear(), today.getMonth(), 1)
       dateRange.value.start = thisMonthStart.toISOString().split('T')[0]
