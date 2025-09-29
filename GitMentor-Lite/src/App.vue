@@ -25,9 +25,22 @@ const checkFirstTimeSetup = async () => {
     appReady.value = true;
   } catch (error) {
     console.error('检查首次启动状态失败:', error);
-    // 如果检查失败，直接显示主界面
+    // 如果检查失败，显示错误信息但仍继续
     showFirstTimeSetup.value = false;
     appReady.value = true;
+
+    // 如果是连接错误，添加重试机制
+    if (error && error.toString().includes('Tauri')) {
+      console.log('Tauri连接失败，将在5秒后重试...');
+      setTimeout(async () => {
+        try {
+          const needsSetup = await invoke('check_first_time_setup') as boolean;
+          showFirstTimeSetup.value = needsSetup;
+        } catch (retryError) {
+          console.error('重试失败:', retryError);
+        }
+      }, 5000);
+    }
   }
 }
 
@@ -41,8 +54,8 @@ const completeFirstTimeSetup = () => {
 
 // 生命周期
 onMounted(async () => {
-  // 等待Tauri初始化
-  await new Promise(resolve => setTimeout(resolve, 100));
+  // 等待Tauri初始化 - 增加等待时间以避免连接问题
+  await new Promise(resolve => setTimeout(resolve, 2000));
   await checkFirstTimeSetup();
 });
 </script>

@@ -497,46 +497,127 @@ pub async fn clear_analysis_cache(
 /// 获取所有AI分析模板
 #[tauri::command]
 pub async fn get_ai_templates(app_handle: tauri::AppHandle) -> Result<Vec<PromptTemplate>, String> {
-    let app_dir = app_handle.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    
-    let template_manager = PromptTemplateManager::with_app_dir(&app_dir);
-    
-    let templates = template_manager.get_all_templates();
-    Ok(templates.into_iter().cloned().collect())
+    use crate::core::versioned_template_manager::*;
+    use crate::types::git_types::{AIAnalysisTemplate, AnalysisDepth};
+    use std::sync::Mutex;
+    use once_cell::sync::Lazy;
+
+    // 获取或初始化版本化模板管理器
+    static TEMPLATE_MANAGER: Lazy<Mutex<Option<VersionedTemplateManager>>> = Lazy::new(|| Mutex::new(None));
+
+    let mut manager = TEMPLATE_MANAGER.lock().unwrap();
+    if manager.is_none() {
+        let app_dir = app_handle.path().app_data_dir()
+            .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        *manager = Some(VersionedTemplateManager::new(&app_dir)
+            .map_err(|e| format!("Failed to create template manager: {}", e))?);
+    }
+
+    let manager = manager.as_ref().unwrap();
+
+    // 获取所有模板并转换为 PromptTemplate 格式
+    let versioned_templates = manager.get_all_templates();
+    let mut templates = Vec::new();
+
+    for template in versioned_templates {
+        // 确定模板类型
+        let template_type = match template.template_type.as_str() {
+            "commit_analysis" => AIAnalysisTemplate::CommitAnalysis {
+                depth: AnalysisDepth::Detailed,
+                include_code_review: false,
+            },
+            "daily_summary" => AIAnalysisTemplate::DailySummary {
+                include_tech_analysis: false,
+                include_risk_assessment: false,
+            },
+            _ => AIAnalysisTemplate::DailySummary {
+                include_tech_analysis: false,
+                include_risk_assessment: false,
+            }, // 默认类型
+        };
+
+        // 获取当前内容
+        let content = manager.get_template_content(&template.id)
+            .unwrap_or_else(|_| "".to_string());
+
+        // 创建 PromptTemplate
+        let prompt_template = PromptTemplate {
+            id: template.id.clone(),
+            name: template.name.clone(),
+            description: template.description.clone(),
+            template_type,
+            template_content: content,
+            variables: vec![], // AI分析模板通常没有变量
+            version: template.current_version_id.clone(),
+        };
+
+        templates.push(prompt_template);
+    }
+
+    Ok(templates)
 }
 
 /// 更新AI分析模板
 #[tauri::command]
 pub async fn update_ai_template(
-    template_id: String,
-    template_content: String,
+    templateId: String,
+    templateContent: String,
     app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
-    let app_dir = app_handle.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    
-    let mut template_manager = PromptTemplateManager::with_app_dir(&app_dir);
-    
-    template_manager.update_template_content(&template_id, &template_content)
-        .map_err(|e| format!("Failed to update template: {}", e))?;
-    
+    use crate::core::versioned_template_manager::*;
+    use std::sync::Mutex;
+    use once_cell::sync::Lazy;
+
+    // 获取或初始化版本化模板管理器
+    static TEMPLATE_MANAGER: Lazy<Mutex<Option<VersionedTemplateManager>>> = Lazy::new(|| Mutex::new(None));
+
+    let mut manager = TEMPLATE_MANAGER.lock().unwrap();
+    if manager.is_none() {
+        let app_dir = app_handle.path().app_data_dir()
+            .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        *manager = Some(VersionedTemplateManager::new(&app_dir)
+            .map_err(|e| format!("Failed to create template manager: {}", e))?);
+    }
+
+    let manager = manager.as_mut().unwrap();
+
+    // 更新模板内容并创建新版本
+    manager.update_template(
+        &templateId,
+        templateContent,
+        format!("v{}", chrono::Utc::now().timestamp()), // 版本号
+        "用户编辑的版本".to_string(), // 版本描述
+    ).map_err(|e| format!("Failed to update template: {}", e))?;
+
     Ok(true)
 }
 
 /// 重置AI分析模板为默认
 #[tauri::command]
 pub async fn reset_ai_template(
-    template_id: String,
+    templateId: String,
     app_handle: tauri::AppHandle,
 ) -> Result<bool, String> {
-    let app_dir = app_handle.path().app_data_dir()
-        .map_err(|e| format!("Failed to get app data dir: {}", e))?;
-    
-    let mut template_manager = PromptTemplateManager::with_app_dir(&app_dir);
-    
-    template_manager.reset_template(&template_id)
+    use crate::core::versioned_template_manager::*;
+    use std::sync::Mutex;
+    use once_cell::sync::Lazy;
+
+    // 获取或初始化版本化模板管理器
+    static TEMPLATE_MANAGER: Lazy<Mutex<Option<VersionedTemplateManager>>> = Lazy::new(|| Mutex::new(None));
+
+    let mut manager = TEMPLATE_MANAGER.lock().unwrap();
+    if manager.is_none() {
+        let app_dir = app_handle.path().app_data_dir()
+            .map_err(|e| format!("Failed to get app data dir: {}", e))?;
+        *manager = Some(VersionedTemplateManager::new(&app_dir)
+            .map_err(|e| format!("Failed to create template manager: {}", e))?);
+    }
+
+    let manager = manager.as_mut().unwrap();
+
+    // 还原到系统内置版本
+    manager.revert_to_builtin_version(&templateId)
         .map_err(|e| format!("Failed to reset template: {}", e))?;
-    
+
     Ok(true)
 }

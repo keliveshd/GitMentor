@@ -93,12 +93,34 @@
               <p>配置单体提交分析和日报汇总的AI提示模板</p>
             </div>
             <div class="ai-actions">
+              <button @click="checkTemplateUpdates" class="update-btn" title="检查更新">
+                🔄 检查更新
+              </button>
               <button @click="refreshAITemplates" class="refresh-btn" title="刷新模板">
                 🔄 刷新
               </button>
               <button @click="resetToDefaultTemplates" class="reset-btn" title="重置为默认">
                 🔄 重置默认
               </button>
+            </div>
+          </div>
+
+          <!-- 系统更新提示 -->
+          <div v-if="templateUpdates.length > 0" class="update-notification">
+            <div class="update-header">
+              <span class="update-icon">⚠️</span>
+              <span class="update-title">发现系统模板更新</span>
+            </div>
+            <div class="update-list">
+              <div v-for="update in templateUpdates" :key="update.system_template_id" class="update-item">
+                <div class="update-info">
+                  <strong>{{ getTemplateById(update.system_template_id)?.name }}</strong>
+                  <span class="update-desc">{{ update.update_description }}</span>
+                </div>
+                <button @click="applyTemplateUpdate(update.system_template_id)" class="apply-update-btn">
+                  应用更新
+                </button>
+              </div>
             </div>
           </div>
           
@@ -386,7 +408,7 @@
               <strong>描述：</strong>{{ currentEditingTemplate?.description }}
             </div>
             <div class="info-item">
-              <strong>当前版本：</strong>v{{ selectedVersion }}
+              <strong>模板类型：</strong>{{ currentEditingTemplate?.is_custom ? '自定义模板' : '系统模板' }}
             </div>
             <div class="info-item">
               <strong>支持的变量：</strong>
@@ -401,9 +423,42 @@
             </div>
           </div>
 
+          <!-- 版本管理区域 -->
+          <div class="version-management">
+            <div class="version-header">
+              <h4>📋 版本管理</h4>
+              <div class="version-actions">
+                <button @click="showCreateVersionDialog = true" class="create-version-btn" title="创建新版本">
+                  ➕ 创建版本
+                </button>
+                <button @click="loadTemplateVersions" class="refresh-version-btn" title="刷新版本">
+                  🔄 刷新
+                </button>
+              </div>
+            </div>
+
+            <div class="version-list">
+              <div v-for="version in templateVersions" :key="version.id"
+                   :class="['version-item', { active: selectedVersionId === version.id }]"
+                   @click="switchToVersion(version)">
+                <div class="version-info">
+                  <div class="version-name">{{ version.name }}</div>
+                  <div class="version-desc">{{ version.description }}</div>
+                  <div class="version-meta">
+                    <span class="version-date">{{ formatDate(version.created_at) }}</span>
+                    <span v-if="version.is_builtin" class="builtin-tag">系统</span>
+                  </div>
+                </div>
+                <div class="version-current" v-if="selectedVersionId === version.id">
+                  ✓ 当前
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="template-editor">
             <label for="template-content">模板内容 (支持Handlebars语法)</label>
-            <textarea 
+            <textarea
               id="template-content"
               v-model="templateEditContent"
               class="template-textarea"
@@ -486,6 +541,45 @@
         </div>
       </div>
     </div>
+
+    <!-- 创建新版本对话框 -->
+    <div v-if="showCreateVersionDialog" class="dialog-overlay" @click="handleOverlayClick(closeCreateVersionDialog)">
+      <div class="dialog-content create-version-dialog">
+        <div class="dialog-header">
+          <h3>创建新版本</h3>
+          <button @click="closeCreateVersionDialog" class="dialog-close-btn" aria-label="关闭对话框">
+            <span class="close-icon">✕</span>
+          </button>
+        </div>
+
+        <div class="dialog-body">
+          <div class="form-group">
+            <label for="version-name">版本名称</label>
+            <input id="version-name" v-model="newVersion.name" type="text" class="form-input"
+                   placeholder="例如：优化版、修复版等">
+          </div>
+
+          <div class="form-group">
+            <label for="version-description">版本描述</label>
+            <textarea id="version-description" v-model="newVersion.description" class="form-textarea"
+                      rows="3" placeholder="描述这个版本的变更内容..."></textarea>
+          </div>
+
+          <div class="form-group">
+            <label>版本内容</label>
+            <textarea v-model="newVersion.content" class="form-textarea version-content"
+                      rows="15" placeholder="输入新版本的模板内容..."></textarea>
+          </div>
+        </div>
+
+        <div class="dialog-footer">
+          <button @click="closeCreateVersionDialog" class="cancel-btn">取消</button>
+          <button @click="createNewVersion" class="save-btn" :disabled="!newVersion.name.trim()">
+            创建版本
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -552,7 +646,18 @@ const currentEditingTemplate = ref<any>(null)
 const showTemplateEditDialog = ref(false)
 const templateEditContent = ref('')
 const templateVersions = ref<any[]>([])
-const selectedVersion = ref('')
+const selectedVersionId = ref('')
+
+// 版本管理相关
+const showCreateVersionDialog = ref(false)
+const newVersion = ref({
+  name: '',
+  description: '',
+  content: ''
+})
+
+// 模板更新相关
+const templateUpdates = ref<any[]>([])
 
 // 编辑中的模板（更新为两段式）
 const editingTemplate = ref<PromptTemplate>({
@@ -812,16 +917,13 @@ const viewAITemplate = (template: any) => {
   showTemplateViewDialog.value = true
 }
 
-const editAITemplate = (template: any) => {
+const editAITemplate = async (template: any) => {
   currentEditingTemplate.value = template
   showTemplateEditDialog.value = true
   templateEditContent.value = template.template_content
-  
-  // 初始化版本列表（当前只有默认版本）
-  templateVersions.value = [
-    { version: template.version, content: template.template_content, isDefault: true }
-  ]
-  selectedVersion.value = template.version
+
+  // 加载模板版本信息
+  await loadTemplateVersions()
 }
 
 
@@ -856,7 +958,7 @@ const closeTemplateEditDialog = () => {
   currentEditingTemplate.value = null
   templateEditContent.value = ''
   templateVersions.value = []
-  selectedVersion.value = ''
+  selectedVersionId.value = ''
 }
 
 const saveAITemplate = async () => {
@@ -865,8 +967,8 @@ const saveAITemplate = async () => {
   try {
     saving.value = true
     await invoke('update_ai_template', {
-      template_id: currentEditingTemplate.value.id,
-      template_content: templateEditContent.value
+      templateId: currentEditingTemplate.value.id,
+      templateContent: templateEditContent.value
     })
     
     // 重新加载模板
@@ -890,7 +992,7 @@ const resetAITemplate = async () => {
   try {
     if (confirm('确定要重置此模板为默认内容吗？当前修改将丢失。')) {
       await invoke('reset_ai_template', {
-        template_id: currentEditingTemplate.value.id
+        templateId: currentEditingTemplate.value.id
       })
       
       // 重新加载模板内容
@@ -916,6 +1018,130 @@ const resetAITemplate = async () => {
   }
 }
 
+// 加载模板版本
+const loadTemplateVersions = async () => {
+  if (!currentEditingTemplate.value) return
+
+  try {
+    const versions = await invoke('get_template_versions', {
+      templateId: currentEditingTemplate.value.id
+    }) as any[]
+
+    templateVersions.value = versions.map(v => ({
+      id: v.id,
+      name: v.name,
+      description: v.description,
+      content: v.content,
+      created_at: v.created_at,
+      is_builtin: v.is_builtin
+    }))
+
+    // 设置当前选中的版本
+    const currentVersion = versions.find(v => v.is_current)
+    if (currentVersion) {
+      selectedVersionId.value = currentVersion.id
+      templateEditContent.value = currentVersion.content
+    }
+  } catch (error) {
+    console.error('加载模板版本失败:', error)
+  }
+}
+
+// 切换到指定版本
+const switchToVersion = async (version: any) => {
+  if (!currentEditingTemplate.value || version.id === selectedVersionId.value) return
+
+  try {
+    await invoke('switch_template_version', {
+      templateId: currentEditingTemplate.value.id,
+      versionId: version.id
+    })
+
+    // 更新UI
+    selectedVersionId.value = version.id
+    templateEditContent.value = version.content
+
+    // 重新加载模板列表以更新状态
+    await loadAITemplates()
+  } catch (error) {
+    console.error('切换版本失败:', error)
+    alert('切换版本失败: ' + error)
+  }
+}
+
+// 创建新版本对话框函数
+const closeCreateVersionDialog = () => {
+  showCreateVersionDialog.value = false
+  newVersion.value = {
+    name: '',
+    description: '',
+    content: templateEditContent.value // 使用当前内容作为默认值
+  }
+}
+
+// 创建新版本
+const createNewVersion = async () => {
+  if (!currentEditingTemplate.value || !newVersion.value.name.trim()) return
+
+  try {
+    await invoke('update_template_version', {
+      templateId: currentEditingTemplate.value.id,
+      content: newVersion.value.content,
+      versionName: newVersion.value.name,
+      versionDescription: newVersion.value.description
+    })
+
+    // 关闭对话框并刷新版本列表
+    closeCreateVersionDialog()
+    await loadTemplateVersions()
+    await loadAITemplates()
+
+    console.log('新版本创建成功')
+  } catch (error) {
+    console.error('创建新版本失败:', error)
+    alert('创建新版本失败: ' + error)
+  }
+}
+
+// 检查模板更新
+const checkTemplateUpdates = async () => {
+  try {
+    const updates = await invoke('get_template_system_updates') as any[]
+    templateUpdates.value = updates
+  } catch (error) {
+    console.error('检查模板更新失败:', error)
+  }
+}
+
+// 应用模板更新
+const applyTemplateUpdate = async (templateId: string) => {
+  try {
+    if (confirm('确定要应用此系统更新吗？这将为模板创建一个新版本。')) {
+      await invoke('apply_template_system_update', { templateId })
+
+      // 重新加载模板和更新列表
+      await loadAITemplates()
+      await checkTemplateUpdates()
+
+      // 如果当前正在编辑这个模板，刷新版本列表
+      if (currentEditingTemplate.value?.id === templateId) {
+        await loadTemplateVersions()
+      }
+
+      console.log('模板更新应用成功')
+    }
+  } catch (error) {
+    console.error('应用模板更新失败:', error)
+    alert('应用更新失败: ' + error)
+  }
+}
+
+// 根据ID获取模板
+const getTemplateById = (templateId: string) => {
+  const allTemplates = [...commitAnalysisTemplates.value, ...summaryTemplates.value]
+  return allTemplates.find(t => t.id === templateId)
+}
+
 // 监控创建对话框状态变化
 watch(showCreateDialog, () => {
   // 可以在这里添加创建对话框状态变化的处理逻辑
@@ -933,10 +1159,11 @@ onMounted(() => {
   loadLanguageSettings()
   loadAITemplates()
   loadAIConfig()
-  
+  checkTemplateUpdates() // 检查模板更新
+
   // 添加键盘事件监听
   document.addEventListener('keydown', handleKeyDown)
-  
+
   })
 
 // 组件卸载时移除事件监听
@@ -1547,6 +1774,22 @@ const handleKeyDown = (event: KeyboardEvent) => {
   color: #856404;
 }
 
+.update-btn {
+  padding: 6px 12px;
+  border: 1px solid #2196f3;
+  border-radius: 4px;
+  background: #2196f3;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.update-btn:hover {
+  background: #1976d2;
+  border-color: #1976d2;
+}
+
 .ai-template-group {
   margin: 20px 30px 0 30px;
   background: white;
@@ -1732,6 +1975,77 @@ input:checked + .slider:before {
   transform: translateX(20px);
 }
 
+/* 更新通知样式 */
+.update-notification {
+  margin: 20px 30px 0 30px;
+  background: #fff3cd;
+  border: 1px solid #ffeaa7;
+  border-radius: 8px;
+  padding: 16px 20px;
+}
+
+.update-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.update-icon {
+  font-size: 16px;
+}
+
+.update-title {
+  font-weight: 600;
+  color: #856404;
+}
+
+.update-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.update-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 6px;
+}
+
+.update-info {
+  flex: 1;
+}
+
+.update-info strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #333;
+}
+
+.update-desc {
+  font-size: 13px;
+  color: #666;
+}
+
+.apply-update-btn {
+  padding: 4px 12px;
+  border: 1px solid #28a745;
+  border-radius: 4px;
+  background: #28a745;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.apply-update-btn:hover {
+  background: #218838;
+  border-color: #218838;
+}
+
 /* AI模板编辑对话框样式 */
 .template-edit-dialog {
   max-width: 900px;
@@ -1852,6 +2166,144 @@ input:checked + .slider:before {
   border-radius: 3px;
   font-family: 'Consolas', 'Monaco', monospace;
   font-size: 13px;
+}
+
+/* 版本管理样式 */
+.version-management {
+  margin: 20px 24px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.version-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.version-header h4 {
+  margin: 0;
+  color: #333;
+}
+
+.version-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.create-version-btn,
+.refresh-version-btn {
+  padding: 4px 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  background: white;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+}
+
+.create-version-btn {
+  border-color: #28a745;
+  color: #28a745;
+}
+
+.create-version-btn:hover {
+  background: #28a745;
+  color: white;
+}
+
+.refresh-version-btn:hover {
+  background: #f5f5f5;
+  border-color: #2196f3;
+  color: #2196f3;
+}
+
+.version-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.version-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background: white;
+  border: 1px solid #e9ecef;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.version-item:hover {
+  border-color: #2196f3;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.version-item.active {
+  border-color: #2196f3;
+  background: #e3f2fd;
+}
+
+.version-info {
+  flex: 1;
+}
+
+.version-name {
+  font-weight: 500;
+  color: #333;
+  margin-bottom: 2px;
+}
+
+.version-desc {
+  font-size: 12px;
+  color: #666;
+  margin-bottom: 4px;
+}
+
+.version-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: #999;
+}
+
+.version-date {
+  color: #666;
+}
+
+.builtin-tag {
+  background: #fff3cd;
+  color: #856404;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.version-current {
+  color: #28a745;
+  font-weight: 500;
+  font-size: 12px;
+}
+
+/* 创建版本对话框样式 */
+.create-version-dialog {
+  max-width: 700px;
+  width: 90%;
+  max-height: 80vh;
+}
+
+.version-content {
+  min-height: 300px;
+  font-family: 'Consolas', 'Monaco', monospace;
 }
 
 /* AI模板查看对话框样式 */

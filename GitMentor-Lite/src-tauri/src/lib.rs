@@ -45,7 +45,7 @@ macro_rules! info_log {
 use chrono::Local;
 use commands::{
     ai_analysis_commands, ai_commands, daily_report_commands, debug_commands, git_commands, git_config_commands,
-    system_commands, update_commands,
+    system_commands, template_commands, update_commands,
 };
 use core::{
     ai_manager::AIManager,
@@ -291,6 +291,18 @@ pub fn run() {
             ai_analysis_commands::get_ai_templates,
             ai_analysis_commands::update_ai_template,
             ai_analysis_commands::reset_ai_template,
+            // Template version management commands
+            template_commands::get_all_templates,
+            template_commands::get_template_details,
+            template_commands::get_template_versions,
+            template_commands::update_template_content,
+            template_commands::switch_template_version,
+            template_commands::get_system_template_updates,
+            template_commands::apply_system_template_update,
+            template_commands::create_versioned_custom_template,
+            template_commands::delete_custom_template_versioned,
+            template_commands::get_template_content_versioned,
+            template_commands::revert_to_builtin_version,
         ])
         .run(tauri::generate_context!());
 

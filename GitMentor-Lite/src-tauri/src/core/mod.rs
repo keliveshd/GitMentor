@@ -7,6 +7,7 @@
 // - conversation_logger：AI 请求/响应记录
 // - report_engine：日报生成与缓存管理
 // - ai_response_cache：AI响应缓存管理
+// - versioned_template_manager：模板版本管理系统
 // 别tm在这里写业务，写清楚模块边界，改就加注释。
 
 pub mod ai_analysis_prompts;
@@ -24,3 +25,4 @@ pub mod providers;
 pub mod report_engine;
 pub mod response_cleaner;
 pub mod update_manager;
+pub mod versioned_template_manager;

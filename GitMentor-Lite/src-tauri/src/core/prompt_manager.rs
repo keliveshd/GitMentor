@@ -818,7 +818,7 @@ config.js: 更新配置参数
 
         // 如果有文件摘要，则构建包含摘要的上下文
         let summary_context = if !file_summaries.is_empty() {
-            let summaries_text = file_summaries.join("\n\n");
+            let _summaries_text = file_summaries.join("\n\n");
             CommitContext {
                 diff: format!(
                     "Original Diff:\n{}",
