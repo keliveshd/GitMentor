@@ -17,11 +17,13 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   publish-tauri:
     permissions:
       contents: write
+      pull-requests: write
     strategy:
       fail-fast: false
       matrix:
