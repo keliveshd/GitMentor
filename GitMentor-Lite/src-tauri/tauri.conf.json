@@ -25,7 +25,9 @@
         {
           "identifier": "main-capability",
           "description": "Main window capabilities",
-          "windows": ["main"],
+          "windows": [
+            "main"
+          ],
           "permissions": [
             "core:default",
             "core:webview:allow-create-webview-window",
@@ -64,7 +66,9 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
-    "externalBin": ["binaries/git"],
+    "externalBin": [
+      "binaries/git"
+    ],
     "windows": {
       "certificateThumbprint": null,
       "digestAlgorithm": "sha256",
