@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "版本号 (示例: v0.1.4，不填写则自动读取 package.json)"
+        description: "版本号 (示例: v0.1.4，不填则自动读取 package.json)"
         required: false
         type: string
       create_tag:
@@ -65,7 +65,7 @@ jobs:
             echo "版本文件保持不变"
           fi
 
-      # 版本文件更新与 PR 创建（仅手动触发时） - Author: Evilek, Date: 2025-01-15
+      # 手动触发时更新版本文件并创建 PR
       - name: Update version files and create PR
         if: steps.get_version.outputs.need_update == 'true'
         env:
@@ -89,9 +89,9 @@ jobs:
           git fetch origin --prune
 
           git rev-parse --verify "origin/$BRANCH_NAME" > $null 2>&1
-          $REMOTE_BRANCH_EXISTS = $LASTEXITCODE -eq 0
+          $remoteBranchExists = $LASTEXITCODE -eq 0
 
-          if ($REMOTE_BRANCH_EXISTS) {
+          if ($remoteBranchExists) {
             Write-Host "远程已存在版本分支，直接同步最新提交"
             git checkout -B $BRANCH_NAME "origin/$BRANCH_NAME"
           }
@@ -100,28 +100,26 @@ jobs:
             git checkout -B $BRANCH_NAME "origin/$DEFAULT_BRANCH"
           }
 
-          # 更新 package.json
+          # 更新版本号文件
           $packageJson = Get-Content "GitMentor-Lite/package.json" -Raw | ConvertFrom-Json
           $packageJson.version = $CLEAN_VERSION
           $packageJson | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/package.json"
           Write-Host "✅ 已更新 package.json"
 
-          # 更新 Cargo.toml（固定第 3 行版本字段）
           $cargoContent = Get-Content "GitMentor-Lite/src-tauri/Cargo.toml"
           $cargoContent[2] = "version = `"$CLEAN_VERSION`""
           $cargoContent | Set-Content "GitMentor-Lite/src-tauri/Cargo.toml"
           Write-Host "✅ 已更新 Cargo.toml"
 
-          # 更新 tauri.conf.json
           $tauriConfig = Get-Content "GitMentor-Lite/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
           $tauriConfig.version = $CLEAN_VERSION
           $tauriConfig | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/src-tauri/tauri.conf.json"
           Write-Host "✅ 已更新 tauri.conf.json"
 
           git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
-          $CHANGES = git status --porcelain
+          $changes = git status --porcelain
 
-          if ([string]::IsNullOrWhiteSpace($CHANGES)) {
+          if ([string]::IsNullOrWhiteSpace($changes)) {
             Write-Host "⚠️ 版本号文件没有变化，跳过提交与推送"
           }
           else {
@@ -130,9 +128,9 @@ jobs:
             Write-Host "✅ 已推送版本更新分支"
           }
 
-          $AHEAD = [int](git rev-list --count "origin/$DEFAULT_BRANCH..HEAD")
+          $ahead = [int](git rev-list --count "origin/$DEFAULT_BRANCH..HEAD")
 
-          if ($AHEAD -le 0) {
+          if ($ahead -le 0) {
             Write-Host "ℹ️ 分支 $BRANCH_NAME 与 $DEFAULT_BRANCH 无差异，跳过 PR 创建"
             exit 0
           }
@@ -156,7 +154,7 @@ jobs:
           $PR_BODY = @"
           ## 🚀 版本更新 $VERSION
 
-          该 PR 由 Release 工作流自动生成，用于同步版本号改动。
+          该 PR 由 Release workflow 自动生成，用于同步版本号改动。
 
           ### 📦 本次更新
           - 更新 package.json 版本号至 $CLEAN_VERSION
@@ -179,8 +177,8 @@ jobs:
             $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$($env:REPO)/pulls" -Method Post -Headers $headers -Body $prData -ContentType "application/json"
             Write-Host "✅ 已创建 Pull Request: $($response.html_url)"
             Write-Host "::notice::已生成版本更新 PR，请合并后重新运行 Release workflow"
-            Write-Host "::error::终止当前流程以等待手动审核"
-            exit 1
+            Write-Host "::notice::PR 合并前将自动跳过后续构建步骤"
+            exit 0
           }
           catch {
             Write-Host "❌ 创建 PR 失败: $($_.Exception.Message)"
@@ -189,9 +187,9 @@ jobs:
             exit 1
           }
 
-      # 创建 tag（仅在需要时） - Author: Evilek, Date: 2025-01-15
+      # 需要时创建 tag（PR 合并后再执行）
       - name: Create tag
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true' && steps.get_version.outputs.need_update != 'true'
         run: |
           $VERSION = "${{ steps.get_version.outputs.version }}"
           Write-Host "创建 tag: $VERSION"
@@ -202,6 +200,7 @@ jobs:
         shell: pwsh
 
       - name: setup node
+        if: steps.get_version.outputs.need_update != 'true'
         uses: actions/setup-node@v4
         with:
           node-version: lts/*
@@ -209,18 +208,22 @@ jobs:
           cache-dependency-path: GitMentor-Lite/package-lock.json
 
       - name: install Rust stable
+        if: steps.get_version.outputs.need_update != 'true'
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
+        if: steps.get_version.outputs.need_update != 'true'
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "./GitMentor-Lite/src-tauri -> target"
 
       - name: install frontend dependencies
+        if: steps.get_version.outputs.need_update != 'true'
         working-directory: GitMentor-Lite
         run: npm ci
 
       - uses: tauri-apps/tauri-action@v0
+        if: steps.get_version.outputs.need_update != 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
