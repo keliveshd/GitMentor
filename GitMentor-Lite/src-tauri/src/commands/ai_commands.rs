@@ -1,16 +1,17 @@
-use tauri::{State, Emitter};
+use tauri::{Emitter, State};
 // AI 命令集合：读取配置、拼提示词、调度 AIManager
 // Author: Evilek, Date: 2025-08-11
 // 别在这里写业务判断洪水，复杂逻辑下沉到 core 层
 
-use tokio::sync::Mutex;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
 
-use crate::core::ai_manager::AIManager;
-use crate::core::ai_provider::{AIRequest, AIModel, ConnectionTestResult, ChatMessage};
 use crate::core::ai_config::AIConfig;
-use crate::core::prompt_manager::{PromptTemplate, CommitContext};
+use crate::core::ai_manager::AIManager;
+use crate::core::ai_provider::{AIModel, AIRequest, ChatMessage, ConnectionTestResult};
 use crate::core::conversation_logger::ConversationRecord;
+use crate::core::prompt_manager::{CommitContext, PromptTemplate};
 
 /**
  * AI相关的Tauri命令
@@ -61,29 +62,31 @@ pub struct ProviderInfo {
 /// 获取AI配置
 #[tauri::command]
 pub async fn get_ai_config(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<AIConfig, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     Ok(manager.get_config().await)
 }
 
 /// 更新AI配置
 #[tauri::command]
 pub async fn update_ai_config(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     config: AIConfig,
 ) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
-    manager.update_config(config).await
+    let manager = ai_manager.write().await;
+    manager
+        .update_config(config)
+        .await
         .map_err(|e| format!("Failed to update AI config: {}", e))
 }
 
 /// 获取所有提供商信息
 #[tauri::command]
 pub async fn get_providers_info(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<ProvidersInfoResponse, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     let providers_info = manager.get_providers_info().await;
 
     let mut providers = Vec::new();
@@ -103,10 +106,12 @@ pub async fn get_providers_info(
 #[tauri::command]
 pub async fn get_models_for_provider(
     request: GetModelsRequest,
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<AIModel>, String> {
-    let manager = ai_manager.lock().await;
-    manager.get_models_for_provider(&request.provider_id).await
+    let manager = ai_manager.read().await;
+    manager
+        .get_models_for_provider(&request.provider_id)
+        .await
         .map_err(|e| format!("Failed to get models: {}", e))
 }
 
@@ -122,7 +127,9 @@ pub async fn get_models_with_temp_config(
     let factory = providers::create_provider_factory(&temp_config);
 
     // 获取模型列表
-    factory.get_models(&provider_id).await
+    factory
+        .get_models(&provider_id)
+        .await
         .map_err(|e| format!("Failed to get models: {}", e))
 }
 
@@ -130,10 +137,12 @@ pub async fn get_models_with_temp_config(
 #[tauri::command]
 pub async fn test_provider_connection(
     request: TestConnectionRequest,
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<ConnectionTestResult, String> {
-    let manager = ai_manager.lock().await;
-    manager.test_provider_connection(&request.provider_id).await
+    let manager = ai_manager.read().await;
+    manager
+        .test_provider_connection(&request.provider_id)
+        .await
         .map_err(|e| format!("Failed to test connection: {}", e))
 }
 
@@ -149,7 +158,9 @@ pub async fn test_connection_with_temp_config(
     let factory = providers::create_provider_factory(&temp_config);
 
     // 测试连接
-    factory.test_connection(&provider_id).await
+    factory
+        .test_connection(&provider_id)
+        .await
         .map_err(|e| format!("Failed to test connection: {}", e))
 }
 
@@ -157,10 +168,12 @@ pub async fn test_connection_with_temp_config(
 #[tauri::command]
 pub async fn refresh_provider_models(
     request: GetModelsRequest,
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<AIModel>, String> {
-    let manager = ai_manager.lock().await;
-    manager.refresh_provider_models(&request.provider_id).await
+    let manager = ai_manager.read().await;
+    manager
+        .refresh_provider_models(&request.provider_id)
+        .await
         .map_err(|e| format!("Failed to refresh models: {}", e))
 }
 
@@ -168,7 +181,7 @@ pub async fn refresh_provider_models(
 #[tauri::command]
 pub async fn generate_commit_message_ai(
     request: GenerateCommitRequest,
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
 ) -> Result<GenerateCommitResponse, String> {
     use std::time::Instant;
@@ -178,18 +191,20 @@ pub async fn generate_commit_message_ai(
     // 获取Git状态和差异信息
     let git_status = {
         let engine = git_engine.lock().await;
-        engine.get_status()
+        engine
+            .get_status()
             .map_err(|e| format!("Failed to get git status: {}", e))?
     };
 
     let diff_summary = {
         let engine = git_engine.lock().await;
-        engine.get_diff_summary(&request.selected_files)
+        engine
+            .get_diff_summary(&request.selected_files)
             .map_err(|e| format!("Failed to get diff summary: {}", e))?
     };
 
     // 获取AI配置
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     let config = manager.get_config().await;
 
     // 构建提示词（参考Dish AI Commit的提示词模板）
@@ -222,7 +237,9 @@ pub async fn generate_commit_message_ai(
     };
 
     // 调用AI生成
-    let response = manager.generate_commit_message(ai_request).await
+    let response = manager
+        .generate_commit_message(ai_request)
+        .await
         .map_err(|e| format!("Failed to generate commit message: {}", e))?;
 
     let processing_time = start_time.elapsed().as_millis() as u64;
@@ -268,8 +285,16 @@ feat: 新功能, fix: 错误修复, docs: 文档更改, style: 代码格式, ref
 
 直接输出提交消息，无需其他内容。"#,
         language,
-        if enable_emoji { "启用时" } else { "禁用时" },
-        if enable_body { "启用时" } else { "禁用时" }
+        if enable_emoji {
+            "启用时"
+        } else {
+            "禁用时"
+        },
+        if enable_body {
+            "启用时"
+        } else {
+            "禁用时"
+        }
     )
 }
 
@@ -279,14 +304,14 @@ feat: 新功能, fix: 错误修复, docs: 文档更改, style: 代码格式, ref
 /// 更新日期：2025-08-04
 #[tauri::command]
 pub async fn generate_commit_with_template(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     template_id: String,
     diff: String,
     staged_files: Vec<String>,
     branch_name: Option<String>,
 ) -> Result<String, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
 
     // 获取当前仓库路径
     let repository_path = {
@@ -328,22 +353,21 @@ pub async fn generate_commit_with_template(
         language: language.to_string(), // 使用配置中的语言设置
     };
 
-    match manager.generate_commit_with_template(&template_id, context, repository_path).await {
-        Ok(response) => {
-            Ok(response.content)
-        },
-        Err(e) => {
-            Err(format!("Failed to generate commit message: {}", e))
-        },
+    match manager
+        .generate_commit_with_template(&template_id, context, repository_path)
+        .await
+    {
+        Ok(response) => Ok(response.content),
+        Err(e) => Err(format!("Failed to generate commit message: {}", e)),
     }
 }
 
 /// 获取所有可用的提示模板
 #[tauri::command]
 pub async fn get_prompt_templates(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<PromptTemplate>, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     Ok(manager.get_prompt_templates().await)
 }
 
@@ -352,10 +376,10 @@ pub async fn get_prompt_templates(
 /// 编写日期：2025-08-08
 #[tauri::command]
 pub async fn check_template_two_phase_support(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     template_id: String,
 ) -> Result<bool, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     let prompt_manager = manager.get_prompt_manager().await;
     Ok(prompt_manager.supports_two_phase(&template_id))
 }
@@ -365,10 +389,10 @@ pub async fn check_template_two_phase_support(
 /// 编写日期：2025-08-08
 #[tauri::command]
 pub async fn get_template_two_phase_status(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     template_id: String,
 ) -> Result<Option<(bool, bool)>, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     let prompt_manager = manager.get_prompt_manager().await;
     Ok(prompt_manager.get_two_phase_status(&template_id))
 }
@@ -378,11 +402,13 @@ pub async fn get_template_two_phase_status(
 /// 编写日期：2025-01-29
 #[tauri::command]
 pub async fn create_custom_template(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     template: PromptTemplate,
 ) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
-    manager.create_custom_template(template).await
+    let manager = ai_manager.write().await;
+    manager
+        .create_custom_template(template)
+        .await
         .map_err(|e| format!("Failed to create template: {}", e))
 }
 
@@ -391,11 +417,13 @@ pub async fn create_custom_template(
 /// 编写日期：2025-01-29
 #[tauri::command]
 pub async fn update_template(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     template: PromptTemplate,
 ) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
-    manager.update_template(template).await
+    let manager = ai_manager.write().await;
+    manager
+        .update_template(template)
+        .await
         .map_err(|e| format!("Failed to update template: {}", e))
 }
 
@@ -404,11 +432,13 @@ pub async fn update_template(
 /// 编写日期：2025-01-29
 #[tauri::command]
 pub async fn delete_template(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     template_id: String,
 ) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
-    manager.delete_template(&template_id).await
+    let manager = ai_manager.write().await;
+    manager
+        .delete_template(&template_id)
+        .await
         .map_err(|e| format!("Failed to delete template: {}", e))
 }
 
@@ -417,9 +447,9 @@ pub async fn delete_template(
 /// 编写日期：2025-01-29
 #[tauri::command]
 pub async fn get_custom_templates(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<PromptTemplate>, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     Ok(manager.get_custom_templates().await)
 }
 
@@ -428,19 +458,19 @@ pub async fn get_custom_templates(
 /// 编写日期：2025-01-29
 #[tauri::command]
 pub async fn get_default_templates(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<PromptTemplate>, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     Ok(manager.get_default_templates().await)
 }
 
 /// 添加自定义提示模板
 #[tauri::command]
 pub async fn add_prompt_template(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     template: PromptTemplate,
 ) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.write().await;
     manager.add_prompt_template(template).await;
     Ok(())
 }
@@ -450,9 +480,9 @@ pub async fn add_prompt_template(
 /// 编写日期：2025-01-30
 #[tauri::command]
 pub async fn get_conversation_history(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<ConversationRecord>, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     Ok(manager.get_conversation_history().await)
 }
 
@@ -461,10 +491,12 @@ pub async fn get_conversation_history(
 /// 编写日期：2025-01-30
 #[tauri::command]
 pub async fn clear_conversation_history(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
-    manager.clear_conversation_history().await
+    let manager = ai_manager.write().await;
+    manager
+        .clear_conversation_history()
+        .await
         .map_err(|e| format!("Failed to clear conversation history: {}", e))
 }
 
@@ -473,11 +505,13 @@ pub async fn clear_conversation_history(
 /// 编写日期：2025-08-04
 #[tauri::command]
 pub async fn get_conversation_history_by_repository(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     repository_path: Option<String>,
 ) -> Result<Vec<ConversationRecord>, String> {
-    let manager = ai_manager.lock().await;
-    manager.get_conversation_history_by_repository(repository_path.as_deref()).await
+    let manager = ai_manager.read().await;
+    manager
+        .get_conversation_history_by_repository(repository_path.as_deref())
+        .await
         .map_err(|e| format!("Failed to get conversation history: {}", e))
 }
 
@@ -486,10 +520,12 @@ pub async fn get_conversation_history_by_repository(
 /// 编写日期：2025-08-04
 #[tauri::command]
 pub async fn get_repository_paths(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<String>, String> {
-    let manager = ai_manager.lock().await;
-    manager.get_repository_paths().await
+    let manager = ai_manager.read().await;
+    manager
+        .get_repository_paths()
+        .await
         .map_err(|e| format!("Failed to get repository paths: {}", e))
 }
 
@@ -499,7 +535,7 @@ pub async fn get_repository_paths(
 /// 更新日期：2025-08-05
 #[tauri::command]
 pub async fn should_use_layered_commit(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     template_id: String,
     diff: String,
@@ -510,24 +546,26 @@ pub async fn should_use_layered_commit(
     use tokio::sync::RwLock;
 
     // 创建LayeredCommitManager实例
-    let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
+    let ai_manager_arc = ai_manager.inner().clone();
     let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
     let manager = LayeredCommitManager::new(ai_manager_arc, git_engine_arc);
 
     // 调用真正的分层提交检测逻辑
-    manager.should_use_layered_commit(&template_id, &diff, &staged_files)
+    manager
+        .should_use_layered_commit(&template_id, &diff, &staged_files)
         .await
         .map_err(|e| format!("检查分层提交失败: {}", e))
 }
 
+use once_cell::sync::Lazy;
+use std::sync::Arc as StdArc;
 /// 全局分层提交管理器实例，用于任务取消
 /// Author: Evilek, Date: 2025-01-09
 use std::sync::Mutex as StdMutex;
-use std::sync::Arc as StdArc;
-use once_cell::sync::Lazy;
 
-static LAYERED_COMMIT_MANAGER: Lazy<StdMutex<Option<StdArc<crate::core::layered_commit_manager::LayeredCommitManager>>>> =
-    Lazy::new(|| StdMutex::new(None));
+static LAYERED_COMMIT_MANAGER: Lazy<
+    StdMutex<Option<StdArc<crate::core::layered_commit_manager::LayeredCommitManager>>>,
+> = Lazy::new(|| StdMutex::new(None));
 
 /// 执行分层提交
 /// 作者：Evilek
@@ -535,7 +573,7 @@ static LAYERED_COMMIT_MANAGER: Lazy<StdMutex<Option<StdArc<crate::core::layered_
 /// 更新日期：2025-08-05
 #[tauri::command]
 pub async fn execute_layered_commit(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     app_handle: tauri::AppHandle,
     template_id: String,
@@ -546,8 +584,6 @@ pub async fn execute_layered_commit(
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
-
-
     // 获取当前仓库路径
     let repository_path = {
         let engine = git_engine.lock().await;
@@ -555,7 +591,7 @@ pub async fn execute_layered_commit(
     };
 
     // 创建LayeredCommitManager实例
-    let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
+    let ai_manager_arc = ai_manager.inner().clone();
     let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
     let manager = StdArc::new(LayeredCommitManager::new(ai_manager_arc, git_engine_arc));
 
@@ -567,28 +603,31 @@ pub async fn execute_layered_commit(
 
     // 创建进度回调函数，用于发送进度事件到前端
     let app_handle_clone = app_handle.clone();
-    let progress_callback = move |progress: crate::core::layered_commit_manager::LayeredCommitProgress| {
-        let progress_json = serde_json::json!({
-            "session_id": progress.session_id,
-            "current_step": progress.current_step,
-            "total_steps": progress.total_steps,
-            "status": progress.status,
-            "current_file": progress.current_file,
-            "file_summaries": progress.file_summaries,
-            "ai_stream_content": progress.ai_stream_content  // AI实时输出内容 - Author: Evilek, Date: 2025-01-10
-        });
+    let progress_callback =
+        move |progress: crate::core::layered_commit_manager::LayeredCommitProgress| {
+            let progress_json = serde_json::json!({
+                "session_id": progress.session_id,
+                "current_step": progress.current_step,
+                "total_steps": progress.total_steps,
+                "status": progress.status,
+                "current_file": progress.current_file,
+                "file_summaries": progress.file_summaries,
+                "ai_stream_content": progress.ai_stream_content  // AI实时输出内容 - Author: Evilek, Date: 2025-01-10
+            });
 
-        let _ = app_handle_clone.emit("layered-commit-progress", &progress_json);
-    };
+            let _ = app_handle_clone.emit("layered-commit-progress", &progress_json);
+        };
 
     // 调用真正的分层提交逻辑
-    let result = manager.execute_layered_commit(
-        &template_id,
-        staged_files,
-        branch_name,
-        repository_path,
-        progress_callback,
-    ).await;
+    let result = manager
+        .execute_layered_commit(
+            &template_id,
+            staged_files,
+            branch_name,
+            repository_path,
+            progress_callback,
+        )
+        .await;
 
     // 清理全局管理器实例 - Author: Evilek, Date: 2025-01-09
     {
@@ -597,18 +636,15 @@ pub async fn execute_layered_commit(
     }
 
     match result {
-        Ok(result) => {
-            Ok(result)
-        },
+        Ok(result) => Ok(result),
         Err(e) => {
+            // 打印详细错误信息便于调试
+            eprintln!("❌ [分层提交] 执行失败: {:?}", e);
+            eprintln!("❌ [分层提交] 错误类型: {}", std::any::type_name_of_val(&e));
             Err(format!("分层提交执行失败: {}", e))
         }
     }
 }
-
-
-
-
 
 /// 取消分层提交
 /// Author: Evilek, Date: 2025-01-09
@@ -627,9 +663,9 @@ pub async fn cancel_layered_commit() -> Result<(), String> {
 /// Author: Evilek, Date: 2025-01-09
 #[tauri::command]
 pub async fn check_first_time_setup(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<bool, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     let config = manager.get_config().await;
 
     // 检查当前选择的提供商是否配置了API密钥
@@ -646,10 +682,22 @@ pub async fn check_first_time_setup(
         "OpenRouter" => config.providers.openrouter.api_key.is_empty(),
         "Together" => config.providers.together.api_key.is_empty(),
         "Mistral" => config.providers.mistral.api_key.is_empty(),
-        "BaiduQianfan" => config.providers.baidu_qianfan.api_key.is_empty() || config.providers.baidu_qianfan.secret_key.is_empty(),
-        "AzureOpenAI" => config.providers.azure_openai.api_key.is_empty() || config.providers.azure_openai.endpoint.is_empty(),
-        "Cloudflare" => config.providers.cloudflare.api_key.is_empty() || config.providers.cloudflare.account_id.is_empty(),
-        "VertexAI" => config.providers.vertexai.project_id.is_empty() || config.providers.vertexai.credentials_path.is_empty(),
+        "BaiduQianfan" => {
+            config.providers.baidu_qianfan.api_key.is_empty()
+                || config.providers.baidu_qianfan.secret_key.is_empty()
+        }
+        "AzureOpenAI" => {
+            config.providers.azure_openai.api_key.is_empty()
+                || config.providers.azure_openai.endpoint.is_empty()
+        }
+        "Cloudflare" => {
+            config.providers.cloudflare.api_key.is_empty()
+                || config.providers.cloudflare.account_id.is_empty()
+        }
+        "VertexAI" => {
+            config.providers.vertexai.project_id.is_empty()
+                || config.providers.vertexai.credentials_path.is_empty()
+        }
         "Groq" => config.providers.groq.api_key.is_empty(),
         _ => true, // 未知提供商，需要设置
     };
@@ -661,19 +709,17 @@ pub async fn check_first_time_setup(
 /// Author: Evilek, Date: 2025-01-09
 #[tauri::command]
 pub async fn test_ai_connection(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<String, String> {
-    let manager = ai_manager.lock().await;
+    let manager = ai_manager.read().await;
     let config = manager.get_config().await;
 
     // 构建简单的测试请求
     let test_request = crate::core::ai_provider::AIRequest {
-        messages: vec![
-            crate::core::ai_provider::ChatMessage {
-                role: "user".to_string(),
-                content: "Hello, please respond with 'Connection test successful'".to_string(),
-            }
-        ],
+        messages: vec![crate::core::ai_provider::ChatMessage {
+            role: "user".to_string(),
+            content: "Hello, please respond with 'Connection test successful'".to_string(),
+        }],
         model: config.base.model.clone(), // 修复：添加model字段
         temperature: Some(0.1),
         max_tokens: Some(50),
@@ -688,10 +734,8 @@ pub async fn test_ai_connection(
             } else {
                 Ok(format!("AI响应正常，返回内容: {}", response.content))
             }
-        },
-        Err(e) => {
-            Err(format!("AI连接测试失败: {}", e))
         }
+        Err(e) => Err(format!("AI连接测试失败: {}", e)),
     }
 }
 
@@ -700,10 +744,12 @@ pub async fn test_ai_connection(
 /// 编写日期：2025-08-04
 #[tauri::command]
 pub async fn get_layered_sessions(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<Vec<String>, String> {
-    let manager = ai_manager.lock().await;
-    manager.get_layered_sessions().await
+    let manager = ai_manager.read().await;
+    manager
+        .get_layered_sessions()
+        .await
         .map_err(|e| format!("Failed to get layered sessions: {}", e))
 }
 
@@ -712,11 +758,13 @@ pub async fn get_layered_sessions(
 /// 编写日期：2025-08-04
 #[tauri::command]
 pub async fn get_conversation_records_by_session(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     session_id: String,
 ) -> Result<Vec<ConversationRecord>, String> {
-    let manager = ai_manager.lock().await;
-    manager.get_conversation_records_by_session(&session_id).await
+    let manager = ai_manager.read().await;
+    manager
+        .get_conversation_records_by_session(&session_id)
+        .await
         .map_err(|e| format!("Failed to get conversation records by session: {}", e))
 }
 
@@ -726,10 +774,12 @@ pub async fn get_conversation_records_by_session(
 #[allow(dead_code)] // 预留的管理功能，暂未在前端使用
 #[tauri::command]
 pub async fn reload_default_templates(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
 ) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
-    manager.reload_default_templates().await
+    let manager = ai_manager.read().await;
+    manager
+        .reload_default_templates()
+        .await
         .map_err(|e| format!("Failed to reload templates: {}", e))
 }
 
@@ -738,11 +788,11 @@ pub async fn reload_default_templates(
 /// 编写日期：2025-01-29
 #[allow(dead_code)] // 预留的管理功能，暂未在前端使用
 #[tauri::command]
-pub async fn clear_all_cache(
-    ai_manager: State<'_, Mutex<AIManager>>,
-) -> Result<(), String> {
-    let manager = ai_manager.lock().await;
-    manager.clear_all_cache().await
+pub async fn clear_all_cache(ai_manager: State<'_, Arc<RwLock<AIManager>>>) -> Result<(), String> {
+    let manager = ai_manager.read().await;
+    manager
+        .clear_all_cache()
+        .await
         .map_err(|e| format!("Failed to clear cache: {}", e))
 }
 
@@ -760,7 +810,7 @@ pub struct FileTokenCheckResult {
 
 #[tauri::command]
 pub async fn check_and_process_file_tokens(
-    ai_manager: State<'_, Mutex<AIManager>>,
+    ai_manager: State<'_, Arc<RwLock<AIManager>>>,
     git_engine: State<'_, Mutex<crate::core::git_engine::GitEngine>>,
     file_paths: Vec<String>,
     template_id: Option<String>,
@@ -769,9 +819,12 @@ pub async fn check_and_process_file_tokens(
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
-    println!("🔍 [check_and_process_file_tokens] 开始处理 {} 个文件", file_paths.len());
+    println!(
+        "🔍 [check_and_process_file_tokens] 开始处理 {} 个文件",
+        file_paths.len()
+    );
 
-    let ai_manager_arc = Arc::new(RwLock::new(ai_manager.lock().await.clone()));
+    let ai_manager_arc = ai_manager.inner().clone();
     let git_engine_arc = Arc::new(RwLock::new(git_engine.lock().await.clone()));
 
     println!("🔍 [check_and_process_file_tokens] 获取AI配置...");
@@ -784,11 +837,14 @@ pub async fn check_and_process_file_tokens(
         m if m.contains("claude") => Some(100000),
         m if m.contains("gemini") => Some(32768),
         m if m.contains("qwen2.5:32b") => Some(32768), // qwen2.5:32b 支持32k上下文
-        m if m.contains("qwen") => Some(8192), // 其他qwen模型默认8k
-        _ => Some(4096), // 默认限制
+        m if m.contains("qwen") => Some(8192),         // 其他qwen模型默认8k
+        _ => Some(4096),                               // 默认限制
     };
     drop(ai_manager_guard);
-    println!("🔍 [check_and_process_file_tokens] 模型token限制: {:?}", model_max_tokens);
+    println!(
+        "🔍 [check_and_process_file_tokens] 模型token限制: {:?}",
+        model_max_tokens
+    );
 
     let mut processed_files: Vec<String> = Vec::new();
     let mut needs_split = false;
@@ -805,34 +861,52 @@ pub async fn check_and_process_file_tokens(
 
     match batch_diff_result {
         Ok(batch_diff) => {
-            println!("🔍 [check_and_process_file_tokens] 使用批量diff，长度: {}", batch_diff.len());
+            println!(
+                "🔍 [check_and_process_file_tokens] 使用批量diff，长度: {}",
+                batch_diff.len()
+            );
             // 简化处理：如果能获取到批量diff，就假设所有文件都有变更
             // 这是一个权衡：牺牲一些精确性换取性能
             for file_path in &file_paths {
                 // 为每个文件分配一部分diff内容（简化估算）
-                let estimated_diff = format!("diff --git a/{} b/{}\n--- a/{}\n+++ b/{}\n@@ -1,10 +1,10 @@\n 文件变更内容...",
-                                            file_path, file_path, file_path, file_path);
+                let estimated_diff = format!(
+                    "diff --git a/{} b/{}\n--- a/{}\n+++ b/{}\n@@ -1,10 +1,10 @@\n 文件变更内容...",
+                    file_path, file_path, file_path, file_path
+                );
                 file_diffs.push((file_path.clone(), Some(estimated_diff)));
             }
-        },
+        }
         Err(_) => {
             println!("⚠️ [check_and_process_file_tokens] 批量diff获取失败，回退到单个文件处理");
             // 回退到原来的逻辑，但添加超时保护
             let git_engine_guard = git_engine_arc.read().await;
 
             for (index, file_path) in file_paths.iter().enumerate() {
-                println!("🔍 [check_and_process_file_tokens] 处理文件 {}/{}: {}", index + 1, file_paths.len(), file_path);
+                println!(
+                    "🔍 [check_and_process_file_tokens] 处理文件 {}/{}: {}",
+                    index + 1,
+                    file_paths.len(),
+                    file_path
+                );
 
                 // 使用优化后的Git diff获取
                 let start_time = std::time::Instant::now();
                 match git_engine_guard.get_simple_file_diff(file_path) {
                     Ok(diff_content) => {
                         let elapsed = start_time.elapsed();
-                        println!("🔍 [check_and_process_file_tokens] 文件 {} diff长度: {}, 耗时: {:?}", file_path, diff_content.len(), elapsed);
+                        println!(
+                            "🔍 [check_and_process_file_tokens] 文件 {} diff长度: {}, 耗时: {:?}",
+                            file_path,
+                            diff_content.len(),
+                            elapsed
+                        );
                         file_diffs.push((file_path.clone(), Some(diff_content)));
-                    },
+                    }
                     Err(e) => {
-                        println!("⚠️ [check_and_process_file_tokens] 文件 {} diff获取失败: {}", file_path, e);
+                        println!(
+                            "⚠️ [check_and_process_file_tokens] 文件 {} diff获取失败: {}",
+                            file_path, e
+                        );
                         file_diffs.push((file_path.clone(), None));
                     }
                 }
@@ -851,13 +925,22 @@ pub async fn check_and_process_file_tokens(
     // 计算每个文件的token使用量
     for (file_path, diff_content_opt) in file_diffs {
         if let Some(diff_content) = diff_content_opt {
-            println!("🔍 [check_and_process_file_tokens] 计算文件 {} 的token...", file_path);
+            println!(
+                "🔍 [check_and_process_file_tokens] 计算文件 {} 的token...",
+                file_path
+            );
             let file_tokens = TokenCounter::estimate_file_diff_tokens(&file_path, &diff_content);
-            println!("🔍 [check_and_process_file_tokens] 文件 {} token数: {}", file_path, file_tokens);
+            println!(
+                "🔍 [check_and_process_file_tokens] 文件 {} token数: {}",
+                file_path, file_tokens
+            );
 
             // 单个文件超过限制，需要分割
             if TokenCounter::is_over_limit(file_tokens, model_max_tokens) {
-                println!("⚠️ [check_and_process_file_tokens] 文件 {} 超过token限制，标记为大文件", file_path);
+                println!(
+                    "⚠️ [check_and_process_file_tokens] 文件 {} 超过token限制，标记为大文件",
+                    file_path
+                );
                 needs_split = true;
                 large_files.push((file_path.clone(), diff_content.clone(), file_tokens));
             } else {
@@ -866,13 +949,20 @@ pub async fn check_and_process_file_tokens(
             }
         } else {
             // diff获取失败的文件直接添加
-            println!("⚠️ [check_and_process_file_tokens] 文件 {} diff获取失败，直接添加", file_path);
+            println!(
+                "⚠️ [check_and_process_file_tokens] 文件 {} diff获取失败，直接添加",
+                file_path
+            );
             processed_files.push(file_path.clone());
         }
     }
 
-    println!("🔍 [check_and_process_file_tokens] Token分析完成 - 大文件: {}, 普通文件: {}, 总token: {}",
-             large_files.len(), normal_files.len(), total_tokens);
+    println!(
+        "🔍 [check_and_process_file_tokens] Token分析完成 - 大文件: {}, 普通文件: {}, 总token: {}",
+        large_files.len(),
+        normal_files.len(),
+        total_tokens
+    );
 
     // 处理大文件：需要分割
     for (file_path, diff_content, _) in large_files {
@@ -894,7 +984,8 @@ pub async fn check_and_process_file_tokens(
         let template_max_tokens = if let Some(ref template_id_str) = template_id {
             let ai_manager_guard = ai_manager_arc.read().await;
             let prompt_manager = ai_manager_guard.get_prompt_manager().await;
-            prompt_manager.get_template_config(template_id_str)
+            prompt_manager
+                .get_template_config(template_id_str)
                 .and_then(|(max_tokens, _)| max_tokens)
                 .unwrap_or(1000) // 修复：增加默认值到1000 tokens，避免过度分割
         } else {
@@ -914,8 +1005,10 @@ pub async fn check_and_process_file_tokens(
         }
     }
 
-    println!("🔍 [check_and_process_file_tokens] 处理完成 - 输出文件: {:?}, 需要分割: {}",
-             processed_files, needs_split);
+    println!(
+        "🔍 [check_and_process_file_tokens] 处理完成 - 输出文件: {:?}, 需要分割: {}",
+        processed_files, needs_split
+    );
 
     Ok(FileTokenCheckResult {
         processed_files,

@@ -119,7 +119,7 @@ pub async fn download_update(
             return Err(format!("获取应用数据目录失败: {}", e));
         }
     };
-    
+
     // 创建下载路径
     let download_dir = app_data_dir.join("updates");
     println!("[DEBUG] 下载目录: {:?}", download_dir);
@@ -141,7 +141,10 @@ pub async fn download_update(
             0.0
         };
 
-        println!("[DEBUG] 下载进度: {}/{} ({}%)", downloaded, total, percentage);
+        println!(
+            "[DEBUG] 下载进度: {}/{} ({}%)",
+            downloaded, total, percentage
+        );
 
         let event = DownloadProgressEvent {
             downloaded,
@@ -177,12 +180,12 @@ pub async fn install_update(installer_path: String) -> Result<(), String> {
     let current_version = env!("CARGO_PKG_VERSION").to_string();
     let update_manager = UpdateManager::new(current_version);
     let path = PathBuf::from(installer_path);
-    
+
     update_manager
         .install_update(&path)
         .await
         .map_err(|e| format!("安装更新失败: {}", e))?;
-    
+
     Ok(())
 }
 
@@ -199,15 +202,15 @@ pub async fn cleanup_update_files(app_handle: AppHandle) -> Result<(), String> {
         .path()
         .app_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
-    
+
     let download_dir = app_data_dir.join("updates");
-    
+
     if download_dir.exists() {
         tokio::fs::remove_dir_all(&download_dir)
             .await
             .map_err(|e| format!("清理更新文件失败: {}", e))?;
     }
-    
+
     Ok(())
 }
 
@@ -221,7 +224,7 @@ pub async fn check_update_file_exists(
         .path()
         .app_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
-    
+
     let file_path = app_data_dir.join("updates").join(filename);
     Ok(file_path.exists())
 }
@@ -265,16 +268,15 @@ pub async fn get_update_settings(app_handle: AppHandle) -> Result<UpdateSettings
         .path()
         .app_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
-    
+
     let settings_path = app_data_dir.join("update_settings.json");
-    
+
     if settings_path.exists() {
         let content = tokio::fs::read_to_string(&settings_path)
             .await
             .map_err(|e| format!("读取更新设置失败: {}", e))?;
-        
-        serde_json::from_str(&content)
-            .map_err(|e| format!("解析更新设置失败: {}", e))
+
+        serde_json::from_str(&content).map_err(|e| format!("解析更新设置失败: {}", e))
     } else {
         Ok(UpdateSettings::default())
     }
@@ -290,20 +292,20 @@ pub async fn save_update_settings(
         .path()
         .app_data_dir()
         .map_err(|e| format!("获取应用数据目录失败: {}", e))?;
-    
+
     // 确保目录存在
     tokio::fs::create_dir_all(&app_data_dir)
         .await
         .map_err(|e| format!("创建应用数据目录失败: {}", e))?;
-    
+
     let settings_path = app_data_dir.join("update_settings.json");
     let content = serde_json::to_string_pretty(&settings)
         .map_err(|e| format!("序列化更新设置失败: {}", e))?;
-    
+
     tokio::fs::write(&settings_path, content)
         .await
         .map_err(|e| format!("保存更新设置失败: {}", e))?;
-    
+
     Ok(())
 }
 
@@ -314,18 +316,17 @@ mod tests {
     #[test]
     fn test_extract_filename_from_url() {
         assert_eq!(
-            extract_filename_from_url("https://github.com/user/repo/releases/download/v1.0.0/app.msi"),
+            extract_filename_from_url(
+                "https://github.com/user/repo/releases/download/v1.0.0/app.msi"
+            ),
             Some("app.msi".to_string())
         );
-        
+
         assert_eq!(
             extract_filename_from_url("https://example.com/file.exe?param=value"),
             Some("file.exe".to_string())
         );
-        
-        assert_eq!(
-            extract_filename_from_url("https://example.com/"),
-            None
-        );
+
+        assert_eq!(extract_filename_from_url("https://example.com/"), None);
     }
 }

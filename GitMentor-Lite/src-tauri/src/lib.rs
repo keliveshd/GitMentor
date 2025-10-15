@@ -44,8 +44,9 @@ macro_rules! info_log {
 
 use chrono::Local;
 use commands::{
-    ai_commands, daily_report_commands, debug_commands, git_commands, git_config_commands,
-    system_commands, update_commands,
+    ai_analysis_commands, ai_commands, daily_report_commands, debug_commands, git_commands,
+    git_config_commands, system_commands, template_commands, unified_template_commands,
+    update_commands,
 };
 use core::{
     ai_manager::AIManager,
@@ -55,7 +56,8 @@ use core::{
 };
 use std::fs::OpenOptions;
 use std::io::Write;
-use tokio::sync::Mutex;
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
 
 /// 写入启动日志到文件
 /// Author: Evilek, Date: 2025-01-09
@@ -168,7 +170,7 @@ pub fn run() {
     let ai_manager = match AIManager::new(ai_config_path) {
         Ok(manager) => {
             write_startup_log("AI管理器初始化成功");
-            Mutex::new(manager)
+            Arc::new(RwLock::new(manager))
         }
         Err(e) => {
             write_error_log(&format!("AI管理器初始化失败: {}", e));
@@ -228,6 +230,11 @@ pub fn run() {
             daily_report_commands::save_report,
             daily_report_commands::get_history_reports,
             daily_report_commands::delete_report,
+            // Enhanced daily report commands
+            daily_report_commands::analyze_and_cache_commit,
+            daily_report_commands::generate_enhanced_daily_report,
+            daily_report_commands::get_commit_cache_status,
+            daily_report_commands::cleanup_cache,
             // AI commands
             ai_commands::get_ai_config,
             ai_commands::update_ai_config,
@@ -273,6 +280,51 @@ pub fn run() {
             // System commands
             system_commands::open_browser_url,
             system_commands::get_app_info,
+            // AI analysis commands
+            ai_analysis_commands::analyze_commit_with_ai,
+            ai_analysis_commands::batch_analyze_commits,
+            ai_analysis_commands::generate_ai_enhanced_report,
+            ai_analysis_commands::get_ai_analysis_templates,
+            ai_analysis_commands::get_ai_analysis_config,
+            ai_analysis_commands::set_ai_analysis_config,
+            ai_analysis_commands::clear_analysis_cache,
+            // Template management commands
+            ai_analysis_commands::get_ai_templates,
+            ai_analysis_commands::update_ai_template,
+            ai_analysis_commands::reset_ai_template,
+            // Template version management commands
+            template_commands::get_all_templates,
+            template_commands::get_template_details,
+            template_commands::get_template_versions,
+            template_commands::update_template_content,
+            template_commands::switch_template_version,
+            template_commands::get_system_template_updates,
+            template_commands::apply_system_template_update,
+            template_commands::create_versioned_custom_template,
+            template_commands::delete_custom_template_versioned,
+            template_commands::get_template_content_versioned,
+            template_commands::revert_to_builtin_version,
+            // Unified template management commands
+            unified_template_commands::get_all_commit_templates,
+            unified_template_commands::get_commit_template,
+            unified_template_commands::update_commit_template_with_version,
+            unified_template_commands::switch_commit_template_version,
+            unified_template_commands::get_commit_template_version_history,
+            unified_template_commands::check_commit_template_updates,
+            unified_template_commands::apply_commit_template_update,
+            unified_template_commands::get_all_unified_templates,
+            unified_template_commands::get_unified_template,
+            unified_template_commands::get_unified_template_version_history,
+            unified_template_commands::update_unified_template,
+            unified_template_commands::update_template_version,
+            unified_template_commands::switch_unified_template_version,
+            unified_template_commands::create_unified_custom_template,
+            unified_template_commands::delete_unified_custom_template,
+            unified_template_commands::check_unified_system_updates,
+            unified_template_commands::apply_unified_system_update,
+            unified_template_commands::get_all_templates_unified,
+            unified_template_commands::batch_update_system_templates,
+            unified_template_commands::reset_all_system_templates,
         ])
         .run(tauri::generate_context!());
 

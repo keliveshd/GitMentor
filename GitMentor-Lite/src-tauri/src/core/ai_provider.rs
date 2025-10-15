@@ -1,8 +1,8 @@
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
-use std::collections::HashMap;
+use async_trait::async_trait;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /**
  * AI提供商接口定义
@@ -81,32 +81,30 @@ pub struct ConnectionTestResult {
 pub trait AIProvider: Send + Sync {
     /// 获取提供商ID
     fn get_id(&self) -> &str;
-    
+
     /// 获取提供商名称
     fn get_name(&self) -> &str;
-    
+
     /// 生成提交消息
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse>;
-    
+
     /// 获取可用模型列表
     async fn get_models(&self) -> Result<Vec<AIModel>>;
-    
+
     /// 测试连接
     async fn test_connection(&self) -> Result<ConnectionTestResult>;
-    
+
     /// 检查服务是否可用
     async fn is_available(&self) -> bool;
-    
+
     /// 刷新模型列表
     async fn refresh_models(&self) -> Result<Vec<AIModel>>;
-    
+
     /// 计算token数量（可选）
     #[allow(dead_code)]
     async fn count_tokens(&self, request: &AIRequest) -> Result<u32> {
         // 默认实现：简单估算
-        let total_chars: usize = request.messages.iter()
-            .map(|msg| msg.content.len())
-            .sum();
+        let total_chars: usize = request.messages.iter().map(|msg| msg.content.len()).sum();
         Ok((total_chars / 4) as u32) // 粗略估算：4个字符约等于1个token
     }
 }
@@ -122,33 +120,38 @@ impl AIProviderFactory {
             providers: HashMap::new(),
         }
     }
-    
+
     /// 注册提供商
     pub fn register_provider(&mut self, provider: Box<dyn AIProvider>) {
         let id = provider.get_id().to_string();
         self.providers.insert(id, provider);
     }
-    
+
     /// 获取提供商
     pub fn get_provider(&self, provider_id: &str) -> Option<&dyn AIProvider> {
         self.providers.get(provider_id).map(|p| p.as_ref())
     }
-    
+
     /// 获取所有提供商ID
     #[allow(dead_code)]
     pub fn get_provider_ids(&self) -> Vec<String> {
         self.providers.keys().cloned().collect()
     }
-    
+
     /// 获取所有提供商信息
     pub fn get_providers_info(&self) -> Vec<(String, String)> {
-        self.providers.iter()
+        self.providers
+            .iter()
             .map(|(id, provider)| (id.clone(), provider.get_name().to_string()))
             .collect()
     }
 
     /// 生成提交消息
-    pub async fn generate_commit(&self, provider_id: &str, request: &AIRequest) -> Result<AIResponse> {
+    pub async fn generate_commit(
+        &self,
+        provider_id: &str,
+        request: &AIRequest,
+    ) -> Result<AIResponse> {
         if let Some(provider) = self.get_provider(provider_id) {
             provider.generate_commit(request).await
         } else {

@@ -1,11 +1,11 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::time::{Duration, Instant};
 
-use crate::core::ai_provider::*;
 use crate::core::ai_config::OllamaConfig;
+use crate::core::ai_provider::*;
 
 /**
  * Ollama提供商实现
@@ -83,39 +83,44 @@ impl AIProvider for OllamaProvider {
     fn get_id(&self) -> &str {
         "Ollama"
     }
-    
+
     fn get_name(&self) -> &str {
         "Ollama"
     }
-    
+
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse> {
         let ollama_request = OllamaRequest {
             model: request.model.clone(),
-            messages: request.messages.iter().map(|msg| OllamaMessage {
-                role: msg.role.clone(),
-                content: msg.content.clone(),
-            }).collect(),
+            messages: request
+                .messages
+                .iter()
+                .map(|msg| OllamaMessage {
+                    role: msg.role.clone(),
+                    content: msg.content.clone(),
+                })
+                .collect(),
             stream: false,
             options: Some(OllamaOptions {
                 temperature: request.temperature,
                 num_predict: request.max_tokens,
             }),
         };
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&format!("{}/api/chat", self.config.base_url))
             .header("Content-Type", "application/json")
             .json(&ollama_request)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow::anyhow!("Ollama API error: {}", error_text));
         }
-        
+
         let ollama_response: OllamaResponse = response.json().await?;
-        
+
         // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
         use crate::core::ai_provider::ReasoningParser;
 
@@ -126,27 +131,33 @@ impl AIProvider for OllamaProvider {
             Some("stop".to_string()),
         ))
     }
-    
+
     async fn get_models(&self) -> Result<Vec<AIModel>> {
-        let response = self.client
+        let response = self
+            .client
             .get(&format!("{}/api/tags", self.config.base_url))
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
-            return Err(anyhow::anyhow!("Failed to get Ollama models: {}", error_text));
+            return Err(anyhow::anyhow!(
+                "Failed to get Ollama models: {}",
+                error_text
+            ));
         }
-        
+
         let models_response: OllamaModelsResponse = response.json().await?;
-        
-        let models = models_response.models.into_iter()
+
+        let models = models_response
+            .models
+            .into_iter()
             .map(|model| {
                 // 保持完整的模型名称，不截断 Author: Evilek, Date: 2025-01-09
                 AIModel {
                     id: model.name.clone(),
                     name: model.name.clone(), // 使用完整名称而不是截断的base_name
-                    max_tokens: Some(4096), // Ollama模型的默认上下文长度
+                    max_tokens: Some(4096),   // Ollama模型的默认上下文长度
                     provider: "Ollama".to_string(),
                     default: Some(false),
                     hidden: Some(false),
@@ -158,13 +169,13 @@ impl AIProvider for OllamaProvider {
                 }
             })
             .collect();
-        
+
         Ok(models)
     }
-    
+
     async fn test_connection(&self) -> Result<ConnectionTestResult> {
         let start_time = Instant::now();
-        
+
         // 尝试获取模型列表来测试连接
         match self.get_models().await {
             Ok(models) => {
@@ -176,21 +187,19 @@ impl AIProvider for OllamaProvider {
                     model_count: Some(models.len()),
                 })
             }
-            Err(e) => {
-                Ok(ConnectionTestResult {
-                    success: false,
-                    message: format!("连接失败: {}", e),
-                    latency_ms: None,
-                    model_count: None,
-                })
-            }
+            Err(e) => Ok(ConnectionTestResult {
+                success: false,
+                message: format!("连接失败: {}", e),
+                latency_ms: None,
+                model_count: None,
+            }),
         }
     }
-    
+
     async fn is_available(&self) -> bool {
         !self.config.base_url.is_empty()
     }
-    
+
     async fn refresh_models(&self) -> Result<Vec<AIModel>> {
         self.get_models().await
     }

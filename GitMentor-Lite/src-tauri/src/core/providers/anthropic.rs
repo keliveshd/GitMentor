@@ -1,11 +1,11 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::time::{Duration, Instant};
 
-use crate::core::ai_provider::*;
 use crate::core::ai_config::AnthropicConfig;
+use crate::core::ai_provider::*;
 
 /**
  * Anthropic (Claude) 提供商实现
@@ -58,28 +58,25 @@ pub struct AnthropicProvider {
 impl AnthropicProvider {
     pub fn new(config: AnthropicConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(300))  // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
+            .timeout(Duration::from_secs(300)) // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
 
         Self { client, config }
     }
-    
+
     fn get_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("Content-Type", "application/json".parse().unwrap());
         headers.insert("anthropic-version", "2023-06-01".parse().unwrap());
-        
+
         if !self.config.api_key.is_empty() {
-            headers.insert(
-                "x-api-key",
-                self.config.api_key.parse().unwrap(),
-            );
+            headers.insert("x-api-key", self.config.api_key.parse().unwrap());
         }
-        
+
         headers
     }
-    
+
     fn get_available_models() -> Vec<AIModel> {
         vec![
             AIModel {
@@ -130,37 +127,42 @@ impl AIProvider for AnthropicProvider {
     fn get_id(&self) -> &str {
         "Anthropic"
     }
-    
+
     fn get_name(&self) -> &str {
         "Anthropic (Claude)"
     }
-    
+
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse> {
         let anthropic_request = AnthropicRequest {
             model: request.model.clone(),
-            messages: request.messages.iter().map(|msg| AnthropicMessage {
-                role: msg.role.clone(),
-                content: msg.content.clone(),
-            }).collect(),
-            max_tokens: request.max_tokens.unwrap_or(4096),  // 增加默认值，避免响应被截断 - Author: Evilek, Date: 2025-01-10
+            messages: request
+                .messages
+                .iter()
+                .map(|msg| AnthropicMessage {
+                    role: msg.role.clone(),
+                    content: msg.content.clone(),
+                })
+                .collect(),
+            max_tokens: request.max_tokens.unwrap_or(4096), // 增加默认值，避免响应被截断 - Author: Evilek, Date: 2025-01-10
             temperature: request.temperature,
             stream: Some(false),
         };
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post("https://api.anthropic.com/v1/messages")
             .headers(self.get_headers())
             .json(&anthropic_request)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow::anyhow!("Anthropic API error: {}", error_text));
         }
-        
+
         let anthropic_response: AnthropicResponse = response.json().await?;
-        
+
         if let Some(content) = anthropic_response.content.first() {
             // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
             use crate::core::ai_provider::ReasoningParser;
@@ -179,14 +181,14 @@ impl AIProvider for AnthropicProvider {
             Err(anyhow::anyhow!("No response from Anthropic"))
         }
     }
-    
+
     async fn get_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }
-    
+
     async fn test_connection(&self) -> Result<ConnectionTestResult> {
         let start_time = Instant::now();
-        
+
         // 创建一个简单的测试请求
         let test_request = AIRequest {
             messages: vec![ChatMessage {
@@ -198,7 +200,7 @@ impl AIProvider for AnthropicProvider {
             max_tokens: Some(10),
             stream: Some(false),
         };
-        
+
         match self.generate_commit(&test_request).await {
             Ok(_) => {
                 let latency = start_time.elapsed().as_millis() as u64;
@@ -209,21 +211,19 @@ impl AIProvider for AnthropicProvider {
                     model_count: Some(Self::get_available_models().len()),
                 })
             }
-            Err(e) => {
-                Ok(ConnectionTestResult {
-                    success: false,
-                    message: format!("连接失败: {}", e),
-                    latency_ms: None,
-                    model_count: None,
-                })
-            }
+            Err(e) => Ok(ConnectionTestResult {
+                success: false,
+                message: format!("连接失败: {}", e),
+                latency_ms: None,
+                model_count: None,
+            }),
         }
     }
-    
+
     async fn is_available(&self) -> bool {
         !self.config.api_key.is_empty()
     }
-    
+
     async fn refresh_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }

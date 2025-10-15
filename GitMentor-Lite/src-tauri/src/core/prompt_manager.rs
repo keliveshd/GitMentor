@@ -818,12 +818,9 @@ config.js: 更新配置参数
 
         // 如果有文件摘要，则构建包含摘要的上下文
         let summary_context = if !file_summaries.is_empty() {
-            let summaries_text = file_summaries.join("\n\n");
+            let _summaries_text = file_summaries.join("\n\n");
             CommitContext {
-                diff: format!(
-                    "File Analysis Summary:\n{}\n\nOriginal Diff:\n{}",
-                    summaries_text, context.diff
-                ),
+                diff: format!("Original Diff:\n{}", context.diff),
                 staged_files: context.staged_files.clone(),
                 branch_name: context.branch_name.clone(),
                 commit_type: context.commit_type.clone(),
@@ -879,12 +876,8 @@ config.js: 更新配置参数
             // 实际使用时需要从外部传入单文件diff获取函数
             let file_diff = context.diff.clone(); // 占位符，实际应该是单文件diff
 
-            let messages = self.generate_file_analysis_messages(
-                template_id,
-                file_path,
-                &file_diff,
-                context,
-            )?;
+            let messages =
+                self.generate_file_analysis_messages(template_id, file_path, &file_diff, context)?;
 
             let analysis_result = ai_generate_fn(messages)?;
             file_summaries.push(analysis_result);
@@ -894,7 +887,10 @@ config.js: 更新配置参数
         let summary_messages = self.generate_summary_messages(
             template_id,
             context,
-            &file_summaries.iter().map(|s| s.as_str()).collect::<Vec<_>>(),
+            &file_summaries
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>(),
         )?;
 
         let final_commit_message = ai_generate_fn(summary_messages)?;
@@ -1117,7 +1113,9 @@ config.js: 更新配置参数
 
         // 根据配置添加额外的指导
         if template.enable_emoji == Some(true) {
-            system_prompt.push_str("\n\nIMPORTANT: Please add corresponding emoji symbols before the commit type.");
+            system_prompt.push_str(
+                "\n\nIMPORTANT: Please add corresponding emoji symbols before the commit type.",
+            );
         }
 
         if template.enable_body == Some(false) {
@@ -1224,33 +1222,33 @@ config.js: 更新配置参数
                 // 替换英文动词示例为中文
                 result = result.replace(
                     "如 Add, Fix, Update, Remove 等",
-                    "如 添加, 修复, 更新, 删除, 优化, 重构 等"
+                    "如 添加, 修复, 更新, 删除, 优化, 重构 等",
                 );
                 result = result.replace(
                     "如Add, Fix, Update, Remove等",
-                    "如添加, 修复, 更新, 删除, 优化, 重构等"
+                    "如添加, 修复, 更新, 删除, 优化, 重构等",
                 );
             }
             "Traditional Chinese" => {
                 result = result.replace(
                     "如 Add, Fix, Update, Remove 等",
-                    "如 添加, 修復, 更新, 刪除, 優化, 重構 等"
+                    "如 添加, 修復, 更新, 刪除, 優化, 重構 等",
                 );
                 result = result.replace(
                     "如Add, Fix, Update, Remove等",
-                    "如添加, 修復, 更新, 刪除, 優化, 重構等"
+                    "如添加, 修復, 更新, 刪除, 優化, 重構等",
                 );
             }
             "Japanese" => {
                 result = result.replace(
                     "如 Add, Fix, Update, Remove 等",
-                    "如 追加, 修正, 更新, 削除, 最適化, リファクタリング 等"
+                    "如 追加, 修正, 更新, 削除, 最適化, リファクタリング 等",
                 );
             }
             "Korean" => {
                 result = result.replace(
                     "如 Add, Fix, Update, Remove 等",
-                    "如 추가, 수정, 업데이트, 삭제, 최적화, 리팩토링 등"
+                    "如 추가, 수정, 업데이트, 삭제, 최적화, 리팩토링 등",
                 );
             }
             _ => {
@@ -1270,7 +1268,9 @@ fn extract_config_guidance_from_system_prompt(system_prompt: &str) -> String {
     let mut guidance_parts = Vec::new();
 
     // 查找重要的配置指导
-    if system_prompt.contains("IMPORTANT: Please add corresponding emoji symbols before the commit type") {
+    if system_prompt
+        .contains("IMPORTANT: Please add corresponding emoji symbols before the commit type")
+    {
         guidance_parts.push("\n\nIMPORTANT REMINDER: Please add corresponding emoji symbols before the commit type.");
     }
 
@@ -1278,11 +1278,15 @@ fn extract_config_guidance_from_system_prompt(system_prompt: &str) -> String {
         guidance_parts.push("\n\nIMPORTANT REMINDER: Only generate the title line of the commit message, do not include detailed description.");
     }
 
-    if system_prompt.contains("IMPORTANT: If there are multiple file changes, please merge them into one commit message") {
+    if system_prompt.contains(
+        "IMPORTANT: If there are multiple file changes, please merge them into one commit message",
+    ) {
         guidance_parts.push("\n\nSUPER IMPORTANT: If there are multiple file changes, please merge them into one commit message.");
     }
 
-    if system_prompt.contains("IMPORTANT: If there are multiple file changes, please generate separate commit messages") {
+    if system_prompt.contains(
+        "IMPORTANT: If there are multiple file changes, please generate separate commit messages",
+    ) {
         guidance_parts.push("\n\nSUPER IMPORTANT: If there are multiple file changes, please generate separate commit messages for each major change.");
     }
 

@@ -267,9 +267,14 @@ export class WindowManager {
 
       console.log(`🪟 [WindowManager] 模板配置窗口实例已创建`);
 
-      // 监听窗口关闭事件
+      // 监听窗口关闭请求事件
       window.once("tauri://close-requested", () => {
+        console.log(`✅ [WindowManager] 模板配置窗口关闭请求事件`);
+        // 从映射中删除窗口引用
         this.openWindows.delete(windowLabel);
+        
+        // 让Tauri处理实际的窗口关闭
+        // 注意：不要在这里调用window.close()，会造成无限循环
       });
 
       // 监听窗口创建完成事件
