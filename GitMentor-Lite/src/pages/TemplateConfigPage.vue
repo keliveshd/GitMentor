@@ -707,6 +707,17 @@ import { ElMessage } from 'element-plus'
  */
 
 // 接口定义（更新为两段式模板）
+interface TemplateVersionInfo {
+  id: string
+  version: string
+  name: string
+  description: string
+  content?: string
+  created_at: string
+  is_builtin: boolean
+  parent_id?: string | null
+}
+
 interface PromptTemplate {
   id: string
   name: string
@@ -732,6 +743,14 @@ interface PromptTemplate {
   is_custom?: boolean
   created_at?: string
   updated_at?: string
+  version?: string
+  template_type?: string
+  template_category?: string
+  original_template_id?: string | null
+  system_version?: string
+  current_version_id?: string
+  versions?: TemplateVersionInfo[]
+  template_config?: Record<string, any> | null
 }
 
 // 响应式数据
