@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "版本号 (例如: v0.1.4, 留空则自动从package.json读取)"
+        description: "版本号 (示例: v0.1.4，不填写则自动读取 package.json)"
         required: false
         type: string
       create_tag:
-        description: "是否创建新的Git标签"
+        description: "是否创建新的 Git 标签"
         required: false
         default: true
         type: boolean
@@ -33,7 +33,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # 获取完整的git历史，用于tag操作
+          fetch-depth: 0 # 获取完整 git 历史，确保可以读取 tag
 
       # 获取版本号 - Author: Evilek, Date: 2025-01-15
       - name: Get version
@@ -41,118 +41,158 @@ jobs:
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
-            # 从tag推送获取版本号
             VERSION="${{ github.ref_name }}"
-            echo "从tag获取版本号: $VERSION"
+            echo "从 tag 读取版本号: $VERSION"
           elif [ -n "${{ github.event.inputs.version }}" ]; then
-            # 从手动输入获取版本号
             VERSION="${{ github.event.inputs.version }}"
-            echo "从输入获取版本号: $VERSION"
+            echo "从手动输入读取版本号: $VERSION"
           else
-            # 从package.json自动获取版本号
             PACKAGE_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
             VERSION="v$PACKAGE_VERSION"
-            echo "从package.json获取版本号: $VERSION"
+            echo "从 package.json 自动读取版本号: $VERSION"
           fi
 
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "最终版本号: $VERSION"
+          echo "最终使用的版本号: $VERSION"
 
-          # 设置是否需要更新文件的标志
           if [ -n "${{ github.event.inputs.version }}" ]; then
             echo "need_update=true" >> $GITHUB_OUTPUT
             echo "需要更新版本文件"
           else
             echo "need_update=false" >> $GITHUB_OUTPUT
-            echo "无需更新版本文件"
+            echo "版本文件保持不变"
           fi
 
-      # 更新版本文件并创建PR（仅在手动输入版本号时） - Author: Evilek, Date: 2025-01-15
+      # 版本文件更新与 PR 创建（仅手动触发时） - Author: Evilek, Date: 2025-01-15
       - name: Update version files and create PR
         if: steps.get_version.outputs.need_update == 'true'
+        env:
+          VERSION: ${{ steps.get_version.outputs.version }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        shell: pwsh
         run: |
-          $VERSION = "${{ steps.get_version.outputs.version }}"
-          # 移除v前缀获取纯版本号
-          $CLEAN_VERSION = $VERSION -replace '^v', ''
-          $BRANCH_NAME = "release/$VERSION"
-          Write-Host "创建版本更新分支: $BRANCH_NAME"
+          $ErrorActionPreference = "Stop"
 
-          # 创建新分支
+          $VERSION = $env:VERSION
+          $CLEAN_VERSION = $VERSION -replace '^v', ''
+          $DEFAULT_BRANCH = if ([string]::IsNullOrWhiteSpace($env:DEFAULT_BRANCH)) { "main" } else { $env:DEFAULT_BRANCH }
+          $BRANCH_NAME = "release/$VERSION"
+          Write-Host "创建或更新版本分支: $BRANCH_NAME (基线分支: $DEFAULT_BRANCH)"
+
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git checkout -b $BRANCH_NAME
+          git fetch origin --prune
 
-          # 更新package.json
+          git rev-parse --verify "origin/$BRANCH_NAME" > $null 2>&1
+          $REMOTE_BRANCH_EXISTS = $LASTEXITCODE -eq 0
+
+          if ($REMOTE_BRANCH_EXISTS) {
+            Write-Host "远程已存在版本分支，直接同步最新提交"
+            git checkout -B $BRANCH_NAME "origin/$BRANCH_NAME"
+          }
+          else {
+            Write-Host "远程不存在版本分支，基于 $DEFAULT_BRANCH 创建"
+            git checkout -B $BRANCH_NAME "origin/$DEFAULT_BRANCH"
+          }
+
+          # 更新 package.json
           $packageJson = Get-Content "GitMentor-Lite/package.json" -Raw | ConvertFrom-Json
           $packageJson.version = $CLEAN_VERSION
           $packageJson | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/package.json"
           Write-Host "✅ 已更新 package.json"
 
-          # 更新Cargo.toml (使用PowerShell替换第3行)
+          # 更新 Cargo.toml（固定第 3 行版本字段）
           $cargoContent = Get-Content "GitMentor-Lite/src-tauri/Cargo.toml"
           $cargoContent[2] = "version = `"$CLEAN_VERSION`""
           $cargoContent | Set-Content "GitMentor-Lite/src-tauri/Cargo.toml"
           Write-Host "✅ 已更新 Cargo.toml"
 
-          # 更新tauri.conf.json
+          # 更新 tauri.conf.json
           $tauriConfig = Get-Content "GitMentor-Lite/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
           $tauriConfig.version = $CLEAN_VERSION
           $tauriConfig | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/src-tauri/tauri.conf.json"
           Write-Host "✅ 已更新 tauri.conf.json"
 
-          # 提交更改到新分支
           git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
-          git commit -m "chore: bump version to $VERSION"
-          git push origin $BRANCH_NAME
-          Write-Host "✅ 已推送版本更新分支"
+          $CHANGES = git status --porcelain
 
-          # 创建Pull Request
-          $PR_BODY = @"
-          ## 🚀 版本更新到 $VERSION
+          if ([string]::IsNullOrWhiteSpace($CHANGES)) {
+            Write-Host "⚠️ 版本号文件没有变化，跳过提交与推送"
+          }
+          else {
+            git commit -m "chore: bump version to $VERSION"
+            git push origin $BRANCH_NAME
+            Write-Host "✅ 已推送版本更新分支"
+          }
 
-          此PR由GitHub Actions自动创建，用于更新版本号。
+          $AHEAD = [int](git rev-list --count "origin/$DEFAULT_BRANCH..HEAD")
 
-          ### 📋 更改内容
-          - 更新 package.json 版本号到 $CLEAN_VERSION
-          - 更新 Cargo.toml 版本号到 $CLEAN_VERSION
-          - 更新 tauri.conf.json 版本号到 $CLEAN_VERSION
-
-          ### ⚠️ 注意事项
-          请合并此PR后，Release workflow将继续执行。
-          "@
+          if ($AHEAD -le 0) {
+            Write-Host "ℹ️ 分支 $BRANCH_NAME 与 $DEFAULT_BRANCH 无差异，跳过 PR 创建"
+            exit 0
+          }
 
           $headers = @{
-            "Authorization" = "token ${{ secrets.GITHUB_TOKEN }}"
-            "Accept" = "application/vnd.github.v3+json"
+            "Authorization" = "token $env:GITHUB_TOKEN"
+            "Accept" = "application/vnd.github+json"
           }
+
+          $encodedHead = [System.Uri]::EscapeDataString("$($env:OWNER):$BRANCH_NAME")
+          $encodedBase = [System.Uri]::EscapeDataString($DEFAULT_BRANCH)
+          $prListUri = "https://api.github.com/repos/$($env:REPO)/pulls?head=$encodedHead&base=$encodedBase&state=open"
+          $existingPr = Invoke-RestMethod -Uri $prListUri -Method Get -Headers $headers -ContentType "application/json"
+
+          if ($existingPr.Count -gt 0) {
+            Write-Host "⚠️ 已存在版本更新 PR: $($existingPr[0].html_url)"
+            Write-Host "::notice::版本更新 PR 已存在，请直接检查并合并"
+            exit 0
+          }
+
+          $PR_BODY = @"
+          ## 🚀 版本更新 $VERSION
+
+          该 PR 由 Release 工作流自动生成，用于同步版本号改动。
+
+          ### 📦 本次更新
+          - 更新 package.json 版本号至 $CLEAN_VERSION
+          - 更新 Cargo.toml 版本号至 $CLEAN_VERSION
+          - 更新 tauri.conf.json 版本号至 $CLEAN_VERSION
+
+          ### ✅ 下一步
+          1. 合并本 PR
+          2. 再次执行 Release workflow
+          "@
 
           $prData = @{
             title = "chore: bump version to $VERSION"
             head = $BRANCH_NAME
-            base = "${{ github.ref_name }}"
+            base = $DEFAULT_BRANCH
             body = $PR_BODY
           } | ConvertTo-Json
 
           try {
-            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/${{ github.repository }}/pulls" -Method Post -Headers $headers -Body $prData -ContentType "application/json"
-            Write-Host "✅ 已创建Pull Request: $($response.html_url)"
-            Write-Host "::notice::版本更新PR已创建，请合并后重新运行Release workflow"
-            Write-Host "::error::Workflow暂停 - 请先合并版本更新PR，然后重新运行此workflow"
-            exit 1
-          } catch {
-            Write-Host "❌ 创建PR失败: $($_.Exception.Message)"
-            Write-Host "请手动创建PR从 $BRANCH_NAME 到 ${{ github.ref_name }}"
-            Write-Host "::error::请手动处理版本更新后重新运行workflow"
+            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$($env:REPO)/pulls" -Method Post -Headers $headers -Body $prData -ContentType "application/json"
+            Write-Host "✅ 已创建 Pull Request: $($response.html_url)"
+            Write-Host "::notice::已生成版本更新 PR，请合并后重新运行 Release workflow"
+            Write-Host "::error::终止当前流程以等待手动审核"
             exit 1
           }
-        shell: pwsh
+          catch {
+            Write-Host "❌ 创建 PR 失败: $($_.Exception.Message)"
+            Write-Host "请手动创建 PR：$BRANCH_NAME -> $DEFAULT_BRANCH"
+            Write-Host "::error::请手动处理版本更新后重新运行 workflow"
+            exit 1
+          }
 
-      # 创建tag（仅在手动触发且需要时） - Author: Evilek, Date: 2025-01-15
+      # 创建 tag（仅在需要时） - Author: Evilek, Date: 2025-01-15
       - name: Create tag
         if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
         run: |
           $VERSION = "${{ steps.get_version.outputs.version }}"
-          Write-Host "创建tag: $VERSION"
+          Write-Host "创建 tag: $VERSION"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "$VERSION" -m "Release $VERSION"
@@ -190,16 +230,16 @@ jobs:
           releaseBody: |
             ## GitMentor ${{ steps.get_version.outputs.version }}
 
-            ### 🚀 新功能
-            - AI 驱动的 Git 提交消息生成
+            ### ✨ 新功能
+            - AI 辅助生成 Git 提交信息
             - 分层提交管理
-            - 多语言支持（19种语言）
-            - 分支切换和远程同步
+            - 多语言支持（19 种语言）
+            - 支持本地/远程仓库同步
 
-            ### 📦 下载说明
-            - **Windows**: 下载 `.msi` 安装包
+            ### 📦 发布说明
+            - **Windows**: 提供 `.msi` 安装包
 
-            ### 🔧 系统要求
+            ### 🛠 系统要求
             - Windows 10+
             - Git 2.30+
           releaseDraft: false
