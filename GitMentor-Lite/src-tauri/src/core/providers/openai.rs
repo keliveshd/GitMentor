@@ -70,16 +70,24 @@ struct OpenAIModelInfo {
 pub struct OpenAIProvider {
     client: Client,
     config: OpenAIConfig,
+    request_timeout: Duration,
 }
 
 impl OpenAIProvider {
-    pub fn new(config: OpenAIConfig) -> Self {
+    pub fn new(config: OpenAIConfig, timeout_seconds: u64) -> Self {
+        let safe_timeout_secs = timeout_seconds.max(1);
+        let timeout = Duration::from_secs(safe_timeout_secs);
+
         let client = Client::builder()
-            .timeout(Duration::from_secs(300)) // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
+            .timeout(timeout)
             .build()
             .expect("Failed to create HTTP client");
 
-        Self { client, config }
+        Self {
+            client,
+            config,
+            request_timeout: timeout,
+        }
     }
 
     fn get_headers(&self) -> reqwest::header::HeaderMap {
@@ -131,13 +139,30 @@ impl AIProvider for OpenAIProvider {
 
         println!("🔍 [OpenAI] 开始流式请求...");
 
-        let mut response = self
+        let request_future = self
             .client
             .post(url)
             .headers(self.get_headers())
             .json(&openai_request)
-            .send()
-            .await?;
+            .send();
+
+        let mut response = match tokio::time::timeout(self.request_timeout, request_future).await {
+            Ok(Ok(resp)) => resp,
+            Ok(Err(err)) => {
+                println!("❌ [OpenAI] 流式请求失败: {}", err);
+                return Err(err.into());
+            }
+            Err(_) => {
+                println!(
+                    "⏱️ [OpenAI] 流式请求超时，等待时间: {} 秒",
+                    self.request_timeout.as_secs()
+                );
+                return Err(anyhow::anyhow!(format!(
+                    "OpenAI streaming request timed out after {} seconds",
+                    self.request_timeout.as_secs()
+                )));
+            }
+        };
 
         let status = response.status();
         let headers = response.headers().clone();
@@ -156,8 +181,28 @@ impl AIProvider for OpenAIProvider {
         let mut model_name = String::new();
         let mut usage_info = None;
 
-        while let Some(chunk) = response.chunk().await? {
-            let chunk_str = String::from_utf8_lossy(&chunk);
+        loop {
+            let next_chunk =
+                match tokio::time::timeout(self.request_timeout, response.chunk()).await {
+                    Ok(Ok(Some(chunk))) => chunk,
+                    Ok(Ok(None)) => break,
+                    Ok(Err(err)) => {
+                        println!("❌ [OpenAI] 流式读取失败: {}", err);
+                        return Err(err.into());
+                    }
+                    Err(_) => {
+                        println!(
+                            "⏱️ [OpenAI] 流式响应超时，等待时间: {} 秒",
+                            self.request_timeout.as_secs()
+                        );
+                        return Err(anyhow::anyhow!(format!(
+                            "OpenAI streaming response chunk timed out after {} seconds",
+                            self.request_timeout.as_secs()
+                        )));
+                    }
+                };
+
+            let chunk_str = String::from_utf8_lossy(&next_chunk);
 
             // 解析SSE格式
             for line in chunk_str.lines() {

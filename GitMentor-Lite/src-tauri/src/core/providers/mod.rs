@@ -21,6 +21,7 @@ pub fn create_provider_factory(config: &AIConfig) -> AIProviderFactory {
     // 注册OpenAI提供商
     factory.register_provider(Box::new(openai::OpenAIProvider::new(
         config.providers.openai.clone(),
+        config.advanced.timeout,
     )));
 
     // 注册Ollama提供商
