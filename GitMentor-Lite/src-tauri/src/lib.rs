@@ -44,8 +44,9 @@ macro_rules! info_log {
 
 use chrono::Local;
 use commands::{
-    ai_analysis_commands, ai_commands, daily_report_commands, debug_commands, git_commands, git_config_commands,
-    system_commands, template_commands, update_commands,
+    ai_analysis_commands, ai_commands, daily_report_commands, debug_commands, git_commands,
+    git_config_commands, system_commands, template_commands, unified_template_commands,
+    update_commands,
 };
 use core::{
     ai_manager::AIManager,
@@ -303,6 +304,27 @@ pub fn run() {
             template_commands::delete_custom_template_versioned,
             template_commands::get_template_content_versioned,
             template_commands::revert_to_builtin_version,
+            // Unified template management commands
+            unified_template_commands::get_all_commit_templates,
+            unified_template_commands::get_commit_template,
+            unified_template_commands::update_commit_template_with_version,
+            unified_template_commands::switch_commit_template_version,
+            unified_template_commands::get_commit_template_version_history,
+            unified_template_commands::check_commit_template_updates,
+            unified_template_commands::apply_commit_template_update,
+            unified_template_commands::get_all_unified_templates,
+            unified_template_commands::get_unified_template,
+            unified_template_commands::get_unified_template_version_history,
+            unified_template_commands::update_unified_template,
+            unified_template_commands::update_template_version,
+            unified_template_commands::switch_unified_template_version,
+            unified_template_commands::create_unified_custom_template,
+            unified_template_commands::delete_unified_custom_template,
+            unified_template_commands::check_unified_system_updates,
+            unified_template_commands::apply_unified_system_update,
+            unified_template_commands::get_all_templates_unified,
+            unified_template_commands::batch_update_system_templates,
+            unified_template_commands::reset_all_system_templates,
         ])
         .run(tauri::generate_context!());
 

@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::path::PathBuf;
-use serde::{Deserialize, Serialize};
 use anyhow::Result;
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 use std::fs;
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /**
@@ -207,7 +207,8 @@ impl AIResponseCache {
             .unwrap()
             .as_secs();
 
-        let valid_entries = self.cache
+        let valid_entries = self
+            .cache
             .values()
             .filter(|entry| now - entry.timestamp <= self.max_age_seconds)
             .count() as u64;
@@ -229,25 +230,23 @@ mod tests {
         let mut cache = AIResponseCache::new(cache_dir.clone());
 
         // 测试缓存设置和获取
-        let file_changes = vec![
-            ("src/main.rs".to_string(), "println!(\"Hello\");".to_string()),
-        ];
+        let file_changes = vec![(
+            "src/main.rs".to_string(),
+            "println!(\"Hello\");".to_string(),
+        )];
 
-        cache.set(
-            "test_template",
-            "gpt-4",
-            &file_changes,
-            Some("/test/repo"),
-            "Test response".to_string(),
-            None,
-        ).unwrap();
+        cache
+            .set(
+                "test_template",
+                "gpt-4",
+                &file_changes,
+                Some("/test/repo"),
+                "Test response".to_string(),
+                None,
+            )
+            .unwrap();
 
-        let cached = cache.get(
-            "test_template",
-            "gpt-4",
-            &file_changes,
-            Some("/test/repo"),
-        );
+        let cached = cache.get("test_template", "gpt-4", &file_changes, Some("/test/repo"));
 
         assert!(cached.is_some());
         assert_eq!(cached.unwrap().content, "Test response");

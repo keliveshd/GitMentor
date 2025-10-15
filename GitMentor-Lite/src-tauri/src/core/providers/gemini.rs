@@ -1,11 +1,11 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::time::{Duration, Instant};
 
-use crate::core::ai_provider::*;
 use crate::core::ai_config::GeminiConfig;
+use crate::core::ai_provider::*;
 
 /**
  * Google Gemini 提供商实现
@@ -80,13 +80,13 @@ pub struct GeminiProvider {
 impl GeminiProvider {
     pub fn new(config: GeminiConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(300))  // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
+            .timeout(Duration::from_secs(300)) // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
 
         Self { client, config }
     }
-    
+
     fn get_available_models() -> Vec<AIModel> {
         vec![
             AIModel {
@@ -130,23 +130,26 @@ impl GeminiProvider {
             },
         ]
     }
-    
+
     fn convert_messages_to_contents(&self, messages: &[ChatMessage]) -> Vec<GeminiContent> {
-        messages.iter().map(|msg| {
-            let role = match msg.role.as_str() {
-                "system" => None, // Gemini doesn't have system role, merge with user
-                "user" => Some("user".to_string()),
-                "assistant" => Some("model".to_string()),
-                _ => Some("user".to_string()),
-            };
-            
-            GeminiContent {
-                parts: vec![GeminiPart {
-                    text: msg.content.clone(),
-                }],
-                role,
-            }
-        }).collect()
+        messages
+            .iter()
+            .map(|msg| {
+                let role = match msg.role.as_str() {
+                    "system" => None, // Gemini doesn't have system role, merge with user
+                    "user" => Some("user".to_string()),
+                    "assistant" => Some("model".to_string()),
+                    _ => Some("user".to_string()),
+                };
+
+                GeminiContent {
+                    parts: vec![GeminiPart {
+                        text: msg.content.clone(),
+                    }],
+                    role,
+                }
+            })
+            .collect()
     }
 }
 
@@ -155,14 +158,14 @@ impl AIProvider for GeminiProvider {
     fn get_id(&self) -> &str {
         "Gemini"
     }
-    
+
     fn get_name(&self) -> &str {
         "Google Gemini"
     }
-    
+
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse> {
         let contents = self.convert_messages_to_contents(&request.messages);
-        
+
         let gemini_request = GeminiRequest {
             contents,
             generation_config: Some(GeminiGenerationConfig {
@@ -170,26 +173,27 @@ impl AIProvider for GeminiProvider {
                 max_output_tokens: request.max_tokens,
             }),
         };
-        
+
         let url = format!(
             "https://generativelanguage.googleapis.com/v1beta/models/{}:generateContent?key={}",
             request.model, self.config.api_key
         );
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post(&url)
             .header("Content-Type", "application/json")
             .json(&gemini_request)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow::anyhow!("Gemini API error: {}", error_text));
         }
-        
+
         let gemini_response: GeminiResponse = response.json().await?;
-        
+
         if let Some(candidate) = gemini_response.candidates.first() {
             if let Some(part) = candidate.content.parts.first() {
                 // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
@@ -212,14 +216,14 @@ impl AIProvider for GeminiProvider {
             Err(anyhow::anyhow!("No candidates in Gemini response"))
         }
     }
-    
+
     async fn get_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }
-    
+
     async fn test_connection(&self) -> Result<ConnectionTestResult> {
         let start_time = Instant::now();
-        
+
         // 创建一个简单的测试请求
         let test_request = AIRequest {
             messages: vec![ChatMessage {
@@ -231,7 +235,7 @@ impl AIProvider for GeminiProvider {
             max_tokens: Some(10),
             stream: Some(false),
         };
-        
+
         match self.generate_commit(&test_request).await {
             Ok(_) => {
                 let latency = start_time.elapsed().as_millis() as u64;
@@ -242,21 +246,19 @@ impl AIProvider for GeminiProvider {
                     model_count: Some(Self::get_available_models().len()),
                 })
             }
-            Err(e) => {
-                Ok(ConnectionTestResult {
-                    success: false,
-                    message: format!("连接失败: {}", e),
-                    latency_ms: None,
-                    model_count: None,
-                })
-            }
+            Err(e) => Ok(ConnectionTestResult {
+                success: false,
+                message: format!("连接失败: {}", e),
+                latency_ms: None,
+                model_count: None,
+            }),
         }
     }
-    
+
     async fn is_available(&self) -> bool {
         !self.config.api_key.is_empty()
     }
-    
+
     async fn refresh_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }

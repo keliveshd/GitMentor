@@ -361,9 +361,9 @@ pub struct RiskAssessment {
 /// 风险级别
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum RiskLevel {
-    Low,    // 低风险
-    Medium, // 中等风险
-    High,   // 高风险
+    Low,      // 低风险
+    Medium,   // 中等风险
+    High,     // 高风险
     Critical, // 严重风险
 }
 

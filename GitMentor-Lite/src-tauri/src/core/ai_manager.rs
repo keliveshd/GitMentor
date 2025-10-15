@@ -1,12 +1,14 @@
+use anyhow::Result;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use anyhow::Result;
 
-use crate::core::ai_provider::{AIProviderFactory, AIRequest, AIResponse, AIModel, ConnectionTestResult};
 use crate::core::ai_config::{AIConfig, AIConfigManager};
-use crate::core::prompt_manager::{PromptManager, PromptTemplate, CommitContext};
-use crate::core::conversation_logger::{ConversationLogger, ConversationRecord};
+use crate::core::ai_provider::{
+    AIModel, AIProviderFactory, AIRequest, AIResponse, ConnectionTestResult,
+};
 use crate::core::ai_response_cache::AIResponseCache;
+use crate::core::conversation_logger::{ConversationLogger, ConversationRecord};
+use crate::core::prompt_manager::{CommitContext, PromptManager, PromptTemplate};
 use crate::core::providers::create_provider_factory;
 
 /**
@@ -57,13 +59,13 @@ impl AIManager {
             response_cache: Arc::new(RwLock::new(response_cache)),
         })
     }
-    
+
     /// 获取当前配置
     pub async fn get_config(&self) -> AIConfig {
         let config_manager = self.config_manager.read().await;
         config_manager.get_config().clone()
     }
-    
+
     /// 更新配置
     pub async fn update_config(&self, config: AIConfig) -> Result<()> {
         // 更新配置管理器
@@ -71,29 +73,29 @@ impl AIManager {
             let mut config_manager = self.config_manager.write().await;
             config_manager.update_config(config.clone())?;
         }
-        
+
         // 重新创建提供商工厂
         {
             let mut factory = self.provider_factory.write().await;
             *factory = create_provider_factory(&config);
         }
-        
+
         Ok(())
     }
-    
+
     /// 获取指定提供商（返回是否存在）
     #[allow(dead_code)]
     pub async fn has_provider(&self, provider_id: &str) -> bool {
         let factory = self.provider_factory.read().await;
         factory.get_provider(provider_id).is_some()
     }
-    
+
     /// 获取所有提供商信息
     pub async fn get_providers_info(&self) -> Vec<(String, String)> {
         let factory = self.provider_factory.read().await;
         factory.get_providers_info()
     }
-    
+
     /// 生成提交消息
     pub async fn generate_commit_message(&self, request: AIRequest) -> Result<AIResponse> {
         let config = self.get_config().await;
@@ -111,7 +113,7 @@ impl AIManager {
 
         let factory = self.provider_factory.read().await;
         let result = factory.generate_commit(provider_id, &request).await;
-        
+
         // 记录对话
         let mut logger = self.conversation_logger.write().await;
         match &result {
@@ -134,7 +136,7 @@ impl AIManager {
                 );
             }
         }
-        
+
         result
     }
 
@@ -145,7 +147,10 @@ impl AIManager {
     }
 
     /// 测试指定提供商的连接
-    pub async fn test_provider_connection(&self, provider_id: &str) -> Result<ConnectionTestResult> {
+    pub async fn test_provider_connection(
+        &self,
+        provider_id: &str,
+    ) -> Result<ConnectionTestResult> {
         let factory = self.provider_factory.read().await;
         factory.test_connection(provider_id).await
     }
@@ -183,7 +188,8 @@ impl AIManager {
         let messages = prompt_manager.generate_messages(template_id, &context)?;
 
         // 获取模板配置，但优先使用系统全局的max_tokens配置
-        let (_template_max_tokens, temperature) = prompt_manager.get_template_config(template_id)
+        let (_template_max_tokens, temperature) = prompt_manager
+            .get_template_config(template_id)
             .unwrap_or((Some(200), Some(0.3)));
 
         // 使用系统全局配置的max_tokens，而不是模板中的小数值，避免响应被截断
@@ -286,7 +292,8 @@ impl AIManager {
                     if retry < max_retries {
                         eprintln!("⚠️ [Retry] 第 {} 次尝试失败，准备重试...", retry + 1);
                         // 指数退避等待
-                        let wait_time = tokio::time::Duration::from_millis(1000 * 2_u64.pow(retry as u32));
+                        let wait_time =
+                            tokio::time::Duration::from_millis(1000 * 2_u64.pow(retry as u32));
                         tokio::time::sleep(wait_time).await;
                     }
                 }
@@ -300,7 +307,11 @@ impl AIManager {
     /// 获取所有可用的提示模板
     pub async fn get_prompt_templates(&self) -> Vec<PromptTemplate> {
         let prompt_manager = self.prompt_manager.read().await;
-        prompt_manager.get_all_templates().into_iter().cloned().collect()
+        prompt_manager
+            .get_all_templates()
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// 获取提示词管理器的只读引用
@@ -325,7 +336,10 @@ impl AIManager {
     /// 根据仓库路径获取对话记录
     /// 作者：Evilek
     /// 编写日期：2025-08-04
-    pub async fn get_conversation_history_by_repository(&self, repository_path: Option<&str>) -> Result<Vec<ConversationRecord>> {
+    pub async fn get_conversation_history_by_repository(
+        &self,
+        repository_path: Option<&str>,
+    ) -> Result<Vec<ConversationRecord>> {
         let logger = self.conversation_logger.read().await;
         let records = logger.get_records_by_repository(repository_path);
         Ok(records.into_iter().cloned().collect())
@@ -350,7 +364,10 @@ impl AIManager {
     /// 根据会话ID获取对话记录
     /// 作者：Evilek
     /// 编写日期：2025-08-04
-    pub async fn get_conversation_records_by_session(&self, session_id: &str) -> Result<Vec<ConversationRecord>> {
+    pub async fn get_conversation_records_by_session(
+        &self,
+        session_id: &str,
+    ) -> Result<Vec<ConversationRecord>> {
         let logger = self.conversation_logger.read().await;
         let records = logger.get_records_by_session(session_id);
         Ok(records.into_iter().cloned().collect())
@@ -445,7 +462,11 @@ impl AIManager {
     /// 编写日期：2025-01-29
     pub async fn get_custom_templates(&self) -> Vec<PromptTemplate> {
         let prompt_manager = self.prompt_manager.read().await;
-        prompt_manager.get_custom_templates().into_iter().cloned().collect()
+        prompt_manager
+            .get_custom_templates()
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// 获取默认模板列表
@@ -453,7 +474,11 @@ impl AIManager {
     /// 编写日期：2025-01-29
     pub async fn get_default_templates(&self) -> Vec<PromptTemplate> {
         let prompt_manager = self.prompt_manager.read().await;
-        prompt_manager.get_default_templates().into_iter().cloned().collect()
+        prompt_manager
+            .get_default_templates()
+            .into_iter()
+            .cloned()
+            .collect()
     }
 
     /// 获取响应缓存统计信息
@@ -479,6 +504,4 @@ impl AIManager {
         let mut cache = self.response_cache.write().await;
         cache.set_max_age(seconds);
     }
-
-
 }

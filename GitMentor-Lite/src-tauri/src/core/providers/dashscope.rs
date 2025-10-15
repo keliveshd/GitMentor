@@ -1,11 +1,11 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::time::{Duration, Instant};
 
-use crate::core::ai_provider::*;
 use crate::core::ai_config::DashScopeConfig;
+use crate::core::ai_provider::*;
 
 /**
  * 阿里云通义千问（DashScope）提供商实现
@@ -80,27 +80,27 @@ pub struct DashScopeProvider {
 impl DashScopeProvider {
     pub fn new(config: DashScopeConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(300))  // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
+            .timeout(Duration::from_secs(300)) // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
 
         Self { client, config }
     }
-    
+
     fn get_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("Content-Type", "application/json".parse().unwrap());
-        
+
         if !self.config.api_key.is_empty() {
             headers.insert(
                 "Authorization",
                 format!("Bearer {}", self.config.api_key).parse().unwrap(),
             );
         }
-        
+
         headers
     }
-    
+
     fn get_available_models() -> Vec<AIModel> {
         vec![
             AIModel {
@@ -151,19 +151,23 @@ impl AIProvider for DashScopeProvider {
     fn get_id(&self) -> &str {
         "DashScope"
     }
-    
+
     fn get_name(&self) -> &str {
         "阿里云通义千问"
     }
-    
+
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse> {
         let dashscope_request = DashScopeRequest {
             model: request.model.clone(),
             input: DashScopeInput {
-                messages: request.messages.iter().map(|msg| DashScopeMessage {
-                    role: msg.role.clone(),
-                    content: msg.content.clone(),
-                }).collect(),
+                messages: request
+                    .messages
+                    .iter()
+                    .map(|msg| DashScopeMessage {
+                        role: msg.role.clone(),
+                        content: msg.content.clone(),
+                    })
+                    .collect(),
             },
             parameters: Some(DashScopeParameters {
                 temperature: request.temperature,
@@ -171,21 +175,22 @@ impl AIProvider for DashScopeProvider {
                 stream: Some(false),
             }),
         };
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post("https://dashscope.aliyuncs.com/api/v1/services/aigc/text-generation/generation")
             .headers(self.get_headers())
             .json(&dashscope_request)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow::anyhow!("DashScope API error: {}", error_text));
         }
-        
+
         let dashscope_response: DashScopeResponse = response.json().await?;
-        
+
         let content = if let Some(text) = dashscope_response.output.text {
             text
         } else if let Some(choices) = dashscope_response.output.choices {
@@ -197,7 +202,7 @@ impl AIProvider for DashScopeProvider {
         } else {
             return Err(anyhow::anyhow!("No response from DashScope"));
         };
-        
+
         // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
         use crate::core::ai_provider::ReasoningParser;
 
@@ -212,14 +217,14 @@ impl AIProvider for DashScopeProvider {
             dashscope_response.output.finish_reason,
         ))
     }
-    
+
     async fn get_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }
-    
+
     async fn test_connection(&self) -> Result<ConnectionTestResult> {
         let start_time = Instant::now();
-        
+
         // 创建一个简单的测试请求
         let test_request = AIRequest {
             messages: vec![ChatMessage {
@@ -231,7 +236,7 @@ impl AIProvider for DashScopeProvider {
             max_tokens: Some(10),
             stream: Some(false),
         };
-        
+
         match self.generate_commit(&test_request).await {
             Ok(_) => {
                 let latency = start_time.elapsed().as_millis() as u64;
@@ -242,21 +247,19 @@ impl AIProvider for DashScopeProvider {
                     model_count: Some(Self::get_available_models().len()),
                 })
             }
-            Err(e) => {
-                Ok(ConnectionTestResult {
-                    success: false,
-                    message: format!("连接失败: {}", e),
-                    latency_ms: None,
-                    model_count: None,
-                })
-            }
+            Err(e) => Ok(ConnectionTestResult {
+                success: false,
+                message: format!("连接失败: {}", e),
+                latency_ms: None,
+                model_count: None,
+            }),
         }
     }
-    
+
     async fn is_available(&self) -> bool {
         !self.config.api_key.is_empty()
     }
-    
+
     async fn refresh_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }

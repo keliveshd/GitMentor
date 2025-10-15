@@ -1,11 +1,11 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::time::{Duration, Instant};
 
-use crate::core::ai_provider::*;
 use crate::core::ai_config::OpenAIConfig;
+use crate::core::ai_provider::*;
 
 /**
  * OpenAI提供商实现
@@ -75,24 +75,24 @@ pub struct OpenAIProvider {
 impl OpenAIProvider {
     pub fn new(config: OpenAIConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(300))  // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
+            .timeout(Duration::from_secs(300)) // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
 
         Self { client, config }
     }
-    
+
     fn get_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("Content-Type", "application/json".parse().unwrap());
-        
+
         if !self.config.api_key.is_empty() {
             headers.insert(
                 "Authorization",
                 format!("Bearer {}", self.config.api_key).parse().unwrap(),
             );
         }
-        
+
         headers
     }
 }
@@ -102,22 +102,26 @@ impl AIProvider for OpenAIProvider {
     fn get_id(&self) -> &str {
         "OpenAI"
     }
-    
+
     fn get_name(&self) -> &str {
         "OpenAI"
     }
-    
+
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse> {
         // 所有模型都使用流式请求以避免超时
         let openai_request = OpenAIRequest {
             model: request.model.clone(),
-            messages: request.messages.iter().map(|msg| OpenAIMessage {
-                role: msg.role.clone(),
-                content: msg.content.clone(),
-            }).collect(),
+            messages: request
+                .messages
+                .iter()
+                .map(|msg| OpenAIMessage {
+                    role: msg.role.clone(),
+                    content: msg.content.clone(),
+                })
+                .collect(),
             temperature: request.temperature,
             max_tokens: request.max_tokens,
-            stream: Some(true),  // 强制使用流式请求
+            stream: Some(true), // 强制使用流式请求
         };
 
         let url = &format!("{}/chat/completions", self.config.base_url);
@@ -127,7 +131,8 @@ impl AIProvider for OpenAIProvider {
 
         println!("🔍 [OpenAI] 开始流式请求...");
 
-        let mut response = self.client
+        let mut response = self
+            .client
             .post(url)
             .headers(self.get_headers())
             .json(&openai_request)
@@ -171,12 +176,15 @@ impl AIProvider for OpenAIProvider {
                         }
 
                         // 处理choices数组
-                        if let Some(choices) = chunk_data.get("choices").and_then(|c| c.as_array()) {
+                        if let Some(choices) = chunk_data.get("choices").and_then(|c| c.as_array())
+                        {
                             if let Some(choice) = choices.first() {
                                 // 处理delta内容
                                 if let Some(delta) = choice.get("delta") {
                                     // 累积内容
-                                    if let Some(content) = delta.get("content").and_then(|c| c.as_str()) {
+                                    if let Some(content) =
+                                        delta.get("content").and_then(|c| c.as_str())
+                                    {
                                         final_content.push_str(content);
                                         // 实时打印接收到的内容（用于调试）
                                         print!("{}", content);
@@ -195,15 +203,21 @@ impl AIProvider for OpenAIProvider {
             }
         }
 
-        println!("\n🔍 [OpenAI] 流式接收完成，总长度: {}", final_content.len());
+        println!(
+            "\n🔍 [OpenAI] 流式接收完成，总长度: {}",
+            final_content.len()
+        );
 
         // 如果没有收到任何内容，返回错误
         if final_content.is_empty() {
-            return Err(anyhow::anyhow!("No content received from streaming response"));
+            return Err(anyhow::anyhow!(
+                "No content received from streaming response"
+            ));
         }
 
         // 首先使用 ReasoningParser 分离思考内容和实际内容
-        let (actual_content, reasoning_content) = crate::core::ai_provider::ReasoningParser::parse_content(&final_content);
+        let (actual_content, reasoning_content) =
+            crate::core::ai_provider::ReasoningParser::parse_content(&final_content);
 
         // 如果有思考内容，打印日志
         if let Some(ref reasoning) = reasoning_content {
@@ -214,8 +228,12 @@ impl AIProvider for OpenAIProvider {
         use crate::core::response_cleaner::ResponseCleaner;
         let cleaned_content = ResponseCleaner::clean_commit_message(&actual_content);
 
-        println!("🔍 [DEBUG] 原始响应长度: {}, 移除思考后长度: {}, 清理后长度: {}",
-                 final_content.len(), actual_content.len(), cleaned_content.len());
+        println!(
+            "🔍 [DEBUG] 原始响应长度: {}, 移除思考后长度: {}, 清理后长度: {}",
+            final_content.len(),
+            actual_content.len(),
+            cleaned_content.len()
+        );
 
         // 构造AI响应，直接使用已清理的内容
         Ok(AIResponse {
@@ -224,7 +242,10 @@ impl AIProvider for OpenAIProvider {
             model: model_name,
             usage: usage_info.map(|u| TokenUsage {
                 prompt_tokens: u.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
-                completion_tokens: u.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
+                completion_tokens: u
+                    .get("completion_tokens")
+                    .and_then(|v| v.as_u64())
+                    .unwrap_or(0) as u32,
                 total_tokens: u.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0) as u32,
             }),
             finish_reason: Some("stop".to_string()),
@@ -234,7 +255,8 @@ impl AIProvider for OpenAIProvider {
     async fn get_models(&self) -> Result<Vec<AIModel>> {
         let url = &format!("{}/models", self.config.base_url);
 
-        let response = self.client
+        let response = self
+            .client
             .get(url)
             .headers(self.get_headers())
             .send()
@@ -248,14 +270,28 @@ impl AIProvider for OpenAIProvider {
         // 检查响应内容是否为空
         let response_text = response.text().await?;
         if response_text.trim().is_empty() {
-            return Err(anyhow::anyhow!("OpenAI API returned empty response for models"));
+            return Err(anyhow::anyhow!(
+                "OpenAI API returned empty response for models"
+            ));
         }
 
         // 解析JSON响应
-        let models_response: OpenAIModelsResponse = serde_json::from_str(&response_text)
-            .map_err(|e| anyhow::anyhow!("Failed to parse OpenAI models response: {}. Response text: {}", e, if response_text.len() > 200 { &response_text[..200] } else { &response_text }))?;
+        let models_response: OpenAIModelsResponse =
+            serde_json::from_str(&response_text).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse OpenAI models response: {}. Response text: {}",
+                    e,
+                    if response_text.len() > 200 {
+                        &response_text[..200]
+                    } else {
+                        &response_text
+                    }
+                )
+            })?;
 
-        let models: Vec<AIModel> = models_response.data.into_iter()
+        let models: Vec<AIModel> = models_response
+            .data
+            .into_iter()
             .map(|model| AIModel {
                 id: model.id.clone(),
                 name: model.id,
@@ -273,10 +309,10 @@ impl AIProvider for OpenAIProvider {
 
         Ok(models)
     }
-    
+
     async fn test_connection(&self) -> Result<ConnectionTestResult> {
         let start_time = Instant::now();
-        
+
         match self.get_models().await {
             Ok(models) => {
                 let latency = start_time.elapsed().as_millis() as u64;
@@ -287,21 +323,19 @@ impl AIProvider for OpenAIProvider {
                     model_count: Some(models.len()),
                 })
             }
-            Err(e) => {
-                Ok(ConnectionTestResult {
-                    success: false,
-                    message: format!("连接失败: {}", e),
-                    latency_ms: None,
-                    model_count: None,
-                })
-            }
+            Err(e) => Ok(ConnectionTestResult {
+                success: false,
+                message: format!("连接失败: {}", e),
+                latency_ms: None,
+                model_count: None,
+            }),
         }
     }
-    
+
     async fn is_available(&self) -> bool {
         !self.config.api_key.is_empty() && !self.config.base_url.is_empty()
     }
-    
+
     async fn refresh_models(&self) -> Result<Vec<AIModel>> {
         self.get_models().await
     }

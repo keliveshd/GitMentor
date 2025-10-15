@@ -1,11 +1,11 @@
+use anyhow::Result;
 use async_trait::async_trait;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::time::{Duration, Instant};
 
-use crate::core::ai_provider::*;
 use crate::core::ai_config::DeepseekConfig;
+use crate::core::ai_provider::*;
 
 /**
  * Deepseek 提供商实现
@@ -61,27 +61,27 @@ pub struct DeepseekProvider {
 impl DeepseekProvider {
     pub fn new(config: DeepseekConfig) -> Self {
         let client = Client::builder()
-            .timeout(Duration::from_secs(300))  // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
+            .timeout(Duration::from_secs(300)) // 增加到5分钟，避免长响应被截断 - Author: Evilek, Date: 2025-01-10
             .build()
             .expect("Failed to create HTTP client");
 
         Self { client, config }
     }
-    
+
     fn get_headers(&self) -> reqwest::header::HeaderMap {
         let mut headers = reqwest::header::HeaderMap::new();
         headers.insert("Content-Type", "application/json".parse().unwrap());
-        
+
         if !self.config.api_key.is_empty() {
             headers.insert(
                 "Authorization",
                 format!("Bearer {}", self.config.api_key).parse().unwrap(),
             );
         }
-        
+
         headers
     }
-    
+
     fn get_available_models() -> Vec<AIModel> {
         vec![
             AIModel {
@@ -119,37 +119,42 @@ impl AIProvider for DeepseekProvider {
     fn get_id(&self) -> &str {
         "Deepseek"
     }
-    
+
     fn get_name(&self) -> &str {
         "Deepseek"
     }
-    
+
     async fn generate_commit(&self, request: &AIRequest) -> Result<AIResponse> {
         let deepseek_request = DeepseekRequest {
             model: request.model.clone(),
-            messages: request.messages.iter().map(|msg| DeepseekMessage {
-                role: msg.role.clone(),
-                content: msg.content.clone(),
-            }).collect(),
+            messages: request
+                .messages
+                .iter()
+                .map(|msg| DeepseekMessage {
+                    role: msg.role.clone(),
+                    content: msg.content.clone(),
+                })
+                .collect(),
             temperature: request.temperature,
             max_tokens: request.max_tokens,
             stream: Some(false),
         };
-        
-        let response = self.client
+
+        let response = self
+            .client
             .post("https://api.deepseek.com/chat/completions")
             .headers(self.get_headers())
             .json(&deepseek_request)
             .send()
             .await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow::anyhow!("Deepseek API error: {}", error_text));
         }
-        
+
         let deepseek_response: DeepseekResponse = response.json().await?;
-        
+
         if let Some(choice) = deepseek_response.choices.first() {
             // 使用推理内容解析工具处理响应 - Author: Evilek, Date: 2025-01-10
             use crate::core::ai_provider::ReasoningParser;
@@ -168,14 +173,14 @@ impl AIProvider for DeepseekProvider {
             Err(anyhow::anyhow!("No response from Deepseek"))
         }
     }
-    
+
     async fn get_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }
-    
+
     async fn test_connection(&self) -> Result<ConnectionTestResult> {
         let start_time = Instant::now();
-        
+
         // 创建一个简单的测试请求
         let test_request = AIRequest {
             messages: vec![ChatMessage {
@@ -187,7 +192,7 @@ impl AIProvider for DeepseekProvider {
             max_tokens: Some(10),
             stream: Some(false),
         };
-        
+
         match self.generate_commit(&test_request).await {
             Ok(_) => {
                 let latency = start_time.elapsed().as_millis() as u64;
@@ -198,21 +203,19 @@ impl AIProvider for DeepseekProvider {
                     model_count: Some(Self::get_available_models().len()),
                 })
             }
-            Err(e) => {
-                Ok(ConnectionTestResult {
-                    success: false,
-                    message: format!("连接失败: {}", e),
-                    latency_ms: None,
-                    model_count: None,
-                })
-            }
+            Err(e) => Ok(ConnectionTestResult {
+                success: false,
+                message: format!("连接失败: {}", e),
+                latency_ms: None,
+                model_count: None,
+            }),
         }
     }
-    
+
     async fn is_available(&self) -> bool {
         !self.config.api_key.is_empty()
     }
-    
+
     async fn refresh_models(&self) -> Result<Vec<AIModel>> {
         Ok(Self::get_available_models())
     }

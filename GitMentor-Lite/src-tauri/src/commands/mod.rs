@@ -10,4 +10,5 @@ pub mod git_commands;
 pub mod git_config_commands;
 pub mod system_commands;
 pub mod template_commands;
+pub mod unified_template_commands;
 pub mod update_commands;

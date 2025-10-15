@@ -25,39 +25,65 @@ impl ResponseCleaner {
         // 1. 移除思考标记中的内容
         let step0 = Self::remove_thinking_content(&cleaned);
         if cleaned.len() != step0.len() {
-            println!("🔍 [Step 0] 移除思考内容后长度: {} -> {}", cleaned.len(), step0.len());
+            println!(
+                "🔍 [Step 0] 移除思考内容后长度: {} -> {}",
+                cleaned.len(),
+                step0.len()
+            );
         }
         cleaned = step0;
 
         // 2. 移除开头的分析过程
         let step1 = Self::remove_analysis_prefix(&cleaned);
-        println!("🔍 [Step 1] 移除分析过程后长度: {} -> {}", cleaned.len(), step1.len());
+        println!(
+            "🔍 [Step 1] 移除分析过程后长度: {} -> {}",
+            cleaned.len(),
+            step1.len()
+        );
         cleaned = step1;
 
         // 3. 移除重复的提交消息（AI可能会重复生成）
         let step2 = Self::remove_duplicates(&cleaned);
-        println!("🔍 [Step 2] 移除重复后长度: {} -> {}", cleaned.len(), step2.len());
+        println!(
+            "🔍 [Step 2] 移除重复后长度: {} -> {}",
+            cleaned.len(),
+            step2.len()
+        );
         cleaned = step2;
 
         // 4. 提取最后的完整提交消息
         let step3 = Self::extract_final_message(&cleaned);
-        println!("🔍 [Step 3] 提取最终消息后长度: {} -> {}", cleaned.len(), step3.len());
+        println!(
+            "🔍 [Step 3] 提取最终消息后长度: {} -> {}",
+            cleaned.len(),
+            step3.len()
+        );
         if step3.is_empty() {
             println!("🔍 [WARNING] 提取最终消息后内容为空！");
             // 如果提取后内容为空，使用原始内容的前几行作为备选
             let fallback = content.lines().take(10).collect::<Vec<_>>().join("\n");
-            println!("🔍 [FALLBACK] 使用原始内容前10行作为备选，长度: {}", fallback.len());
+            println!(
+                "🔍 [FALLBACK] 使用原始内容前10行作为备选，长度: {}",
+                fallback.len()
+            );
             return fallback.trim().to_string();
         }
         cleaned = step3;
 
         // 5. 清理多余的空白行
         let step4 = Self::clean_whitespace(&cleaned);
-        println!("🔍 [Step 4] 清理空白后长度: {} -> {}", cleaned.len(), step4.len());
+        println!(
+            "🔍 [Step 4] 清理空白后长度: {} -> {}",
+            cleaned.len(),
+            step4.len()
+        );
         cleaned = step4;
 
         let final_result = cleaned.trim().to_string();
-        println!("🔍 [ResponseCleaner] 清理完成，最终长度: {}", final_result.len());
+        println!(
+            "🔍 [ResponseCleaner] 清理完成，最终长度: {}",
+            final_result.len()
+        );
         final_result
     }
 
@@ -165,7 +191,10 @@ impl ResponseCleaner {
         }
 
         let final_result = result.join("\n");
-        println!("🔍 [extract_final_message] 最终结果包含 {} 行", final_result.lines().count());
+        println!(
+            "🔍 [extract_final_message] 最终结果包含 {} 行",
+            final_result.lines().count()
+        );
         final_result
     }
 
@@ -173,10 +202,31 @@ impl ResponseCleaner {
     fn is_commit_message_start(text: &str) -> bool {
         // 常见的提交消息开头动词
         let start_verbs = vec![
-            "添加", "新增", "修复", "更新", "改进", "优化", "重构",
-            "删除", "移除", "调整", "修改", "创建", "实现",
-            "add", "fix", "update", "improve", "optimize", "refactor",
-            "delete", "remove", "adjust", "modify", "create", "implement",
+            "添加",
+            "新增",
+            "修复",
+            "更新",
+            "改进",
+            "优化",
+            "重构",
+            "删除",
+            "移除",
+            "调整",
+            "修改",
+            "创建",
+            "实现",
+            "add",
+            "fix",
+            "update",
+            "improve",
+            "optimize",
+            "refactor",
+            "delete",
+            "remove",
+            "adjust",
+            "modify",
+            "create",
+            "implement",
         ];
 
         println!("🔍 [is_commit_message_start] 检查文本: '{}'", text);

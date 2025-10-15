@@ -3,14 +3,14 @@ use tauri::State;
 // Author: Evilek, Date: 2025-08-11
 // 返回值统一走 Result<.., String>，错误别往上抛屎山，格式化清楚点
 
-use tokio::sync::Mutex;
 use crate::core::git_engine::GitEngine;
 use crate::core::llm_client::LLMClient;
 use crate::types::git_types::{
-    GitStatusResult, CommitRequest, CommitMessageResult, StageRequest,
-    RevertRequest, CommitInfo, BranchInfo, GitOperationResult, FileDiffRequest, FileDiffResult
+    BranchInfo, CommitInfo, CommitMessageResult, CommitRequest, FileDiffRequest, FileDiffResult,
+    GitOperationResult, GitStatusResult, RevertRequest, StageRequest,
 };
 use std::time::Instant;
+use tokio::sync::Mutex;
 
 #[tauri::command]
 pub async fn select_repository(
@@ -18,7 +18,8 @@ pub async fn select_repository(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<String, String> {
     let mut engine = git_engine.lock().await;
-    engine.open_repository(&path)
+    engine
+        .open_repository(&path)
         .map_err(|e| format!("Failed to open repository: {}", e))?;
     Ok("Repository opened successfully".to_string())
 }
@@ -31,7 +32,8 @@ pub async fn get_git_status(
     let start_time = Instant::now();
 
     let engine = git_engine.lock().await;
-    let result = engine.get_status()
+    let result = engine
+        .get_status()
         .map_err(|e| format!("Failed to get git status: {}", e));
 
     println!("[DEBUG] Git状态命令完成，耗时: {:?}", start_time.elapsed());
@@ -49,13 +51,15 @@ pub async fn generate_commit_message(
     // Get Git status and diff info
     let git_status = {
         let engine = git_engine.lock().await;
-        engine.get_status()
+        engine
+            .get_status()
             .map_err(|e| format!("Failed to get git status: {}", e))?
     };
 
     let diff_summary = {
         let engine = git_engine.lock().await;
-        engine.get_diff_summary(&request.selected_files)
+        engine
+            .get_diff_summary(&request.selected_files)
             .map_err(|e| format!("Failed to get diff summary: {}", e))?
     };
 
@@ -69,7 +73,9 @@ pub async fn generate_commit_message(
     );
 
     // Call LLM to generate commit message
-    let commit_message = llm_client.generate_commit_message(&prompt).await
+    let commit_message = llm_client
+        .generate_commit_message(&prompt)
+        .await
         .map_err(|e| format!("Failed to generate commit message: {}", e))?;
 
     let processing_time = start_time.elapsed().as_millis() as u64;
@@ -89,7 +95,8 @@ pub async fn stage_files(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.stage_files(&request)
+    engine
+        .stage_files(&request)
         .map_err(|e| format!("Failed to stage files: {}", e))
 }
 
@@ -101,7 +108,8 @@ pub async fn commit_changes(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.commit(&request)
+    engine
+        .commit(&request)
         .map_err(|e| format!("Failed to commit: {}", e))
 }
 
@@ -113,7 +121,8 @@ pub async fn revert_files(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.revert_files(&request)
+    engine
+        .revert_files(&request)
         .map_err(|e| format!("Failed to revert files: {}", e))
 }
 
@@ -125,7 +134,8 @@ pub async fn get_commit_history(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<Vec<CommitInfo>, String> {
     let engine = git_engine.lock().await;
-    engine.get_commit_history(limit)
+    engine
+        .get_commit_history(limit)
         .map_err(|e| format!("Failed to get commit history: {}", e))
 }
 
@@ -136,7 +146,8 @@ pub async fn get_branches(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<Vec<BranchInfo>, String> {
     let engine = git_engine.lock().await;
-    engine.get_branches()
+    engine
+        .get_branches()
         .map_err(|e| format!("Failed to get branches: {}", e))
 }
 
@@ -150,7 +161,8 @@ pub async fn checkout_branch(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.checkout_branch(&branch_name, is_remote)
+    engine
+        .checkout_branch(&branch_name, is_remote)
         .map_err(|e| format!("Failed to checkout branch: {}", e))
 }
 
@@ -162,7 +174,8 @@ pub async fn pull_current_branch(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.pull_current_branch()
+    engine
+        .pull_current_branch()
         .map_err(|e| format!("Failed to pull: {}", e))
 }
 
@@ -175,7 +188,8 @@ pub async fn push_current_branch(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.push_current_branch(force)
+    engine
+        .push_current_branch(force)
         .map_err(|e| format!("Failed to push: {}", e))
 }
 
@@ -188,7 +202,8 @@ pub async fn fetch_remote(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.fetch_remote(remote_name.as_deref())
+    engine
+        .fetch_remote(remote_name.as_deref())
         .map_err(|e| format!("Failed to fetch: {}", e))
 }
 
@@ -199,7 +214,8 @@ pub async fn discard_all_changes(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.discard_all_changes()
+    engine
+        .discard_all_changes()
         .map_err(|e| format!("Failed to discard changes: {}", e))
 }
 
@@ -210,7 +226,8 @@ pub async fn stage_all_changes(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.stage_all_changes()
+    engine
+        .stage_all_changes()
         .map_err(|e| format!("Failed to stage all changes: {}", e))
 }
 
@@ -221,7 +238,8 @@ pub async fn unstage_all_changes(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.unstage_all_changes()
+    engine
+        .unstage_all_changes()
         .map_err(|e| format!("Failed to unstage all changes: {}", e))
 }
 
@@ -230,9 +248,7 @@ pub async fn open_folder_dialog(app_handle: tauri::AppHandle) -> Result<Option<S
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
 
     // 打开文件夹选择对话框
-    let folder_path = app_handle.dialog()
-        .file()
-        .blocking_pick_folder();
+    let folder_path = app_handle.dialog().file().blocking_pick_folder();
 
     match folder_path {
         Some(path) => {
@@ -243,14 +259,15 @@ pub async fn open_folder_dialog(app_handle: tauri::AppHandle) -> Result<Option<S
                 Ok(_) => Ok(Some(path_str)),
                 Err(_) => {
                     // 如果不是Git仓库，显示错误消息
-                    app_handle.dialog()
+                    app_handle
+                        .dialog()
                         .message("所选文件夹不是一个有效的Git仓库")
                         .kind(MessageDialogKind::Error)
                         .blocking_show();
                     Ok(None)
                 }
             }
-        },
+        }
         None => Ok(None), // 用户取消了选择
     }
 }
@@ -264,7 +281,8 @@ pub async fn get_file_diff(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<FileDiffResult, String> {
     let engine = git_engine.lock().await;
-    engine.get_file_diff_detailed(&request)
+    engine
+        .get_file_diff_detailed(&request)
         .map_err(|e| format!("Failed to get file diff: {}", e))
 }
 
@@ -277,7 +295,8 @@ pub async fn add_to_gitignore(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.add_to_gitignore(&file_paths)
+    engine
+        .add_to_gitignore(&file_paths)
         .map_err(|e| format!("Failed to add to gitignore: {}", e))
 }
 
@@ -290,7 +309,8 @@ pub async fn delete_untracked_files(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.delete_untracked_files(&file_paths)
+    engine
+        .delete_untracked_files(&file_paths)
         .map_err(|e| format!("Failed to delete untracked files: {}", e))
 }
 
@@ -303,7 +323,8 @@ pub async fn delete_tracked_files(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<GitOperationResult, String> {
     let engine = git_engine.lock().await;
-    engine.delete_tracked_files(&file_paths)
+    engine
+        .delete_tracked_files(&file_paths)
         .map_err(|e| format!("Failed to delete tracked files: {}", e))
 }
 
@@ -317,11 +338,13 @@ pub async fn get_staged_diff_summary(
     let engine = git_engine.lock().await;
 
     // 获取Git状态
-    let git_status = engine.get_status()
+    let git_status = engine
+        .get_status()
         .map_err(|e| format!("Failed to get git status: {}", e))?;
 
     // 获取暂存文件列表
-    let staged_files: Vec<String> = git_status.staged_files
+    let staged_files: Vec<String> = git_status
+        .staged_files
         .iter()
         .map(|f| f.path.clone())
         .collect();
@@ -331,7 +354,8 @@ pub async fn get_staged_diff_summary(
     }
 
     // 获取差异摘要
-    engine.get_diff_summary(&staged_files)
+    engine
+        .get_diff_summary(&staged_files)
         .map_err(|e| format!("Failed to get diff summary: {}", e))
 }
 
@@ -352,7 +376,8 @@ pub async fn get_file_stats(path: String) -> Result<FileStats, String> {
 
     match fs::metadata(&path) {
         Ok(metadata) => {
-            let modified = metadata.modified()
+            let modified = metadata
+                .modified()
                 .ok()
                 .and_then(|time| time.duration_since(SystemTime::UNIX_EPOCH).ok())
                 .map(|duration| {
@@ -368,12 +393,10 @@ pub async fn get_file_stats(path: String) -> Result<FileStats, String> {
                 exists: true,
             })
         }
-        Err(_) => {
-            Ok(FileStats {
-                modified: None,
-                size: 0,
-                exists: false,
-            })
-        }
+        Err(_) => Ok(FileStats {
+            modified: None,
+            size: 0,
+            exists: false,
+        }),
     }
 }

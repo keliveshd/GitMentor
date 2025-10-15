@@ -67,6 +67,9 @@
               <div class="template-header">
                 <h4>{{ template.name }}</h4>
                 <div class="template-actions">
+                  <button @click="viewTemplateVersions(template)" class="version-btn" title="查看版本历史">
+                    📋
+                  </button>
                   <button @click="editTemplate(template)" class="edit-btn" title="编辑">
                     ✏️
                   </button>
@@ -74,11 +77,15 @@
               </div>
               <p class="template-description">{{ template.description }}</p>
               <div class="template-meta">
+                <span class="template-version">v{{ template.version || '1.0.0' }}</span>
                 <span class="template-language">{{ getLanguageDisplayName(template.language) }}</span>
                 <span class="template-config">
                   {{ template.enable_emoji ? '🎨' : '' }}
                   {{ template.enable_body ? '📄' : '' }}
                   {{ template.enable_merge_commit ? '🔗' : '' }}
+                </span>
+                <span class="template-type" :class="{ custom: template.is_custom }">
+                  {{ template.is_custom ? '自定义' : '系统' }}
                 </span>
               </div>
             </div>
@@ -144,6 +151,9 @@
                   <button @click="editAITemplate(template)" class="edit-btn" title="编辑模板">
                     ✏️ 编辑
                   </button>
+                  <button @click="showAITemplateVersionHistory(template)" class="history-btn" title="版本历史">
+                    📜 历史
+                  </button>
                 </div>
               </div>
             </div>
@@ -168,6 +178,9 @@
                   </button>
                   <button @click="editAITemplate(template)" class="edit-btn" title="编辑模板">
                     ✏️ 编辑
+                  </button>
+                  <button @click="showAITemplateVersionHistory(template)" class="history-btn" title="版本历史">
+                    📜 历史
                   </button>
                 </div>
               </div>
@@ -384,6 +397,105 @@
       </div>
     </div>
 
+    <!-- 版本历史对话框 -->
+    <el-dialog
+      v-model="versionHistoryVisible"
+      title="模板版本历史"
+      width="800px"
+      class="version-history-dialog"
+    >
+      <div v-if="selectedTemplate" class="version-history-content">
+        <div class="template-info-header">
+          <h3>{{ selectedTemplate.name }}</h3>
+          <p class="template-description">{{ selectedTemplate.description }}</p>
+        </div>
+
+        <div class="versions-list">
+          <div v-if="versionHistory.length === 0" class="no-versions">
+            暂无版本历史
+          </div>
+          <div
+            v-for="version in versionHistory"
+            :key="version.id"
+            class="version-item"
+            :class="{ active: version.id === selectedTemplate.current_version_id }"
+          >
+            <div class="version-header">
+              <div class="version-number">
+                <span class="version-tag">v{{ version.version }}</span>
+                <span v-if="version.is_builtin" class="builtin-tag">系统</span>
+                <span v-if="version.id === selectedTemplate.current_version_id" class="current-tag">当前</span>
+              </div>
+              <div class="version-actions">
+                <el-button
+                  v-if="version.id !== selectedTemplate.current_version_id"
+                  size="small"
+                  type="primary"
+                  @click="switchToVersion(version)"
+                  :loading="switchingVersion"
+                >
+                  切换到此版本
+                </el-button>
+                <el-button
+                  size="small"
+                  @click="viewVersionContent(version)"
+                >
+                  查看内容
+                </el-button>
+              </div>
+            </div>
+
+            <div class="version-details">
+              <div class="version-name">{{ version.name }}</div>
+              <div class="version-description">{{ version.description }}</div>
+              <div class="version-meta">
+                <span class="version-date">
+                  创建时间：{{ formatDate(version.created_at) }}
+                </span>
+                <span v-if="version.parent_id" class="version-parent">
+                  基于：{{ getParentVersionName(version.parent_id) }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="versionHistoryVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
+    <!-- 版本内容查看对话框 -->
+    <el-dialog
+      v-model="versionContentVisible"
+      title="版本内容"
+      width="700px"
+      class="version-content-dialog"
+    >
+      <div v-if="selectedVersion" class="version-content">
+        <div class="version-header-info">
+          <h4>v{{ selectedVersion.version }} - {{ selectedVersion.name }}</h4>
+          <p>{{ selectedVersion.description }}</p>
+        </div>
+
+        <div class="content-section">
+          <h5>模板内容：</h5>
+          <el-input
+            v-model="selectedVersion.content"
+            type="textarea"
+            :rows="15"
+            readonly
+            class="content-textarea"
+          />
+        </div>
+      </div>
+
+      <template #footer>
+        <el-button @click="versionContentVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
+
     <!-- AI模板编辑对话框 -->
     <div v-if="showTemplateEditDialog" class="dialog-overlay" @click="handleOverlayClick(closeTemplateEditDialog)">
       <div class="dialog-content template-edit-dialog">
@@ -440,7 +552,7 @@
             <div class="version-list">
               <div v-for="version in templateVersions" :key="version.id"
                    :class="['version-item', { active: selectedVersionId === version.id }]"
-                   @click="switchToVersion(version)">
+                   @click="switchAITemplateVersion(version)">
                 <div class="version-info">
                   <div class="version-name">{{ version.name }}</div>
                   <div class="version-desc">{{ version.description }}</div>
@@ -586,6 +698,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
+import { ElMessage } from 'element-plus'
 
 /**
  * 模板配置页面组件
@@ -629,6 +742,14 @@ const showCreateDialog = ref(false)
 const showEditDialog = ref(false)
 const saving = ref(false)
 const globalLanguage = ref('Simplified Chinese')
+
+// 版本历史相关数据
+const versionHistoryVisible = ref(false)
+const versionContentVisible = ref(false)
+const selectedTemplate = ref<PromptTemplate | null>(null)
+const versionHistory = ref<any[]>([])
+const selectedVersion = ref<any | null>(null)
+const switchingVersion = ref(false)
 
 // AI分析相关数据
 const commitAnalysisTemplates = ref<any[]>([])
@@ -732,10 +853,12 @@ const getLanguageDisplayName = (language: string) => {
 // 加载模板数据
 const loadTemplates = async () => {
   try {
-    const [defaultList, customList] = await Promise.all([
-      invoke('get_default_templates') as Promise<PromptTemplate[]>,
-      invoke('get_custom_templates') as Promise<PromptTemplate[]>
-    ])
+    // 使用新的统一模板管理API
+    const templateList = await invoke('get_all_commit_templates') as PromptTemplate[]
+
+    // 分离默认模板和自定义模板
+    const defaultList = templateList.filter((t: any) => !t.is_custom)
+    const customList = templateList.filter((t: any) => t.is_custom)
 
     defaultTemplates.value = defaultList
     customTemplates.value = customList
@@ -768,6 +891,71 @@ const saveLanguageSettings = async () => {
   } catch (error) {
     console.error('保存语言设置失败:', error)
   }
+}
+
+// 查看模板版本历史
+const viewTemplateVersions = async (template: PromptTemplate) => {
+  try {
+    selectedTemplate.value = template
+    const versions = await invoke('get_commit_template_version_history', {
+      templateId: template.id
+    })
+    versionHistory.value = versions as any[]
+    versionHistoryVisible.value = true
+  } catch (error) {
+    console.error('获取版本历史失败:', error)
+    showToast('获取版本历史失败', 'error')
+  }
+}
+
+// 切换到指定版本
+const switchToVersion = async (version: any) => {
+  if (!selectedTemplate.value) return
+
+  try {
+    switchingVersion.value = true
+    await invoke('switch_commit_template_version', {
+      templateId: selectedTemplate.value.id,
+      versionId: version.id
+    })
+
+    // 更新当前版本ID
+    selectedTemplate.value.current_version_id = version.id
+    selectedTemplate.value.version = version.version
+    selectedTemplate.value.updated_at = new Date().toISOString()
+
+    // 刷新模板列表
+    await loadTemplates()
+
+    showToast(`已切换到版本 v${version.version}`, 'success')
+    versionHistoryVisible.value = false
+  } catch (error) {
+    console.error('切换版本失败:', error)
+    showToast('切换版本失败', 'error')
+  } finally {
+    switchingVersion.value = false
+  }
+}
+
+// 查看版本内容
+const viewVersionContent = (version: any) => {
+  selectedVersion.value = version
+  versionContentVisible.value = true
+}
+
+// 获取父版本名称
+const getParentVersionName = (parentId: string) => {
+  const parent = versionHistory.value.find(v => v.id === parentId)
+  return parent ? `v${parent.version}` : '未知版本'
+}
+
+// Toast 提示函数
+const showToast = (message: string, type: 'success' | 'error' | 'warning' | 'info' = 'info') => {
+  ElMessage({
+    message,
+    type,
+    duration: 3000
+  })
 }
 
 // 编辑模板
@@ -856,16 +1044,53 @@ const closeDialogs = () => {
 // AI分析方法
 const loadAITemplates = async () => {
   try {
-    const templates: any[] = await invoke('get_ai_analysis_templates')
-    // 分类模板
-    commitAnalysisTemplates.value = templates.filter((t: any) => 
-      t.template_type?.CommitAnalysis
+    const templates: any[] = await invoke('get_all_unified_templates')
+
+    const normalizeTemplate = (template: any) => {
+      const versions = Array.isArray(template.versions) ? template.versions : []
+      const currentVersion = versions.find((v: any) => v.id === template.current_version_id) || versions[0] || {}
+      const templateConfig = (template.template_config && typeof template.template_config === 'object' && !Array.isArray(template.template_config))
+        ? template.template_config
+        : {}
+
+      return {
+        ...templateConfig,
+        id: template.id,
+        name: template.name ?? templateConfig.name,
+        description: template.description ?? templateConfig.description,
+        template_type: templateConfig.template_type ?? template.template_type,
+        template_content: templateConfig.template_content ?? currentVersion?.content ?? '',
+        version: template.system_version || templateConfig.version || currentVersion?.version || '1.0.0',
+        version_name: currentVersion?.name ?? templateConfig.version_name,
+        version_description: currentVersion?.description ?? templateConfig.version_description,
+        is_custom: (typeof template.is_custom === 'boolean' ? template.is_custom : templateConfig.is_custom) || false,
+        template_category: template.template_category ?? templateConfig.template_category,
+        original_template_id: template.original_template_id ?? templateConfig.original_template_id,
+      }
+    }
+
+    const normalizedTemplates = templates.map(normalizeTemplate)
+
+    const templateMatchesType = (template: any, types: string[]) => {
+      const rawType = template.template_type
+      if (typeof rawType === 'string') {
+        return types.includes(rawType)
+      }
+      if (rawType && typeof rawType === 'object') {
+        return Object.keys(rawType).some(key => types.includes(key))
+      }
+      return false
+    }
+
+    commitAnalysisTemplates.value = normalizedTemplates.filter((t: any) =>
+      templateMatchesType(t, ['commit_analysis', 'CommitAnalysis'])
     )
-    summaryTemplates.value = templates.filter((t: any) => 
-      t.template_type?.DailySummary
+
+    summaryTemplates.value = normalizedTemplates.filter((t: any) =>
+      templateMatchesType(t, ['daily_summary', 'DailySummary'])
     )
   } catch (error) {
-    console.error('加载AI模板失败:', error)
+    console.error('Failed to load AI templates:', error)
   }
 }
 
@@ -897,13 +1122,31 @@ const resetToDefaultTemplates = () => {
 }
 
 const getTemplateTypeName = (templateType: any) => {
+  if (!templateType) {
+    return 'Unknown Type'
+  }
+
+  if (typeof templateType === 'string') {
+    switch (templateType) {
+      case 'commit_analysis':
+      case 'CommitAnalysis':
+        return 'Commit Analysis'
+      case 'daily_summary':
+      case 'DailySummary':
+        return 'Daily Summary'
+      default:
+        return templateType
+    }
+  }
+
   if (templateType.CommitAnalysis) {
     const depth = templateType.CommitAnalysis.depth
-    return `提交分析-${depth}`
-  } else if (templateType.DailySummary) {
-    return '日报汇总'
+    return 'Commit Analysis - ' + depth
   }
-  return '未知类型'
+  if (templateType.DailySummary) {
+    return 'Daily Summary'
+  }
+  return 'Unknown Type'
 }
 
 // AI模板查看相关
@@ -963,24 +1206,25 @@ const closeTemplateEditDialog = () => {
 
 const saveAITemplate = async () => {
   if (!currentEditingTemplate.value) return
-  
+
   try {
     saving.value = true
-    await invoke('update_ai_template', {
+    await invoke('update_unified_template', {
       templateId: currentEditingTemplate.value.id,
-      templateContent: templateEditContent.value
+      content: templateEditContent.value,
+      versionName: `v${Date.now()}`,
+      versionDescription: 'AI模板更新'
     })
-    
+
     // 重新加载模板
     await loadAITemplates()
     closeTemplateEditDialog()
-    
+
     // 显示成功提示
-    // TODO: 添加toast提示
-    console.log('模板保存成功')
+    ElMessage.success('模板保存成功')
   } catch (error) {
     console.error('保存AI模板失败:', error)
-    // TODO: 显示错误提示
+    ElMessage.error('保存失败: ' + error)
   } finally {
     saving.value = false
   }
@@ -1047,12 +1291,12 @@ const loadTemplateVersions = async () => {
   }
 }
 
-// 切换到指定版本
-const switchToVersion = async (version: any) => {
+// 切换AI模板到指定版本
+const switchAITemplateVersion = async (version: any) => {
   if (!currentEditingTemplate.value || version.id === selectedVersionId.value) return
 
   try {
-    await invoke('switch_template_version', {
+    await invoke('switch_unified_template_version', {
       templateId: currentEditingTemplate.value.id,
       versionId: version.id
     })
@@ -1063,9 +1307,27 @@ const switchToVersion = async (version: any) => {
 
     // 重新加载模板列表以更新状态
     await loadAITemplates()
+
+    showToast(`已切换到版本: ${version.name || version.version}`, 'success')
   } catch (error) {
     console.error('切换版本失败:', error)
-    alert('切换版本失败: ' + error)
+    showToast('切换版本失败: ' + error, 'error')
+  }
+}
+
+// AI分析模板版本历史
+const showAITemplateVersionHistory = async (template: any) => {
+  try {
+    console.log('获取AI模板版本历史:', template.id)
+    const versions = await invoke('get_unified_template_version_history', {
+      templateId: template.id
+    })
+    console.log('AI模板版本历史:', versions)
+    versionHistory.value = versions as any[]
+    versionHistoryVisible.value = true
+  } catch (error) {
+    console.error('获取AI模板版本历史失败:', error)
+    showToast('获取AI模板版本历史失败', 'error')
   }
 }
 
@@ -1106,7 +1368,7 @@ const createNewVersion = async () => {
 // 检查模板更新
 const checkTemplateUpdates = async () => {
   try {
-    const updates = await invoke('get_template_system_updates') as any[]
+    const updates = await invoke('get_system_template_updates') as any[]
     templateUpdates.value = updates
   } catch (error) {
     console.error('检查模板更新失败:', error)
@@ -1117,7 +1379,7 @@ const checkTemplateUpdates = async () => {
 const applyTemplateUpdate = async (templateId: string) => {
   try {
     if (confirm('确定要应用此系统更新吗？这将为模板创建一个新版本。')) {
-      await invoke('apply_template_system_update', { templateId })
+      await invoke('apply_system_template_update', { templateId })
 
       // 重新加载模板和更新列表
       await loadAITemplates()
@@ -2342,4 +2604,157 @@ input:checked + .slider:before {
   white-space: pre-wrap;
   word-wrap: break-word;
 }
+
+/* 版本历史对话框样式 */
+.version-history-dialog .template-info-header {
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.version-history-dialog .template-info-header h3 {
+  margin: 0 0 8px 0;
+  color: #303133;
+  font-size: 18px;
+}
+
+.version-history-dialog .template-description {
+  margin: 0;
+  color: #606266;
+  font-size: 14px;
+}
+
+.versions-list {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.no-versions {
+  text-align: center;
+  padding: 40px;
+  color: #909399;
+  font-size: 14px;
+}
+
+.version-item {
+  border: 1px solid #e4e7ed;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  padding: 16px;
+  transition: all 0.2s;
+}
+
+.version-item:hover {
+  border-color: #409eff;
+  box-shadow: 0 2px 8px rgba(64, 158, 255, 0.1);
+}
+
+.version-item.active {
+  border-color: #67c23a;
+  background-color: #f0f9ff;
+}
+
+.version-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.version-number {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.version-tag {
+  background: #409eff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: bold;
+}
+
+.builtin-tag {
+  background: #e6a23c;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.current-tag {
+  background: #67c23a;
+  color: white;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+}
+
+.version-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.version-details {
+  color: #606266;
+}
+
+.version-name {
+  font-weight: 500;
+  margin-bottom: 4px;
+  color: #303133;
+}
+
+.version-description {
+  font-size: 13px;
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.version-meta {
+  font-size: 12px;
+  color: #909399;
+  display: flex;
+  gap: 16px;
+}
+
+/* 版本内容查看对话框样式 */
+.version-content-dialog .version-header-info {
+  margin-bottom: 20px;
+  padding-bottom: 15px;
+  border-bottom: 1px solid #e4e7ed;
+}
+
+.version-content-dialog .version-header-info h4 {
+  margin: 0 0 8px 0;
+  color: #303133;
+  font-size: 16px;
+}
+
+.version-content-dialog .version-header-info p {
+  margin: 0;
+  color: #606266;
+  font-size: 14px;
+}
+
+.content-section h5 {
+  margin: 0 0 10px 0;
+  color: #303133;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.content-textarea {
+  font-family: 'Consolas', 'Monaco', monospace;
+}
+
+.content-textarea :deep(.el-textarea__inner) {
+  font-family: 'Consolas', 'Monaco', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: none;
+}
 </style>
+

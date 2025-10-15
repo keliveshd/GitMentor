@@ -4,8 +4,8 @@
   "version": "0.2.1",
   "identifier": "com.gitmentor-lite.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev -- --port 1423",
+    "devUrl": "http://localhost:1423",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },

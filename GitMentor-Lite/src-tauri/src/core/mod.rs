@@ -24,5 +24,6 @@ pub mod prompt_manager;
 pub mod providers;
 pub mod report_engine;
 pub mod response_cleaner;
+pub mod unified_template_manager;
 pub mod update_manager;
 pub mod versioned_template_manager;

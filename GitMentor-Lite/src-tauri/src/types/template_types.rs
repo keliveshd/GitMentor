@@ -1,5 +1,5 @@
-use serde::{Deserialize, Serialize};
 use anyhow;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 /// 模板版本信息
@@ -46,6 +46,12 @@ pub struct TemplateConfigWithVersions {
     pub is_custom: bool,
     /// 原始系统模板ID（如果是基于系统模板修改的）
     pub original_template_id: Option<String>,
+    /// 系统版本号（用于系统模板更新检测）
+    pub system_version: Option<String>,
+    /// 模板类别（用于区分不同类型的模板）
+    pub template_category: Option<String>,
+    /// 模板配置（如提交类型、表情符号等）
+    pub template_config: Option<serde_json::Value>,
 }
 
 /// 模板更新请求
@@ -144,6 +150,9 @@ impl TemplateConfigWithVersions {
             updated_at: chrono::Utc::now().to_rfc3339(),
             is_custom: false,
             original_template_id: None,
+            system_version: None,
+            template_category: None,
+            template_config: None,
         }
     }
 
@@ -167,6 +176,9 @@ impl TemplateConfigWithVersions {
             updated_at: chrono::Utc::now().to_rfc3339(),
             is_custom: true,
             original_template_id,
+            system_version: None,
+            template_category: None,
+            template_config: None,
         }
     }
 
