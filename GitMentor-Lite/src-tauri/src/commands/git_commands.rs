@@ -15,13 +15,35 @@ use tokio::sync::Mutex;
 #[tauri::command]
 pub async fn select_repository(
     path: String,
+    app_handle: tauri::AppHandle,
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<String, String> {
     let mut engine = git_engine.lock().await;
     engine
         .open_repository(&path)
         .map_err(|e| format!("Failed to open repository: {}", e))?;
+    engine
+        .start_repo_watcher(app_handle)
+        .map_err(|e| format!("Failed to start repository watcher: {}", e))?;
     Ok("Repository opened successfully".to_string())
+}
+
+#[tauri::command]
+pub async fn close_repository(
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<(), String> {
+    let mut engine = git_engine.lock().await;
+    engine.close_repository();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn stop_repo_watcher(
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<(), String> {
+    let mut engine = git_engine.lock().await;
+    engine.stop_repo_watcher();
+    Ok(())
 }
 
 #[tauri::command]

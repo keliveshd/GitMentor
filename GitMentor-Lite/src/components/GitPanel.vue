@@ -1043,10 +1043,10 @@ const openRepository = async () => {
 const openRepoByPath = async (path: string) => {
   try {
     setLoading(true, '正在选择仓库...')
-    currentRepoPath.value = path
 
-    // 清空之前的提示信息和状态
-    clearRepositoryState()
+    await clearRepositoryState()
+
+    currentRepoPath.value = path
 
     setLoading(true, '正在初始化仓库...')
     await invoke('select_repository', { path })
@@ -1057,29 +1057,35 @@ const openRepoByPath = async (path: string) => {
     setLoading(true, '正在加载提交历史...')
     await refreshHistory()
 
-    setLoading(true, '正在保存配置...')
-    // 保存到最近仓库列表
+    setLoading(true, '正在缓存配置...')
     RecentReposManager.addRecentRepo(path)
     loadRecentRepos()
 
-    // 关闭下拉菜单
     showRecentDropdown.value = false
 
     setLoading(true, '完成')
     setTimeout(() => setLoading(false), 500)
 
-    // 启动文件监控 - Author: Evilek, Date: 2025-01-15
-    startFileWatcher()
+    await ensureRepoWatcherListener()
   } catch (error) {
     console.error('打开仓库失败:', error)
     toast.error(`打开仓库失败: ${error}`, '操作失败')
     setLoading(false)
-    // 重置仓库路径
     currentRepoPath.value = ''
-    // 停止文件监控
-    stopFileWatcher()
+
+    if (repoWatcherDebounce) {
+      clearTimeout(repoWatcherDebounce)
+      repoWatcherDebounce = null
+    }
+
+    try {
+      await invoke('close_repository')
+    } catch (closeError) {
+      console.warn('关闭仓库时出错:', closeError)
+    }
   }
 }
+
 
 // 智能防抖刷新Git状态
 const refreshGitStatus = async (force = false) => {
@@ -1175,79 +1181,52 @@ const scheduleRefresh = () => {
   }, OPERATION_BATCH_DELAY)
 }
 
-// 文件监控功能 - Author: Evilek, Date: 2025-01-15
-const startFileWatcher = () => {
-  if (!currentRepoPath.value) return
+// Repository change listener - Updated: 2025-10-15
+const GIT_STATUS_EVENT = 'git-status::dirty'
+const REPO_EVENT_DEBOUNCE = 500
+let repoWatcherUnlisten: (() => void) | null = null
+let repoWatcherDebounce: number | null = null
 
-  console.log('🔍 启动文件监控，仓库路径:', currentRepoPath.value)
-
-  fileWatchInterval = setInterval(async () => {
-    try {
-      await checkFileChanges()
-    } catch (error) {
-      console.warn('文件监控检查失败:', error)
-    }
-  }, FILE_WATCH_INTERVAL)
-}
-
-const stopFileWatcher = () => {
-  if (fileWatchInterval) {
-    clearInterval(fileWatchInterval)
-    fileWatchInterval = null
-    console.log('🛑 停止文件监控')
+const ensureRepoWatcherListener = async () => {
+  if (repoWatcherUnlisten) {
+    return
   }
-  fileModificationTimes.value.clear()
-}
-
-const checkFileChanges = async () => {
-  if (!currentRepoPath.value || !gitStatus.value) return
-
-  const now = Date.now()
-  if (now - lastFileCheckTime < FILE_WATCH_INTERVAL - 100) {
-    return // 避免过于频繁的检查
-  }
-  lastFileCheckTime = now
 
   try {
-    // 获取当前Git状态中的所有文件
-    const allFiles = [
-      ...(gitStatus.value.staged_files || []),
-      ...(gitStatus.value.unstaged_files || []),
-      ...(gitStatus.value.untracked_files || [])
-    ]
+    repoWatcherUnlisten = await listen(GIT_STATUS_EVENT, (event) => {
+      const payload = (event.payload || {}) as { repository?: string; eventKind?: string }
 
-    let hasChanges = false
-
-    // 检查每个文件的修改时间
-    for (const file of allFiles) {
-      try {
-        const filePath = `${currentRepoPath.value}/${file.path}`
-        const stats = await invoke('get_file_stats', { path: filePath }) as any
-
-        if (stats && stats.modified) {
-          const modTime = new Date(stats.modified).getTime()
-          const lastModTime = fileModificationTimes.value.get(file.path)
-
-          if (lastModTime && modTime > lastModTime) {
-            console.log('🔄 检测到文件变化:', file.path)
-            hasChanges = true
-          }
-
-          fileModificationTimes.value.set(file.path, modTime)
-        }
-      } catch (error) {
-        // 忽略单个文件的检查错误
-        console.debug('检查文件失败:', file.path, error)
+      if (payload.repository && currentRepoPath.value && payload.repository !== currentRepoPath.value) {
+        return
       }
-    }
 
-    // 如果检测到变化，刷新Git状态
-    if (hasChanges) {
-      console.log('🔄 检测到文件变化，自动刷新Git状态')
-      await refreshGitStatus(true)
-    }
+      if (repoWatcherDebounce) {
+        clearTimeout(repoWatcherDebounce)
+      }
+
+      repoWatcherDebounce = window.setTimeout(() => {
+        repoWatcherDebounce = null
+        refreshGitStatus(true).catch(error => {
+          console.warn('自动刷新 Git 状态失败:', error)
+        })
+        refreshHistory().catch(error => {
+          console.warn('自动刷新提交历史失败:', error)
+        })
+      }, REPO_EVENT_DEBOUNCE)
+    })
   } catch (error) {
-    console.warn('文件变化检查失败:', error)
+    console.error('注册仓库文件监听失败:', error)
+  }
+}
+
+const disposeRepoWatcherListener = () => {
+  if (repoWatcherUnlisten) {
+    repoWatcherUnlisten()
+    repoWatcherUnlisten = null
+  }
+  if (repoWatcherDebounce) {
+    clearTimeout(repoWatcherDebounce)
+    repoWatcherDebounce = null
   }
 }
 
@@ -1352,10 +1331,6 @@ const MIN_REFRESH_INTERVAL = 1000 // 最小刷新间隔1秒
 let refreshPromise: Promise<void> | null = null
 
 // 文件监控自动刷新机制 - Author: Evilek, Date: 2025-01-15
-let fileWatchInterval: number | null = null
-let lastFileCheckTime = 0
-const FILE_WATCH_INTERVAL = 3000 // 3秒检查一次文件变化
-const fileModificationTimes = ref<Map<string, number>>(new Map())
 
 const generateCommitMessage = async () => {
   if (!hasCommittableFiles.value) return
@@ -1471,34 +1446,45 @@ const toggleReasoningExpanded = () => {
  * 作者：Evilek
  * 编写日期：2025-08-04
  */
-const clearRepositoryState = () => {
-  // 清空提交相关状态
+const clearRepositoryState = async () => {
+  if (repoWatcherDebounce) {
+    clearTimeout(repoWatcherDebounce)
+    repoWatcherDebounce = null
+  }
+
+  try {
+    await invoke('close_repository')
+  } catch (error) {
+    console.warn('关闭仓库时出错:', error)
+  }
+
+  // 重置提交状态
   commitMessage.value = ''
   isAIGenerated.value = false
   isGenerating.value = false
   generationProgress.value = ''
-  // 清空推理内容 - Author: Evilek, Date: 2025-01-10
   reasoningContent.value = null
   reasoningExpanded.value = false
 
-  // 清空Git状态
+  // 重置Git状态
   gitStatus.value = null
   commitHistory.value = []
 
-  // 清空批量操作状态
+  // 重置批量操作状态
   batchMode.value = false
   selectedFiles.value.clear()
 
-  // 重置其他状态
+  // 重置刷新状态
   isRefreshing.value = false
   refreshCount.value = 0
 
-  // 清空分层提交状态
+  // 重置分层提交状态
   isLayeredCommit.value = false
   layeredProgress.value.visible = false
 
-  console.log('🧹 [GitPanel] 已清空仓库状态')
+  console.log('[GitPanel] 清理当前仓库状态')
 }
+
 
 /**
  * 检查并处理文件token限制
@@ -2280,15 +2266,25 @@ watch(commitMessage, (newValue, oldValue) => {
 })
 
 // 监听仓库路径变化，重新启动文件监控 - Author: Evilek, Date: 2025-01-15
-watch(currentRepoPath, (newPath, oldPath) => {
-  if (oldPath) {
-    stopFileWatcher()
+watch(currentRepoPath, async (newPath, oldPath) => {
+  if (!tauriReady.value) return
+
+  if (!newPath && oldPath) {
+    if (repoWatcherDebounce) {
+      clearTimeout(repoWatcherDebounce)
+      repoWatcherDebounce = null
+    }
+
+    try {
+      await invoke('close_repository')
+    } catch (error) {
+      console.warn('关闭仓库时出错:', error)
+    }
+    return
   }
+
   if (newPath) {
-    // 延迟启动，确保仓库已完全加载
-    setTimeout(() => {
-      startFileWatcher()
-    }, 1000)
+    await ensureRepoWatcherListener()
   }
 })
 
@@ -2322,10 +2318,7 @@ onMounted(async () => {
       // 自动加载上次打开的仓库
       await autoLoadLastRepo()
 
-      // 如果成功加载了仓库，启动文件监控 - Author: Evilek, Date: 2025-01-15
-      if (currentRepoPath.value) {
-        startFileWatcher()
-      }
+      await ensureRepoWatcherListener()
     } else {
       console.error('Tauri API 未正确加载')
     }
@@ -2351,8 +2344,13 @@ onUnmounted(() => {
   // 移除仓库刷新事件监听器 Author: Evilek, Date: 2025-01-10
   window.removeEventListener('refreshRepository', handleRepositoryRefresh)
 
-  // 清理文件监控 - Author: Evilek, Date: 2025-01-15
-  stopFileWatcher()
+  // 清理仓库事件监听
+  disposeRepoWatcherListener()
+
+  void invoke('close_repository').catch(error => {
+    console.debug('关闭仓库时出错:', error)
+  })
+
 
   if (generateTimeout) {
     clearTimeout(generateTimeout)

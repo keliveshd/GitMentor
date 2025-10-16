@@ -192,6 +192,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             greet,
             git_commands::select_repository,
+            git_commands::close_repository,
+            git_commands::stop_repo_watcher,
             git_commands::get_git_status,
             git_commands::generate_commit_message,
             git_commands::stage_files,
