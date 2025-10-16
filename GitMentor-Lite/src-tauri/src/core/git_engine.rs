@@ -1,8 +1,5 @@
 use crate::core::git_config::{GitConfig, GitExecutionMode};
 use crate::debug_log;
-use notify::{
-    Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
-};
 use crate::types::git_types::{
     BranchInfo, CommitInfo, CommitRequest, DiffHunk, DiffLine, DiffLineType, DiffType,
     FileDiffRequest, FileDiffResult, FileStatus, FileStatusType, GitOperationResult,
@@ -10,6 +7,9 @@ use crate::types::git_types::{
 };
 use anyhow::{anyhow, Result};
 use git2::{DiffOptions, Repository, Signature, StatusOptions};
+use notify::{
+    Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -133,42 +133,40 @@ impl GitEngine {
         debug_log!("[DEBUG] 启动仓库文件监控: {}", repo_path_for_event.as_ref());
 
         let mut watcher = RecommendedWatcher::new(
-            move |res: Result<Event, notify::Error>| {
-                match res {
-                    Ok(event) => {
-                        if !GitEngine::should_emit_event(&event.kind) {
-                            return;
-                        }
+            move |res: Result<Event, notify::Error>| match res {
+                Ok(event) => {
+                    if !GitEngine::should_emit_event(&event.kind) {
+                        return;
+                    }
 
-                        let mut should_emit = true;
-                        if let Ok(mut guard) = debounce_for_cb.lock() {
-                            let now = Instant::now();
-                            if let Some(prev) = *guard {
-                                if now.duration_since(prev) < Duration::from_millis(400) {
-                                    should_emit = false;
-                                }
-                            }
-                            if should_emit {
-                                *guard = Some(now);
+                    let mut should_emit = true;
+                    if let Ok(mut guard) = debounce_for_cb.lock() {
+                        let now = Instant::now();
+                        if let Some(prev) = *guard {
+                            if now.duration_since(prev) < Duration::from_millis(400) {
+                                should_emit = false;
                             }
                         }
-
-                        if !should_emit {
-                            return;
-                        }
-
-                        let payload = GitStatusDirtyPayload {
-                            repository: repo_path_for_event.as_ref().clone(),
-                            event_kind: format!("{:?}", event.kind),
-                        };
-
-                        if let Err(err) = app_handle_for_event.emit("git-status::dirty", payload) {
-                            debug_log!("[DEBUG] git-status::dirty 事件发送失败: {}", err);
+                        if should_emit {
+                            *guard = Some(now);
                         }
                     }
-                    Err(err) => {
-                        debug_log!("[DEBUG] 仓库文件监控出现错误: {}", err);
+
+                    if !should_emit {
+                        return;
                     }
+
+                    let payload = GitStatusDirtyPayload {
+                        repository: repo_path_for_event.as_ref().clone(),
+                        event_kind: format!("{:?}", event.kind),
+                    };
+
+                    if let Err(err) = app_handle_for_event.emit("git-status::dirty", payload) {
+                        debug_log!("[DEBUG] git-status::dirty 事件发送失败: {}", err);
+                    }
+                }
+                Err(err) => {
+                    debug_log!("[DEBUG] 仓库文件监控出现错误: {}", err);
                 }
             },
             NotifyConfig::default().with_poll_interval(Duration::from_secs(2)),
@@ -199,10 +197,7 @@ impl GitEngine {
     fn should_emit_event(kind: &EventKind) -> bool {
         matches!(
             kind,
-            EventKind::Modify(_)
-                | EventKind::Create(_)
-                | EventKind::Remove(_)
-                | EventKind::Any
+            EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) | EventKind::Any
         )
     }
 

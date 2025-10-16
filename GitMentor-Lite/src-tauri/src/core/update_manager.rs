@@ -215,23 +215,54 @@ impl UpdateManager {
             return Err(anyhow::anyhow!("Installer file not found"));
         }
 
-        // 使用 Windows msiexec 进行静默安装
+        // 生成安装日志路径（与安装包同目录）
+        let log_path = installer_path.with_file_name(format!(
+            "{}-install.log",
+            installer_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("GitMentorLite")
+        ));
+
+        // 使用 Windows msiexec 进行静默安装并输出日志
         let output = tokio::process::Command::new("msiexec")
-            .args(&[
-                "/i",
-                installer_path.to_str().unwrap(),
-                "/quiet",
-                "/norestart",
-            ])
+            .arg("/i")
+            .arg(installer_path.as_os_str())
+            .arg("/quiet")
+            .arg("/norestart")
+            .arg("/L*v")
+            .arg(&log_path)
             .output()
             .await?;
 
-        if !output.status.success() {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Installation failed: {}", error_msg));
+        if output.status.success() {
+            return Ok(());
         }
 
-        Ok(())
+        let exit_code = output.status.code();
+        let stdout_msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+
+        let mut reason = match exit_code {
+            Some(1603) => String::from(
+                "MSI exit code 1603. 请关闭 GitMentor Lite 或确保具有足够的安装权限后重试。",
+            ),
+            Some(1618) => {
+                String::from("MSI exit code 1618. 另一个安装正在进行中，请完成当前安装后再试。")
+            }
+            Some(code) => format!("MSI exit code {}", code),
+            None => String::from("MSI installer was terminated before completing."),
+        };
+
+        if !stderr_msg.is_empty() {
+            reason.push_str(&format!("；错误输出: {}", stderr_msg));
+        } else if !stdout_msg.is_empty() {
+            reason.push_str(&format!("；输出: {}", stdout_msg));
+        }
+
+        reason.push_str(&format!("；安装日志: {}", log_path.display()));
+
+        Err(anyhow::anyhow!(reason))
     }
 
     /// 规范化版本号（移除 v 前缀）
