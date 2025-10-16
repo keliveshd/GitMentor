@@ -1,5 +1,8 @@
 use crate::core::git_config::{GitConfig, GitExecutionMode};
 use crate::debug_log;
+use notify::{
+    Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
+};
 use crate::types::git_types::{
     BranchInfo, CommitInfo, CommitRequest, DiffHunk, DiffLine, DiffLineType, DiffType,
     FileDiffRequest, FileDiffResult, FileStatus, FileStatusType, GitOperationResult,
@@ -7,9 +10,12 @@ use crate::types::git_types::{
 };
 use anyhow::{anyhow, Result};
 use git2::{DiffOptions, Repository, Signature, StatusOptions};
-use std::path::Path;
+use serde::Serialize;
+use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::time::Instant;
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
+use tauri::{AppHandle, Emitter};
 
 /// Git执行方式枚举
 #[derive(Debug, Clone, PartialEq)]
@@ -21,12 +27,36 @@ pub enum GitMethod {
 
 /// Git引擎，提供类似VSCode的Git功能
 /// 作者：Evilek
-#[derive(Clone)]
 pub struct GitEngine {
     repo_path: Option<String>,
     git_method: GitMethod,
     git_config: GitConfig,
     git_path: Option<String>, // 缓存检测到的Git路径
+    repo_watcher: Option<RepoWatcherHandle>,
+}
+
+impl Clone for GitEngine {
+    fn clone(&self) -> Self {
+        Self {
+            repo_path: self.repo_path.clone(),
+            git_method: self.git_method.clone(),
+            git_config: self.git_config.clone(),
+            git_path: self.git_path.clone(),
+            repo_watcher: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+struct RepoWatcherHandle {
+    watcher: RecommendedWatcher,
+}
+
+#[derive(Debug, Serialize, Clone)]
+struct GitStatusDirtyPayload {
+    repository: String,
+    #[serde(rename = "eventKind")]
+    event_kind: String,
 }
 
 impl GitEngine {
@@ -45,6 +75,7 @@ impl GitEngine {
             git_method,
             git_config,
             git_path,
+            repo_watcher: None,
         }
     }
 
@@ -64,6 +95,7 @@ impl GitEngine {
             git_method,
             git_config,
             git_path,
+            repo_watcher: None,
         }
     }
 
@@ -83,6 +115,95 @@ impl GitEngine {
     #[allow(dead_code)]
     pub fn get_config(&self) -> &GitConfig {
         &self.git_config
+    }
+
+    pub fn start_repo_watcher(&mut self, app_handle: AppHandle) -> Result<()> {
+        let repo_path = self
+            .repo_path
+            .clone()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        self.stop_repo_watcher();
+
+        let repo_path_buf = PathBuf::from(&repo_path);
+        let repo_path_for_event = Arc::new(repo_path);
+        let debounce_for_cb: Arc<StdMutex<Option<Instant>>> = Arc::new(StdMutex::new(None));
+        let app_handle_for_event = app_handle;
+
+        debug_log!("[DEBUG] 启动仓库文件监控: {}", repo_path_for_event.as_ref());
+
+        let mut watcher = RecommendedWatcher::new(
+            move |res: Result<Event, notify::Error>| {
+                match res {
+                    Ok(event) => {
+                        if !GitEngine::should_emit_event(&event.kind) {
+                            return;
+                        }
+
+                        let mut should_emit = true;
+                        if let Ok(mut guard) = debounce_for_cb.lock() {
+                            let now = Instant::now();
+                            if let Some(prev) = *guard {
+                                if now.duration_since(prev) < Duration::from_millis(400) {
+                                    should_emit = false;
+                                }
+                            }
+                            if should_emit {
+                                *guard = Some(now);
+                            }
+                        }
+
+                        if !should_emit {
+                            return;
+                        }
+
+                        let payload = GitStatusDirtyPayload {
+                            repository: repo_path_for_event.as_ref().clone(),
+                            event_kind: format!("{:?}", event.kind),
+                        };
+
+                        if let Err(err) = app_handle_for_event.emit("git-status::dirty", payload) {
+                            debug_log!("[DEBUG] git-status::dirty 事件发送失败: {}", err);
+                        }
+                    }
+                    Err(err) => {
+                        debug_log!("[DEBUG] 仓库文件监控出现错误: {}", err);
+                    }
+                }
+            },
+            NotifyConfig::default().with_poll_interval(Duration::from_secs(2)),
+        )
+        .map_err(|e| anyhow!("Failed to start repository watcher: {}", e))?;
+
+        watcher
+            .watch(&repo_path_buf, RecursiveMode::Recursive)
+            .map_err(|e| anyhow!("Failed to watch repository directory: {}", e))?;
+
+        self.repo_watcher = Some(RepoWatcherHandle { watcher });
+
+        Ok(())
+    }
+
+    pub fn stop_repo_watcher(&mut self) {
+        if self.repo_watcher.is_some() {
+            debug_log!("[DEBUG] 停止仓库文件监控");
+        }
+        self.repo_watcher = None;
+    }
+
+    pub fn close_repository(&mut self) {
+        self.stop_repo_watcher();
+        self.repo_path = None;
+    }
+
+    fn should_emit_event(kind: &EventKind) -> bool {
+        matches!(
+            kind,
+            EventKind::Modify(_)
+                | EventKind::Create(_)
+                | EventKind::Remove(_)
+                | EventKind::Any
+        )
     }
 
     /// 根据配置确定Git执行方式
@@ -741,6 +862,7 @@ impl GitEngine {
 
     pub fn open_repository(&mut self, path: &str) -> Result<()> {
         let _repo = Repository::open(path)?;
+        self.stop_repo_watcher();
         self.repo_path = Some(path.to_string());
         Ok(())
     }
