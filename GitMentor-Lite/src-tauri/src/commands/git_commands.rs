@@ -29,18 +29,14 @@ pub async fn select_repository(
 }
 
 #[tauri::command]
-pub async fn close_repository(
-    git_engine: State<'_, Mutex<GitEngine>>,
-) -> Result<(), String> {
+pub async fn close_repository(git_engine: State<'_, Mutex<GitEngine>>) -> Result<(), String> {
     let mut engine = git_engine.lock().await;
     engine.close_repository();
     Ok(())
 }
 
 #[tauri::command]
-pub async fn stop_repo_watcher(
-    git_engine: State<'_, Mutex<GitEngine>>,
-) -> Result<(), String> {
+pub async fn stop_repo_watcher(git_engine: State<'_, Mutex<GitEngine>>) -> Result<(), String> {
     let mut engine = git_engine.lock().await;
     engine.stop_repo_watcher();
     Ok(())

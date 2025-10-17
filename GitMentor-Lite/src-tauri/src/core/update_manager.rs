@@ -215,23 +215,161 @@ impl UpdateManager {
             return Err(anyhow::anyhow!("Installer file not found"));
         }
 
-        // 使用 Windows msiexec 进行静默安装
-        let output = tokio::process::Command::new("msiexec")
-            .args(&[
-                "/i",
-                installer_path.to_str().unwrap(),
-                "/quiet",
-                "/norestart",
-            ])
-            .output()
-            .await?;
+        // 生成安装日志路径（与安装包同目录）
+        let log_path = installer_path.with_file_name(format!(
+            "{}-install.log",
+            installer_path
+                .file_stem()
+                .and_then(|stem| stem.to_str())
+                .unwrap_or("GitMentorLite")
+        ));
 
-        if !output.status.success() {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Installation failed: {}", error_msg));
+        // 首先尝试以当前权限运行 msiexec
+        let direct_output = Self::run_msiexec(&log_path, installer_path, false).await?;
+        if direct_output.status.success() {
+            return Ok(());
         }
 
-        Ok(())
+        let direct_reason =
+            Self::format_install_error(&direct_output, &log_path, "MSI install failed".to_string());
+
+        // 针对典型的权限问题尝试请求管理员权限重新安装
+        if Self::should_retry_with_elevation(&direct_output) {
+            let elevated_output = Self::run_msiexec(&log_path, installer_path, true).await?;
+
+            if elevated_output.status.success() {
+                return Ok(());
+            }
+
+            // 用户主动取消 UAC 提示
+            if matches!(elevated_output.status.code(), Some(1223)) {
+                let msg = format!(
+                    "用户取消了管理员权限请求，安装未完成；安装日志: {}",
+                    log_path.display()
+                );
+                return Err(anyhow::anyhow!(msg));
+            }
+
+            let elevated_reason = Self::format_install_error(
+                &elevated_output,
+                &log_path,
+                "尝试以管理员身份安装失败".to_string(),
+            );
+            return Err(anyhow::anyhow!(elevated_reason));
+        }
+
+        Err(anyhow::anyhow!(direct_reason))
+    }
+
+    async fn run_msiexec(
+        log_path: &PathBuf,
+        installer_path: &PathBuf,
+        elevated: bool,
+    ) -> Result<std::process::Output> {
+        #[cfg(target_os = "windows")]
+        {
+            if elevated {
+                let installer_arg = installer_path.to_string_lossy().replace('\'', "''");
+                let log_arg = log_path.to_string_lossy().replace('\'', "''");
+                let script = format!(
+                    "$process = Start-Process msiexec -ArgumentList '/i','{}','/quiet','/norestart','/L*v','{}' -Verb RunAs -WindowStyle Hidden -Wait -PassThru; exit $process.ExitCode",
+                    installer_arg, log_arg
+                );
+
+                let output = tokio::process::Command::new("powershell")
+                    .arg("-NoProfile")
+                    .arg("-Command")
+                    .arg(script)
+                    .output()
+                    .await
+                    .map_err(|e| anyhow::anyhow!("启动提升权限安装失败: {}", e))?;
+
+                return Ok(output);
+            }
+        }
+
+        let output = tokio::process::Command::new("msiexec")
+            .arg("/i")
+            .arg(installer_path.as_os_str())
+            .arg("/quiet")
+            .arg("/norestart")
+            .arg("/L*v")
+            .arg(log_path.as_os_str())
+            .output()
+            .await
+            .map_err(|e| anyhow::anyhow!("执行 msiexec 失败: {}", e))?;
+
+        Ok(output)
+    }
+
+    fn format_install_error(
+        output: &std::process::Output,
+        log_path: &PathBuf,
+        prefix: String,
+    ) -> String {
+        let exit_code = output.status.code();
+        let stdout_msg = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr_msg = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let combined = format!("{} {}", stderr_msg, stdout_msg).to_lowercase();
+
+        let detail = match exit_code {
+            Some(1603) => {
+                if combined.contains("error 1730")
+                    || combined.contains("administrator to remove")
+                    || combined.contains("need to be an administrator")
+                {
+                    "MSI exit code 1603（权限不足）。检测到 Error 1730：需要管理员权限才能卸载旧版本，请接受管理员权限提示或以管理员身份运行 GitMentor Lite。"
+                        .to_string()
+                } else if combined.contains("error 1925")
+                    || combined.contains("insufficient privileges")
+                {
+                    "MSI exit code 1603（权限不足）。检测到 Error 1925：当前用户权限不足，请以管理员身份重试。".to_string()
+                } else if combined.contains("error 1303") {
+                    "MSI exit code 1603。目录权限不足，请确认安装目录可写或使用管理员权限运行安装。"
+                        .to_string()
+                } else {
+                    "MSI exit code 1603。请确认 GitMentor Lite 已关闭，并且具有足够的安装权限。"
+                        .to_string()
+                }
+            }
+            Some(1618) => {
+                "MSI exit code 1618。另一个安装正在进行中，请完成当前安装后再试。".to_string()
+            }
+            Some(code) => format!("MSI exit code {}", code),
+            None => "MSI installer was terminated before completing.".to_string(),
+        };
+
+        let mut reason = format!("{}：{}", prefix, detail);
+
+        if !stderr_msg.is_empty() {
+            reason.push_str(&format!("；错误输出: {}", stderr_msg));
+        } else if !stdout_msg.is_empty() {
+            reason.push_str(&format!("；输出: {}", stdout_msg));
+        }
+
+        reason.push_str(&format!("；安装日志: {}", log_path.display()));
+        reason
+    }
+
+    fn should_retry_with_elevation(output: &std::process::Output) -> bool {
+        if !cfg!(target_os = "windows") {
+            return false;
+        }
+
+        let exit_code = output.status.code();
+        let combined = format!(
+            "{} {}",
+            String::from_utf8_lossy(&output.stderr),
+            String::from_utf8_lossy(&output.stdout)
+        )
+        .to_lowercase();
+
+        matches!(exit_code, Some(1603 | 1925 | 1303))
+            || combined.contains("error 1730")
+            || combined.contains("error 1925")
+            || combined.contains("administrator to remove")
+            || combined.contains("需要管理员权限")
+            || combined.contains("insufficient privileges")
     }
 
     /// 规范化版本号（移除 v 前缀）
