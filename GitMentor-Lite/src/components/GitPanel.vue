@@ -1056,10 +1056,10 @@ const openRepoByPath = async (path: string) => {
 
     await clearRepositoryState()
 
-    currentRepoPath.value = path
-
     setLoading(true, '正在初始化仓库...')
     await invoke('select_repository', { path })
+
+    currentRepoPath.value = path
 
     setLoading(true, '正在获取Git状态...')
     await refreshGitStatus(true)
@@ -2278,6 +2278,14 @@ watch(commitMessage, (newValue, oldValue) => {
 // 监听仓库路径变化，重新启动文件监控 - Author: Evilek, Date: 2025-01-15
 watch(currentRepoPath, async (newPath, oldPath) => {
   if (!tauriReady.value) return
+
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(
+      new CustomEvent('gitflow:repo-changed', {
+        detail: { path: newPath || '' }
+      })
+    )
+  }
 
   if (!newPath && oldPath) {
     if (repoWatcherDebounce) {

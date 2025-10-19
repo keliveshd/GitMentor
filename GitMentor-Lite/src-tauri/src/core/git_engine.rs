@@ -8,7 +8,7 @@ use crate::types::git_types::{
     StageRequest,
 };
 use anyhow::{anyhow, Result};
-use chrono::{DateTime, FixedOffset, Utc};
+use chrono::{FixedOffset, Utc};
 use git2::{BranchType, DiffOptions, Repository, Signature, StatusOptions};
 use notify::{
     Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
@@ -3630,3 +3630,4 @@ impl GitEngine {
         Ok(commits)
     }
 }
+

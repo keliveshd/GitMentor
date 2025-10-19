@@ -24,6 +24,7 @@
     </header>
 
     <p v-if="error" class="error-banner">⚠️ {{ error }}</p>
+    <p v-if="usingSampleData" class="info-banner">当前显示示例数据，打开仓库后可获取真实分支。</p>
 
     <div v-if="activeHotfix" class="hotfix-banner">
       <div class="banner-content">
@@ -142,6 +143,7 @@ const {
   unsyncedBranches,
   activeHotfix,
   bugfixWithSLA,
+  usingSampleData,
   openWizard,
   closeWizard,
   selectBranch,
@@ -281,6 +283,16 @@ onMounted(() => {
   background: #fef2f2;
   color: #dc2626;
   border: 1px solid #fecaca;
+  font-size: 14px;
+}
+
+.info-banner {
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #eef2ff;
+  color: #3730a3;
+  border: 1px solid #c7d2fe;
   font-size: 14px;
 }
 
@@ -493,3 +505,5 @@ onMounted(() => {
   color: #475569;
 }
 </style>
+
+

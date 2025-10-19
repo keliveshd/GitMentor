@@ -79,5 +79,6 @@
 - 搭建 `GitflowDashboard`、`GitflowBranchCard`、`GitflowWizard` 组件骨架，与现有 `GitPanel` Tab 导航集成。
 - 在 UI 中落地仪表盘布局、分支卡片、详情侧栏与创建向导占位内容，验证故事板的核心交互路径。
 - 第二阶段补充：仪表盘新增 Hotfix 警报横幅、Bugfix SLA 倒计时、分支详情抽屉、AI 草稿卡片与快捷操作占位；向导按照“基线选择→信息填写→操作预览”流程实现表单与校验。
+- Gitflow 面板通过 `gitflow:repo-changed` 事件监听同步消息模块的仓库切换，仓库打开/切换时会自动刷新分支数据。
 - 组件层面加入 `GitflowBranchDetail`、`GitflowStageTimeline`，支持按分支类型展示阶段进度、QA 检查项、热修时间线及待办列表，AI 提示内容与故事板保持一致。
 - 后端新增 `list_gitflow_branches`、`create_gitflow_branch` Tauri 命令，从真实仓库读取分支、计算 ahead/behind 并支持创建+可选推送；前端 `useGitflow` 改为实时调用并处理加载/错误状态。
