@@ -332,7 +332,11 @@
 
     <!-- 日报生成Tab页 -->
     <!-- Author: Evilek, Date: 2025-08-21 -->
-    <div v-show="activeTab === 'daily-report'" class="tab-pane">
+      <div v-show="activeTab === 'gitflow'" class="tab-pane gitflow-pane">
+        <GitflowDashboard />
+      </div>
+
+      <div v-show="activeTab === 'daily-report'" class="tab-pane">
       <div class="daily-report-container">
         <!-- 步骤指示器 -->
         <div class="steps-indicator">
@@ -845,6 +849,7 @@ import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
 import { confirm, globalConfirm } from '../composables/useConfirm'
+import GitflowDashboard from './gitflow/GitflowDashboard.vue'
 
 // 响应式数据
 const currentRepoPath = ref<string>('')
@@ -928,6 +933,11 @@ const tabs = ref([
     id: 'message-generation',
     name: '消息生成',
     icon: '💬'
+  },
+  {
+    id: 'gitflow',
+    name: 'Gitflow 面板',
+    icon: '🔀'
   },
   {
     id: 'daily-report',
@@ -3249,6 +3259,11 @@ const initializeHistoryReports = async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.gitflow-pane {
+  padding: 0 24px 32px;
+  overflow-y: auto;
 }
 
 /* 施工中页面样式 */

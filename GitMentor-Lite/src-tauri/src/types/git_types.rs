@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 /// 文件状态枚举，类似VSCode Git面板
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -172,6 +173,97 @@ pub struct FileDiffResult {
     pub is_binary: bool,
     pub is_new_file: bool,
     pub is_deleted_file: bool,
+}
+
+/// Gitflow 分支类型
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum GitflowBranchType {
+    Feature,
+    Release,
+    Bugfix,
+    Hotfix,
+}
+
+/// Gitflow 分支状态
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum GitflowBranchStatus {
+    Idle,
+    InProgress,
+    AwaitingMerge,
+    Merged,
+}
+
+/// 分支与基线之间差异
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct GitflowDivergence {
+    pub ahead: u32,
+    pub behind: u32,
+}
+
+/// Gitflow 分支信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitflowBranchInfo {
+    pub id: String,
+    pub name: String,
+    pub branch_type: GitflowBranchType,
+    pub base: String,
+    pub status: GitflowBranchStatus,
+    pub created_at: Option<String>,
+    pub last_updated_at: Option<String>,
+    pub latest_commit: Option<String>,
+    #[serde(default)]
+    pub divergence: GitflowDivergence,
+    pub upstream: Option<String>,
+    pub is_current: bool,
+}
+
+/// Gitflow 配置
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitflowConfig {
+    pub develop_branch: String,
+    pub main_branch: String,
+    pub feature_prefix: String,
+    pub release_prefix: String,
+    pub bugfix_prefix: String,
+    pub hotfix_prefix: String,
+}
+
+impl Default for GitflowConfig {
+    fn default() -> Self {
+        Self {
+            develop_branch: "develop".to_string(),
+            main_branch: "main".to_string(),
+            feature_prefix: "feature/".to_string(),
+            release_prefix: "release/".to_string(),
+            bugfix_prefix: "bugfix/".to_string(),
+            hotfix_prefix: "hotfix/".to_string(),
+        }
+    }
+}
+
+/// Gitflow 概览
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitflowSummary {
+    pub config: GitflowConfig,
+    pub branches: Vec<GitflowBranchInfo>,
+}
+
+/// 创建 Gitflow 分支请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitflowCreateRequest {
+    pub branch_type: GitflowBranchType,
+    pub branch_name: String,
+    pub base_branch: Option<String>,
+    pub auto_push: bool,
+    #[serde(default)]
+    pub metadata: HashMap<String, String>,
 }
 
 // 日报生成相关数据结构 - Author: Evilek, Date: 2025-08-21

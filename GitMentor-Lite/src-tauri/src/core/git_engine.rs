@@ -3,10 +3,13 @@ use crate::debug_log;
 use crate::types::git_types::{
     BranchInfo, CommitInfo, CommitRequest, DiffHunk, DiffLine, DiffLineType, DiffType,
     FileDiffRequest, FileDiffResult, FileStatus, FileStatusType, GitOperationResult,
-    GitStatusResult, RevertRequest, RevertType, StageRequest,
+    GitStatusResult, GitflowBranchInfo, GitflowBranchStatus, GitflowBranchType, GitflowConfig,
+    GitflowCreateRequest, GitflowDivergence, GitflowSummary, RevertRequest, RevertType,
+    StageRequest,
 };
 use anyhow::{anyhow, Result};
-use git2::{DiffOptions, Repository, Signature, StatusOptions};
+use chrono::{DateTime, FixedOffset, Utc};
+use git2::{BranchType, DiffOptions, Repository, Signature, StatusOptions};
 use notify::{
     Config as NotifyConfig, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher,
 };
@@ -192,6 +195,222 @@ impl GitEngine {
     pub fn close_repository(&mut self) {
         self.stop_repo_watcher();
         self.repo_path = None;
+    }
+
+    pub fn list_gitflow_branches(&self) -> Result<GitflowSummary> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+        let repo = Repository::open(repo_path)?;
+        let config = self.get_gitflow_config();
+
+        let head_name = repo
+            .head()
+            .ok()
+            .and_then(|head| head.shorthand().map(|s| s.to_string()));
+
+        let mut branches = Vec::new();
+        let mut branch_iter = repo.branches(Some(BranchType::Local))?;
+
+        while let Some(branch_result) = branch_iter.next() {
+            let (branch, _) = branch_result?;
+            let branch_name_opt = branch.name()?;
+            let branch_name = match branch_name_opt {
+                Some(name) => name.to_string(),
+                None => continue,
+            };
+
+            if branch_name == config.develop_branch || branch_name == config.main_branch {
+                continue;
+            }
+
+            let branch_type = match Self::classify_gitflow_branch(&branch_name, &config) {
+                Some(branch_type) => branch_type,
+                None => continue,
+            };
+
+            let upstream = branch
+                .upstream()
+                .ok()
+                .and_then(|up| up.name().ok().flatten().map(|s| s.to_string()));
+
+            let reference = branch.into_reference();
+            let target = match reference.target() {
+                Some(oid) => oid,
+                None => continue,
+            };
+
+            let commit = repo
+                .find_commit(target)
+                .map_err(|e| anyhow!("Failed to read branch commit: {}", e))?;
+            let last_updated_at = Some(Self::format_git_time(commit.time()));
+            let created_at = last_updated_at.clone();
+            let latest_commit = commit.summary().map(|s| s.to_string());
+
+            let base_branch_name = Self::resolve_base_branch(&branch_type, &config);
+            let divergence = if let Ok(base_branch) =
+                repo.find_branch(&base_branch_name, BranchType::Local)
+            {
+                if let Some(base_target) = base_branch.into_reference().target() {
+                    let (ahead, behind) =
+                        repo.graph_ahead_behind(target, base_target).unwrap_or((0, 0));
+                    GitflowDivergence {
+                        ahead: ahead as u32,
+                        behind: behind as u32,
+                    }
+                } else {
+                    GitflowDivergence::default()
+                }
+            } else {
+                GitflowDivergence::default()
+            };
+
+            let status = Self::infer_gitflow_status(&branch_type, &divergence);
+
+            branches.push(GitflowBranchInfo {
+                id: branch_name.clone(),
+                name: branch_name.clone(),
+                branch_type,
+                base: base_branch_name,
+                status,
+                created_at,
+                last_updated_at,
+                latest_commit,
+                divergence,
+                upstream,
+                is_current: head_name
+                    .as_ref()
+                    .map(|current| current == &branch_name)
+                    .unwrap_or(false),
+            });
+        }
+
+        branches.sort_by(|a, b| a.name.cmp(&b.name));
+
+        Ok(GitflowSummary { config, branches })
+    }
+
+    pub fn create_gitflow_branch(
+        &self,
+        request: &GitflowCreateRequest,
+    ) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+        let repo = Repository::open(repo_path)?;
+        let branch_name = request.branch_name.trim();
+        if branch_name.is_empty() {
+            return Err(anyhow!("分支名称不能为空"));
+        }
+
+        if repo.find_branch(branch_name, BranchType::Local).is_ok() {
+            return Err(anyhow!("分支 {} 已存在", branch_name));
+        }
+
+        let config = self.get_gitflow_config();
+        let default_base = Self::resolve_base_branch(&request.branch_type, &config);
+        let base_branch_name = request
+            .base_branch
+            .as_ref()
+            .filter(|name| !name.trim().is_empty())
+            .cloned()
+            .unwrap_or(default_base.clone());
+
+        let base_branch = repo
+            .find_branch(&base_branch_name, BranchType::Local)
+            .map_err(|_| anyhow!("找不到基线分支 {}", base_branch_name))?;
+        let base_commit = base_branch
+            .into_reference()
+            .peel_to_commit()
+            .map_err(|e| anyhow!("无法获取基线分支提交: {}", e))?;
+
+        repo.branch(branch_name, &base_commit, false)
+            .map_err(|e| anyhow!("创建分支失败: {}", e))?;
+
+        if request.auto_push {
+            let git_command = self.get_git_command();
+            let output = Self::create_hidden_command(&git_command)
+                .current_dir(repo_path)
+                .args(["push", "-u", "origin", branch_name])
+                .output()
+                .map_err(|e| anyhow!("推送分支失败: {}", e))?;
+
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(anyhow!("推送分支失败: {}", stderr.trim()));
+            }
+        }
+
+        Ok(GitOperationResult {
+            success: true,
+            message: format!("已创建分支 {}", branch_name),
+            details: Some(format!(
+                "基线：{}；类型：{:?}",
+                base_branch_name, request.branch_type
+            )),
+        })
+    }
+
+    fn get_gitflow_config(&self) -> GitflowConfig {
+        // TODO: 支持从配置文件加载 Gitflow 设置
+        GitflowConfig::default()
+    }
+
+    fn classify_gitflow_branch(
+        branch_name: &str,
+        config: &GitflowConfig,
+    ) -> Option<GitflowBranchType> {
+        if branch_name.starts_with(&config.feature_prefix) {
+            Some(GitflowBranchType::Feature)
+        } else if branch_name.starts_with(&config.release_prefix) {
+            Some(GitflowBranchType::Release)
+        } else if branch_name.starts_with(&config.bugfix_prefix) {
+            Some(GitflowBranchType::Bugfix)
+        } else if branch_name.starts_with(&config.hotfix_prefix) {
+            Some(GitflowBranchType::Hotfix)
+        } else {
+            None
+        }
+    }
+
+    fn resolve_base_branch(branch_type: &GitflowBranchType, config: &GitflowConfig) -> String {
+        match branch_type {
+            GitflowBranchType::Hotfix => config.main_branch.clone(),
+            _ => config.develop_branch.clone(),
+        }
+    }
+
+    fn infer_gitflow_status(
+        branch_type: &GitflowBranchType,
+        divergence: &GitflowDivergence,
+    ) -> GitflowBranchStatus {
+        if divergence.ahead == 0 && divergence.behind == 0 {
+            match branch_type {
+                GitflowBranchType::Feature | GitflowBranchType::Bugfix => GitflowBranchStatus::Idle,
+                GitflowBranchType::Release | GitflowBranchType::Hotfix => {
+                    GitflowBranchStatus::AwaitingMerge
+                }
+            }
+        } else if divergence.behind > 0 {
+            GitflowBranchStatus::AwaitingMerge
+        } else {
+            GitflowBranchStatus::InProgress
+        }
+    }
+
+    fn format_git_time(time: git2::Time) -> String {
+        let seconds = time.seconds();
+        let offset_minutes = time.offset_minutes();
+        let offset =
+            FixedOffset::east_opt(offset_minutes * 60).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+
+        if let Some(datetime_utc) = chrono::DateTime::<Utc>::from_timestamp(seconds, 0) {
+            datetime_utc.with_timezone(&offset).to_rfc3339()
+        } else {
+            Utc::now().to_rfc3339()
+        }
     }
 
     fn should_emit_event(kind: &EventKind) -> bool {
