@@ -88,7 +88,7 @@
             :branch="branch"
             :is-active="branch.id === selectedBranchId"
             @select="selectBranch"
-            @open-wizard="openWizard"
+            @primary-action="handlePrimaryAction"
             @view-detail="selectBranch"
           />
           <p v-if="!loading && !groupedBranches[type].length" class="empty-placeholder">
@@ -129,7 +129,7 @@ import GitflowBranchCard from './GitflowBranchCard.vue'
 import GitflowBranchDetail from './GitflowBranchDetail.vue'
 import GitflowWizard from './GitflowWizard.vue'
 import { useGitflow, branchTypeMeta } from '../../composables/useGitflow'
-import type { GitflowBranchType, GitflowWizardState } from '../../composables/useGitflow'
+import type { GitflowBranch, GitflowBranchType, GitflowWizardState } from '../../composables/useGitflow'
 
 const {
   loading,
@@ -169,6 +169,10 @@ const configSnapshot = computed(() => {
 })
 
 const refresh = () => fetchGitflowBranches()
+
+const handlePrimaryAction = (branch: GitflowBranch) => {
+  selectBranch(branch.id)
+}
 
 const handleSubmitWizard = async (state: GitflowWizardState) => {
   await createGitflowBranch({
@@ -463,12 +467,13 @@ onMounted(() => {
 
 .gitflow-detail {
   position: sticky;
-  bottom: 16px;
+  top: 96px;
   align-self: flex-end;
-  margin-top: -8px;
-  margin-right: 4px;
+  margin-left: auto;
   padding: 20px 24px;
   width: min(440px, 100%);
+  max-height: calc(100vh - 140px);
+  overflow-y: auto;
   border: 1px solid #cbd5f5;
   border-radius: 16px;
   background: #ffffff;

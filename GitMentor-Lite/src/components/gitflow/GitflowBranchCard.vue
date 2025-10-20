@@ -50,8 +50,8 @@
     </div>
 
     <footer class="card-footer">
-      <button class="card-action" @click.stop="$emit('open-wizard', branch.branchType)">
-        快速操作
+      <button class="card-action" @click.stop="handlePrimaryAction">
+        {{ primaryActionLabel }}
       </button>
       <button class="card-action secondary" @click.stop="$emit('view-detail', branch.id)">
         查看详情
@@ -62,17 +62,17 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import type { GitflowBranch, GitflowBranchType } from '../../composables/useGitflow'
+import type { GitflowBranch } from '../../composables/useGitflow'
 import { branchTypeMeta } from '../../composables/useGitflow'
 
-interface Props {
+type Props = {
   branch: GitflowBranch
   isActive?: boolean
 }
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'select', id: string): void
-  (e: 'open-wizard', type: GitflowBranchType): void
+  (e: 'primary-action', branch: GitflowBranch): void
   (e: 'view-detail', id: string): void
 }>()
 
@@ -129,6 +129,27 @@ const riskLabel = computed(() => {
       return '未知'
   }
 })
+
+const primaryActionLabel = computed(() => {
+  const { branchType, status } = props.branch
+  if (branchType === 'release') {
+    return status === 'awaiting_merge' ? '完成发布' : '准备发布'
+  }
+  if (branchType === 'hotfix') {
+    return status === 'awaiting_merge' ? '完成回流' : '验证热修'
+  }
+  if (branchType === 'bugfix') {
+    return status === 'awaiting_merge' ? '完成合并' : '提交回归'
+  }
+  if (status === 'awaiting_merge') {
+    return '准备合并'
+  }
+  return '继续推进'
+})
+
+const handlePrimaryAction = () => {
+  emit('primary-action', props.branch)
+}
 </script>
 
 <style scoped>

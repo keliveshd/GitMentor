@@ -152,8 +152,6 @@ const gitflowWizard = reactive<GitflowWizardState>({
   autoPush: false
 })
 
-applySampleData()
-
 let repoChangeListener: ((event: CustomEvent<{ path?: string }>) => void) | null = null
 let repoListenerRefCount = 0
 
@@ -252,6 +250,7 @@ const sampleBranches = (): GitflowBranch[] => [
     branchType: 'feature',
     base: 'develop',
     status: 'in_progress',
+    isCurrent: false,
     createdAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
     lastUpdatedAt: new Date().toISOString(),
     latestCommit: 'feat: 添加 Gitflow 仪表盘骨架',
@@ -288,6 +287,7 @@ const sampleBranches = (): GitflowBranch[] => [
     branchType: 'release',
     base: 'develop',
     status: 'awaiting_merge',
+    isCurrent: false,
     createdAt: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(),
     lastUpdatedAt: new Date().toISOString(),
     latestCommit: 'chore: bump version to v1.8.0',
@@ -319,6 +319,7 @@ const sampleBranches = (): GitflowBranch[] => [
     branchType: 'bugfix',
     base: 'develop',
     status: 'in_progress',
+    isCurrent: false,
     createdAt: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
     lastUpdatedAt: new Date().toISOString(),
     latestCommit: 'fix: reduce input debounce',
@@ -349,6 +350,7 @@ const sampleBranches = (): GitflowBranch[] => [
     branchType: 'hotfix',
     base: 'main',
     status: 'awaiting_merge',
+    isCurrent: false,
     createdAt: new Date(Date.now() - 5 * 60 * 60 * 1000).toISOString(),
     lastUpdatedAt: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
     latestCommit: 'fix: guard tz calculation on DST switch',
@@ -400,6 +402,8 @@ const applySampleData = () => {
   usingSampleData.value = true
 }
 
+applySampleData()
+
 const fetchGitflowBranches = async () => {
   try {
     loading.value = true
@@ -421,9 +425,15 @@ const fetchGitflowBranches = async () => {
     }
   } catch (err) {
     console.error('[Gitflow] fetch failed', err)
-    error.value = (err as Error).message || '无法获取 Gitflow 分支信息'
-    if (!gitflowBranches.value.length) {
+    const message = (err as Error).message || '无法获取 Gitflow 分支信息'
+    if (message.includes('No repository opened')) {
+      error.value = '请先在消息生成页选择或打开仓库'
       applySampleData()
+    } else {
+      error.value = message
+      if (!gitflowBranches.value.length) {
+        applySampleData()
+      }
     }
   } finally {
     loading.value = false
@@ -448,6 +458,7 @@ const createGitflowBranch = async (payload: GitflowCreatePayload) => {
         branchType: payload.branchType,
         base: payload.baseBranch ?? getDefaultBaseForType(payload.branchType),
         status: 'in_progress',
+        isCurrent: false,
         createdAt: new Date().toISOString(),
         lastUpdatedAt: new Date().toISOString(),
         divergence: { ahead: 0, behind: 0 },

@@ -257,6 +257,14 @@ pub struct GitflowSummary {
 /// 创建 Gitflow 分支请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitflowActionRequest {
+    pub branch_name: String,
+    pub action: String,
+}
+
 pub struct GitflowCreateRequest {
     pub branch_type: GitflowBranchType,
     pub branch_name: String,

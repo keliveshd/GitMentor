@@ -4,7 +4,7 @@ use crate::types::git_types::{
     BranchInfo, CommitInfo, CommitRequest, DiffHunk, DiffLine, DiffLineType, DiffType,
     FileDiffRequest, FileDiffResult, FileStatus, FileStatusType, GitOperationResult,
     GitStatusResult, GitflowBranchInfo, GitflowBranchStatus, GitflowBranchType, GitflowConfig,
-    GitflowCreateRequest, GitflowDivergence, GitflowSummary, RevertRequest, RevertType,
+    GitflowActionRequest, GitflowCreateRequest, GitflowDivergence, GitflowSummary, RevertRequest, RevertType,
     StageRequest,
 };
 use anyhow::{anyhow, Result};
@@ -289,6 +289,98 @@ impl GitEngine {
         branches.sort_by(|a, b| a.name.cmp(&b.name));
 
         Ok(GitflowSummary { config, branches })
+    }
+
+
+    fn checkout_branch_internal(&self, repo_path: &str, branch: &str) -> Result<()> {
+        let git_command = self.get_git_command();
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(["checkout", branch])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("切换分支失败: {}", stderr.trim()));
+        }
+
+        Ok(())
+    }
+
+    fn merge_branch_into(&self, repo_path: &str, source: &str, target: &str) -> Result<()> {
+        self.checkout_branch_internal(repo_path, target)?;
+        let git_command = self.get_git_command();
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(["merge", "--no-ff", source])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("合并 {} 到 {} 失败: {}", source, target, stderr.trim()));
+        }
+
+        Ok(())
+    }
+
+    fn get_current_branch_name(&self, repo_path: &str) -> Result<String> {
+        let git_command = self.get_git_command();
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(["rev-parse", "--abbrev-ref", "HEAD"])
+            .output()?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("无法获取当前分支: {}", stderr.trim()));
+        }
+
+        Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
+    }
+
+
+    pub fn execute_gitflow_action(&self, request: &GitflowActionRequest) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+        let config = self.get_gitflow_config();
+        let current_branch = self.get_current_branch_name(repo_path)?;
+
+        let result = (|| -> Result<()> {
+            match request.action.as_str() {
+                "finish_feature" => {
+                    self.merge_branch_into(repo_path, &request.branch_name, &config.develop_branch)?;
+                }
+                "finish_bugfix" => {
+                    self.merge_branch_into(repo_path, &request.branch_name, &config.develop_branch)?;
+                }
+                "finish_release" => {
+                    self.merge_branch_into(repo_path, &request.branch_name, &config.main_branch)?;
+                    self.merge_branch_into(repo_path, &request.branch_name, &config.develop_branch)?;
+                }
+                "finish_hotfix" => {
+                    self.merge_branch_into(repo_path, &request.branch_name, &config.main_branch)?;
+                    self.merge_branch_into(repo_path, &request.branch_name, &config.develop_branch)?;
+                }
+                other => {
+                    return Err(anyhow!("未支持的 Gitflow 操作: {}", other));
+                }
+            }
+            Ok(())
+        })();
+
+        // 尝试切回原分支
+        let _ = self.checkout_branch_internal(repo_path, &current_branch);
+
+        match result {
+            Ok(_) => Ok(GitOperationResult {
+                success: true,
+                message: format!("已完成操作: {}", request.action),
+                details: Some(format!("目标分支: {}", request.branch_name)),
+            }),
+            Err(err) => Err(err)
+        }
     }
 
     pub fn create_gitflow_branch(

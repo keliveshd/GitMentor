@@ -853,6 +853,12 @@ import GitflowDashboard from './gitflow/GitflowDashboard.vue'
 
 // 响应式数据
 const currentRepoPath = ref<string>('')
+
+const emitRepoChangedEvent = (path: string) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('gitflow:repo-changed', { detail: { path } }))
+  }
+}
 const gitStatus = ref<any>(null)
 const commitMessage = ref('')
 const commitHistory = ref<any[]>([])
@@ -1060,6 +1066,7 @@ const openRepoByPath = async (path: string) => {
     await invoke('select_repository', { path })
 
     currentRepoPath.value = path
+    emitRepoChangedEvent(path)
 
     setLoading(true, '正在获取Git状态...')
     await refreshGitStatus(true)
@@ -1082,6 +1089,7 @@ const openRepoByPath = async (path: string) => {
     toast.error(`打开仓库失败: ${error}`, '操作失败')
     setLoading(false)
     currentRepoPath.value = ''
+    emitRepoChangedEvent('')
 
     if (repoWatcherDebounce) {
       clearTimeout(repoWatcherDebounce)
@@ -1467,6 +1475,8 @@ const clearRepositoryState = async () => {
   } catch (error) {
     console.warn('关闭仓库时出错:', error)
   }
+
+  emitRepoChangedEvent('')
 
   // 重置提交状态
   commitMessage.value = ''
@@ -2279,13 +2289,7 @@ watch(commitMessage, (newValue, oldValue) => {
 watch(currentRepoPath, async (newPath, oldPath) => {
   if (!tauriReady.value) return
 
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(
-      new CustomEvent('gitflow:repo-changed', {
-        detail: { path: newPath || '' }
-      })
-    )
-  }
+  emitRepoChangedEvent(newPath || '')
 
   if (!newPath && oldPath) {
     if (repoWatcherDebounce) {
@@ -5633,3 +5637,4 @@ const initializeHistoryReports = async () => {
   margin-top: 2px;
 }
 </style>
+
