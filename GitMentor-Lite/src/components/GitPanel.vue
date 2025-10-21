@@ -332,7 +332,11 @@
 
     <!-- 日报生成Tab页 -->
     <!-- Author: Evilek, Date: 2025-08-21 -->
-    <div v-show="activeTab === 'daily-report'" class="tab-pane">
+      <div v-show="activeTab === 'gitflow'" class="tab-pane gitflow-pane">
+        <GitflowDashboard />
+      </div>
+
+      <div v-show="activeTab === 'daily-report'" class="tab-pane">
       <div class="daily-report-container">
         <!-- 步骤指示器 -->
         <div class="steps-indicator">
@@ -845,9 +849,16 @@ import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
 import { confirm, globalConfirm } from '../composables/useConfirm'
+import GitflowDashboard from './gitflow/GitflowDashboard.vue'
 
 // 响应式数据
 const currentRepoPath = ref<string>('')
+
+const emitRepoChangedEvent = (path: string) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('gitflow:repo-changed', { detail: { path } }))
+  }
+}
 const gitStatus = ref<any>(null)
 const commitMessage = ref('')
 const commitHistory = ref<any[]>([])
@@ -928,6 +939,11 @@ const tabs = ref([
     id: 'message-generation',
     name: '消息生成',
     icon: '💬'
+  },
+  {
+    id: 'gitflow',
+    name: 'Gitflow 面板',
+    icon: '🔀'
   },
   {
     id: 'daily-report',
@@ -1046,10 +1062,11 @@ const openRepoByPath = async (path: string) => {
 
     await clearRepositoryState()
 
-    currentRepoPath.value = path
-
     setLoading(true, '正在初始化仓库...')
     await invoke('select_repository', { path })
+
+    currentRepoPath.value = path
+    emitRepoChangedEvent(path)
 
     setLoading(true, '正在获取Git状态...')
     await refreshGitStatus(true)
@@ -1072,6 +1089,7 @@ const openRepoByPath = async (path: string) => {
     toast.error(`打开仓库失败: ${error}`, '操作失败')
     setLoading(false)
     currentRepoPath.value = ''
+    emitRepoChangedEvent('')
 
     if (repoWatcherDebounce) {
       clearTimeout(repoWatcherDebounce)
@@ -1457,6 +1475,8 @@ const clearRepositoryState = async () => {
   } catch (error) {
     console.warn('关闭仓库时出错:', error)
   }
+
+  emitRepoChangedEvent('')
 
   // 重置提交状态
   commitMessage.value = ''
@@ -2268,6 +2288,8 @@ watch(commitMessage, (newValue, oldValue) => {
 // 监听仓库路径变化，重新启动文件监控 - Author: Evilek, Date: 2025-01-15
 watch(currentRepoPath, async (newPath, oldPath) => {
   if (!tauriReady.value) return
+
+  emitRepoChangedEvent(newPath || '')
 
   if (!newPath && oldPath) {
     if (repoWatcherDebounce) {
@@ -3249,6 +3271,11 @@ const initializeHistoryReports = async () => {
   flex: 1;
   display: flex;
   flex-direction: column;
+}
+
+.gitflow-pane {
+  padding: 0 24px 32px;
+  overflow-y: auto;
 }
 
 /* 施工中页面样式 */
@@ -5610,3 +5637,4 @@ const initializeHistoryReports = async () => {
   margin-top: 2px;
 }
 </style>
+
