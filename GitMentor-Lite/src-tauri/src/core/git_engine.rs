@@ -580,7 +580,13 @@ impl GitEngine {
 
 
 
-        Ok(GitflowSummary { config, branches })
+        let has_origin_remote = repo.find_remote("origin").is_ok();
+
+        Ok(GitflowSummary {
+            config,
+            branches,
+            has_origin_remote,
+        })
 
     }
 

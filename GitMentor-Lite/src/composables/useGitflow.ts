@@ -127,6 +127,7 @@ export interface GitflowBranch {
 export interface GitflowSummary {
   config: GitflowConfig
   branches: GitflowBranch[]
+  hasOriginRemote?: boolean
 }
 
 export interface GitflowWizardState {
@@ -183,6 +184,7 @@ const loading = ref(false)
 const error = ref<string | null>(null)
 const lastSyncedAt = ref<number | null>(null)
 const usingSampleData = ref(false)
+const hasOriginRemote = ref(true)
 
 const gitflowWizard = reactive<GitflowWizardState>({
   visible: false,
@@ -273,31 +275,41 @@ const computeDefaultQuickActions = (branch: GitflowBranch): GitflowQuickAction[]
   const actions: GitflowQuickAction[] = []
   const divergence = branch.divergence ?? { ahead: 0, behind: 0 }
   const behindCount = divergence.behind ?? 0
+  const remoteUnavailable = !hasOriginRemote.value
+  const remoteNote = remoteUnavailable ? '（需先配置 origin 远程）' : ''
 
   switch (branch.branchType) {
     case 'feature': {
       if (behindCount > 0) {
-        actions.push({
+        const baseSync: GitflowQuickAction = {
           id: 'sync-base',
           label: `同步 ${branch.base}`,
           icon: '🔄',
           description: `将 ${branch.base} 的最新提交合并到此 feature 分支`
-        })
-      }
-      actions.push(
-        {
-          id: 'generate-status',
-          label: '生成状态播报',
-          icon: '🧠',
-          description: '基于最近提交生成一份可复制的进度播报'
-        },
-        {
-          id: 'open-pr',
-          label: '创建 PR',
-          icon: '📬',
-          description: '推送分支并给出可用于创建 Pull Request 的链接提示'
         }
-      )
+        if (remoteUnavailable) {
+          baseSync.disabled = true
+          baseSync.description += remoteNote
+        }
+        actions.push(baseSync)
+      }
+      actions.push({
+        id: 'generate-status',
+        label: '生成状态播报',
+        icon: '🧠',
+        description: '基于最近提交生成一份可复制的进度播报'
+      })
+      const prAction: GitflowQuickAction = {
+        id: 'open-pr',
+        label: '创建 PR',
+        icon: '📬',
+        description: '推送分支并给出可用于创建 Pull Request 的链接提示'
+      }
+      if (remoteUnavailable) {
+        prAction.disabled = true
+        prAction.description += remoteNote
+      }
+      actions.push(prAction)
       break
     }
     case 'release': {
@@ -309,19 +321,29 @@ const computeDefaultQuickActions = (branch: GitflowBranch): GitflowQuickAction[]
         description: '记录最新的测试验证结论'
       })
       if (stage === 'draft') {
-        actions.push({
+        const finishAction: GitflowQuickAction = {
           id: 'finish-release',
           label: '发布到远端',
           icon: '🚀',
           description: '推送 release 分支至远程并准备收尾'
-        })
+        }
+        if (remoteUnavailable) {
+          finishAction.disabled = true
+          finishAction.description += remoteNote
+        }
+        actions.push(finishAction)
       } else if (stage === 'published') {
-        actions.push({
+        const finalizeAction: GitflowQuickAction = {
           id: 'finalize-release',
           label: 'Finish',
           icon: '🏁',
           description: '合并至主干并清理 release 分支'
-        })
+        }
+        if (remoteUnavailable) {
+          finalizeAction.disabled = true
+          finalizeAction.description += remoteNote
+        }
+        actions.push(finalizeAction)
       }
       if (stage !== 'finished') {
         actions.push({
@@ -335,33 +357,41 @@ const computeDefaultQuickActions = (branch: GitflowBranch): GitflowQuickAction[]
     }
     case 'bugfix': {
       if (behindCount > 0) {
-        actions.push({
+        const syncAction: GitflowQuickAction = {
           id: 'sync-base',
           label: `同步 ${branch.base}`,
           icon: '🔄',
           description: `将 ${branch.base} 的最新提交合并到此 bugfix 分支`
-        })
-      }
-      actions.push(
-        {
-          id: 'generate-status',
-          label: '生成事件记录',
-          icon: '🧠',
-          description: '整理缺陷信息与处理进展，生成 AI 草稿'
-        },
-        {
-          id: 'request-review',
-          label: '申请评审',
-          icon: '📝',
-          description: '推送分支并提示代码评审的下一步动作'
-        },
-        {
-          id: 'generate-retro',
-          label: '生成复盘草稿',
-          icon: '🔁',
-          description: '输出缺陷复盘提纲，便于会后同步'
         }
-      )
+        if (remoteUnavailable) {
+          syncAction.disabled = true
+          syncAction.description += remoteNote
+        }
+        actions.push(syncAction)
+      }
+      actions.push({
+        id: 'generate-status',
+        label: '生成事件记录',
+        icon: '🧠',
+        description: '整理缺陷信息与处理进展，生成 AI 草稿'
+      })
+      const reviewAction: GitflowQuickAction = {
+        id: 'request-review',
+        label: '申请评审',
+        icon: '📝',
+        description: '推送分支并提示代码评审的下一步动作'
+      }
+      if (remoteUnavailable) {
+        reviewAction.disabled = true
+        reviewAction.description += remoteNote
+      }
+      actions.push(reviewAction)
+      actions.push({
+        id: 'generate-retro',
+        label: '生成复盘草稿',
+        icon: '🔁',
+        description: '输出缺陷复盘提纲，便于会后同步'
+      })
       break
     }
     case 'hotfix': {
@@ -871,6 +901,7 @@ const applySampleData = () => {
   const samples = sampleBranches()
   pruneReleaseStages(new Set(samples.map(branch => branch.name)))
   gitflowBranches.value = samples
+  hasOriginRemote.value = true
   lastSyncedAt.value = Date.now()
   usingSampleData.value = true
 }
@@ -884,6 +915,8 @@ const fetchGitflowBranches = async () => {
     usingSampleData.value = false
     const summary = (await invoke('list_gitflow_branches')) as GitflowSummary
     gitflowConfig.value = summary.config
+    hasOriginRemote.value =
+      typeof summary.hasOriginRemote === 'boolean' ? summary.hasOriginRemote : true
     const availableNames = new Set(summary.branches.map(branch => branch.name))
     pruneReleaseStages(availableNames)
     gitflowBranches.value = summary.branches.map(decorateBranch)
@@ -1015,6 +1048,7 @@ export const useGitflow = () => {
     featureBranches,
     branchTypeMeta,
     lastSyncedAt,
+    hasOriginRemote,
     usingSampleData,
     openWizard,
     closeWizard,

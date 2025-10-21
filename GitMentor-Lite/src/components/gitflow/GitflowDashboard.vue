@@ -25,6 +25,7 @@
 
     <p v-if="error" class="error-banner">⚠️ {{ error }}</p>
     <p v-if="usingSampleData" class="info-banner">当前显示示例数据，打开仓库后可获取真实分支。</p>
+    <p v-if="!hasOriginRemote && !usingSampleData" class="warning-banner">当前仓库未检测到名为 origin 的远程，涉及推送或创建 PR 的操作已禁用。请先配置远程，例如运行 <code>git remote add origin &lt;url&gt;</code> 后重试。</p>
 
     <div v-if="activeHotfix" class="hotfix-banner">
       <div class="banner-content">
@@ -162,7 +163,8 @@ const {
   setCustomPrefixForType,
   setLastBranchNameForType,
   setReleaseStageForBranch,
-  lastSyncedAt
+  lastSyncedAt,
+  hasOriginRemote
 } = useGitflow()
 
 const branchActionOrder: GitflowBranchType[] = ['feature', 'release', 'bugfix', 'hotfix']
@@ -192,6 +194,18 @@ const resolvePrimaryActionId = (branch: GitflowBranch): string | null => {
   if (branch.branchType === 'hotfix') {
     return 'backport'
   }
+  if (branch.branchType === 'feature') {
+    if (branch.status === 'awaiting_merge') {
+      return hasOriginRemote.value ? 'open-pr' : 'generate-status'
+    }
+    return 'generate-status'
+  }
+  if (branch.branchType === 'bugfix') {
+    if (branch.status === 'awaiting_merge') {
+      return hasOriginRemote.value ? 'request-review' : 'generate-status'
+    }
+    return 'generate-status'
+  }
   return null
 }
 
@@ -200,6 +214,11 @@ const handlePrimaryAction = async (branch: GitflowBranch) => {
   if (actionId) {
     const quickAction = branch.nextActions?.find(action => action.id === actionId)
     if (quickAction) {
+      if (quickAction.disabled) {
+        toast.warning('请先配置远程 origin 后再执行该操作', '操作受限')
+        selectBranch(branch.id)
+        return
+      }
       await handleQuickAction(branch, quickAction)
       return
     }
@@ -228,6 +247,11 @@ const handleQuickAction = async (branch: GitflowBranch, action: any) => {
     console.error('快捷操作执行失败:', err)
     const message =
       err instanceof Error ? err.message : typeof err === 'string' ? err : '未知错误，请查看控制台'
+    if (/does not appear to be a git repository/i.test(message) || /could not read from remote repository/i.test(message)) {
+      toast.error('检测到仓库未配置名为 origin 的远程，请先配置后再试。', '缺少远程', true)
+      hasOriginRemote.value = false
+      return
+    }
     toast.error(message, '操作失败', true)
   }
 }
@@ -579,6 +603,16 @@ onMounted(() => {
   background: #eef2ff;
   color: #3730a3;
   border: 1px solid #c7d2fe;
+  font-size: 14px;
+}
+
+.warning-banner {
+  margin: 0;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
   font-size: 14px;
 }
 

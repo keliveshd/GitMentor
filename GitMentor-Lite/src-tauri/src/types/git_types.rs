@@ -254,6 +254,7 @@ impl Default for GitflowConfig {
 pub struct GitflowSummary {
     pub config: GitflowConfig,
     pub branches: Vec<GitflowBranchInfo>,
+    pub has_origin_remote: bool,
 }
 
 /// Gitflow 操作请求
