@@ -53,9 +53,24 @@
       <button class="card-action" @click.stop="handlePrimaryAction">
         {{ primaryActionLabel }}
       </button>
-      <button class="card-action secondary" @click.stop="$emit('view-detail', branch.id)">
-        查看详情
-      </button>
+      <div class="quick-actions" v-if="branch.nextActions?.length">
+        <button
+          v-for="action in quickActions"
+          :key="action.id"
+          class="quick-action-btn"
+          :disabled="action.disabled"
+          :title="action.description"
+          @click.stop="handleQuickAction(action)"
+        >
+          <span class="action-icon">{{ action.icon }}</span>
+          <span class="action-label">{{ action.label }}</span>
+        </button>
+      </div>
+      <div class="card-actions-row">
+        <button class="card-action secondary" @click.stop="$emit('view-detail', branch.id)">
+          查看详情
+        </button>
+      </div>
     </footer>
   </div>
 </template>
@@ -74,6 +89,7 @@ const emit = defineEmits<{
   (e: 'select', id: string): void
   (e: 'primary-action', branch: GitflowBranch): void
   (e: 'view-detail', id: string): void
+  (e: 'quick-action', branch: GitflowBranch, action: any): void
 }>()
 
 const props = defineProps<Props>()
@@ -91,6 +107,14 @@ const lastUpdatedLabel = computed(() => {
 })
 
 const statusText = computed(() => {
+  if (props.branch.branchType === 'release') {
+    if (props.branch.lifecycleStage === 'published') {
+      return '已发布'
+    }
+    if (props.branch.lifecycleStage === 'finished') {
+      return '发布完成'
+    }
+  }
   switch (props.branch.status) {
     case 'in_progress':
       return '开发中'
@@ -131,8 +155,11 @@ const riskLabel = computed(() => {
 })
 
 const primaryActionLabel = computed(() => {
-  const { branchType, status } = props.branch
+  const { branchType, status, lifecycleStage } = props.branch
   if (branchType === 'release') {
+    if (lifecycleStage === 'published') {
+      return 'Finish'
+    }
     return status === 'awaiting_merge' ? '完成发布' : '准备发布'
   }
   if (branchType === 'hotfix') {
@@ -147,8 +174,17 @@ const primaryActionLabel = computed(() => {
   return '继续推进'
 })
 
+const quickActions = computed(() => {
+  // 只显示前3个最重要的快捷操作
+  return props.branch.nextActions?.slice(0, 3) || []
+})
+
 const handlePrimaryAction = () => {
   emit('primary-action', props.branch)
+}
+
+const handleQuickAction = (action: any) => {
+  emit('quick-action', props.branch, action)
 }
 </script>
 
@@ -287,8 +323,14 @@ const handlePrimaryAction = () => {
 
 .card-footer {
   display: flex;
+  flex-direction: column;
   gap: 8px;
   margin-top: auto;
+}
+
+.card-actions-row {
+  display: flex;
+  gap: 8px;
 }
 
 .card-action {
@@ -315,5 +357,51 @@ const handlePrimaryAction = () => {
 
 .card-action.secondary:hover {
   background: #f8fafc;
+}
+
+.quick-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+
+.quick-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #64748b;
+  font-size: 11px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  min-width: 0;
+}
+
+.quick-action-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+  border-color: #cbd5f5;
+  color: #475569;
+  transform: translateY(-1px);
+}
+
+.quick-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.action-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.action-label {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

@@ -31,7 +31,7 @@
               <div v-if="state.step === 1" class="step-content">
                 <h3>选择基线与命名规则</h3>
                 <p class="description">
-                  默认以 {{ defaultBase }} 为基线，命名遵循前缀 <code>{{ branchPrefix }}</code>。
+                  默认以 {{ defaultBase }} 为基线，命名遵循前缀 <code>{{ normalizedPrefix }}</code>。
                 </p>
 
                 <div class="form-grid">
@@ -48,33 +48,34 @@
 
                   <label class="form-field">
                     <span class="field-label">命名前缀</span>
-                    <input class="input" :value="branchPrefix" disabled />
-                    <span class="field-help">可在设置中更改 Gitflow 前缀</span>
+                    <input
+                      class="input"
+                      v-model.trim="branchPrefixModel"
+                      :placeholder="`例如：${defaultPrefix}`"
+                    />
+                    <span class="field-help">
+                      默认 {{ defaultPrefix }}，修改后会记住下次设置。
+                    </span>
                   </label>
-                </div>
-
-                <div class="preview-box">
-                  <span class="preview-label">推荐命名</span>
-                  <span class="preview-value">{{ suggestedName }}</span>
                 </div>
               </div>
 
               <div v-else-if="state.step === 2" class="step-content">
                 <h3>填写分支信息</h3>
-                <p class="description">补充工单、负责人等信息，方便后续生成 AI 状态播报。</p>
+                <p class="description">{{ stepTwoDescription }}</p>
 
                 <div class="form-grid">
                   <label class="form-field">
                     <span class="field-label">分支名称</span>
                     <input
                       class="input"
-                      v-model.trim="state.branchName"
-                      :placeholder="`例如：${suggestedName}`"
+                      v-model="branchNameModel"
+                      :placeholder="branchNamePlaceholder"
                     />
                     <span class="field-error" v-if="errors.branchName">{{ errors.branchName }}</span>
                   </label>
 
-                  <label class="form-field">
+                  <label class="form-field" v-if="showIssueField">
                     <span class="field-label">关联工单</span>
                     <input
                       class="input"
@@ -112,18 +113,14 @@
                     <span class="summary-icon">🌱</span>
                     <div>
                       <strong>从 {{ baseBranch }} 创建新分支</strong>
-                      <p>{{ state.branchName || suggestedName }}</p>
+                      <p>{{ finalBranchName }}</p>
                     </div>
                   </li>
                   <li>
                     <span class="summary-icon">🧾</span>
                     <div>
-                      <strong>绑定元数据</strong>
-                      <p>
-                        工单：{{ state.metadata.issueId || '未填写' }} ｜ 负责人：{{
-                          state.metadata.owner || '未指定'
-                        }}
-                      </p>
+                      <strong>{{ metaSummary.title }}</strong>
+                      <p>{{ metaSummary.content }}</p>
                     </div>
                   </li>
                   <li>
@@ -168,7 +165,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import { branchTypeMeta, useGitflow } from '../../composables/useGitflow'
 import type { GitflowWizardState } from '../../composables/useGitflow'
 
@@ -190,7 +187,7 @@ const steps = [
   { id: 3, title: '操作预览', desc: '核对即将执行的步骤' }
 ] as const
 
-const { gitflowConfig, getDefaultBaseForType } = useGitflow()
+const { gitflowConfig, gitflowBranches, getDefaultBaseForType } = useGitflow()
 
 const meta = computed(() => branchTypeMeta[props.state.branchType])
 
@@ -207,7 +204,7 @@ const configSnapshot = computed(() => {
   )
 })
 
-const branchPrefix = computed(() => {
+const defaultPrefix = computed(() => {
   switch (props.state.branchType) {
     case 'feature':
       return configSnapshot.value.featurePrefix
@@ -218,6 +215,20 @@ const branchPrefix = computed(() => {
     case 'hotfix':
       return configSnapshot.value.hotfixPrefix
   }
+})
+
+const branchPrefixModel = computed({
+  get() {
+    return props.state.branchPrefix || defaultPrefix.value
+  },
+  set(value: string) {
+    emit('update:state', { branchPrefix: value.trim() })
+  }
+})
+
+const normalizedPrefix = computed(() => {
+  const trimmed = (props.state.branchPrefix || defaultPrefix.value).trim()
+  return trimmed || defaultPrefix.value
 })
 
 const baseBranch = computed({
@@ -236,12 +247,116 @@ const baseBranch = computed({
 
 const defaultBase = computed(() => getDefaultBaseForType(props.state.branchType))
 
-const suggestedName = computed(() => {
-  if (props.state.branchName) return props.state.branchName
-  const issueId = props.state.metadata.issueId?.replace(/\s+/g, '-').toUpperCase()
-  const suffix = issueId || 'task'
-  return `${branchPrefix.value}${suffix}`
+const fallbackSuffix = computed(() => {
+  switch (props.state.branchType) {
+    case 'release': {
+      const today = new Date()
+      const month = String(today.getMonth() + 1).padStart(2, '0')
+      const day = String(today.getDate()).padStart(2, '0')
+      return `${today.getFullYear()}${month}${day}`
+    }
+    case 'bugfix':
+      return 'fix'
+    case 'hotfix':
+      return 'hotfix'
+    default:
+      return 'task'
+  }
 })
+
+const sanitizeNameFragment = (value?: string) =>
+  (value ?? '').trim().replace(/\s+/g, '-')
+
+const buildBranchName = (raw?: string) => {
+  const fragment = sanitizeNameFragment(raw)
+  if (!fragment) return ''
+  const prefix = normalizedPrefix.value
+  if (fragment.startsWith(prefix)) {
+    return fragment
+  }
+  return `${prefix}${fragment}`
+}
+
+const issueSuffix = computed(() =>
+  props.state.metadata.issueId
+    ? props.state.metadata.issueId.replace(/\s+/g, '-').toUpperCase()
+    : ''
+)
+
+const defaultSuffix = computed(() => {
+  if (props.state.branchType === 'release') {
+    return fallbackSuffix.value
+  }
+  if (issueSuffix.value) {
+    return issueSuffix.value
+  }
+  return fallbackSuffix.value
+})
+
+const branchNamePlaceholder = computed(() => buildBranchName(defaultSuffix.value))
+
+const finalBranchName = computed(() => {
+  if (props.state.branchName) {
+    return props.state.branchName
+  }
+  return buildBranchName(defaultSuffix.value)
+})
+
+const branchNameModel = computed({
+  get() {
+    return props.state.branchName || ''
+  },
+  set(value: string) {
+    const sanitized = buildBranchName(value)
+    emit('update:state', { branchName: sanitized })
+  }
+})
+
+const existingBranchNames = computed(() => {
+  const set = new Set<string>()
+  for (const branch of gitflowBranches.value) {
+    set.add(branch.name.toLowerCase())
+  }
+  return set
+})
+
+const showIssueField = computed(() => props.state.branchType !== 'release')
+
+const stepTwoDescription = computed(() =>
+  props.state.branchType === 'release'
+    ? '填写版本号和负责人，便于后续生成发布说明。'
+    : '补充工单、负责人等信息，方便后续生成 AI 状态播报。'
+)
+
+const metaSummary = computed(() => {
+  if (props.state.branchType === 'release') {
+    const owner = props.state.metadata.owner || '未指定'
+    const note = props.state.metadata.purpose?.trim() || '暂未填写版本说明'
+    return {
+      title: '发布附加信息',
+      content: `负责人：${owner} ｜ 版本说明：${note}`
+    }
+  }
+  const issue = props.state.metadata.issueId || '未填写'
+  const owner = props.state.metadata.owner || '未指定'
+  return {
+    title: '绑定元数据',
+    content: `工单：${issue} ｜ 负责人：${owner}`
+  }
+})
+
+watch(
+  () => normalizedPrefix.value,
+  (next: string, prev: string | undefined) => {
+    if (next === prev) return
+    const current = props.state.branchName
+    if (!current) return
+    if (current.startsWith(next)) return
+    const suffix = prev && current.startsWith(prev) ? current.slice(prev.length) : current
+    const updated = buildBranchName(suffix)
+    emit('update:state', { branchName: updated })
+  }
+)
 
 const errors = reactive({
   branchName: ''
@@ -265,24 +380,25 @@ const handleContinue = () => {
     return
   }
 
-  if (!props.state.branchName) {
-    emit('update:state', { branchName: suggestedName.value })
+  const sanitizedPrefix = normalizedPrefix.value
+  const targetBranchName = finalBranchName.value
+  const metadata = {
+    ...props.state.metadata,
+    base: baseBranch.value,
+    prefix: sanitizedPrefix
   }
 
   emit('update:state', {
-    metadata: {
-      ...props.state.metadata,
-      base: baseBranch.value
-    }
+    branchPrefix: sanitizedPrefix,
+    branchName: targetBranchName,
+    metadata
   })
 
   emit('submit', {
     ...props.state,
-    branchName: props.state.branchName || suggestedName.value,
-    metadata: {
-      ...props.state.metadata,
-      base: baseBranch.value
-    }
+    branchPrefix: sanitizedPrefix,
+    branchName: targetBranchName,
+    metadata
   })
 }
 
@@ -292,8 +408,13 @@ const jumpToStep = (step: GitflowWizardState['step']) => {
 
 const validateStepTwo = () => {
   errors.branchName = ''
-  if (!props.state.branchName && !suggestedName.value) {
+  const candidate = finalBranchName.value
+  if (!candidate) {
     errors.branchName = '请填写分支名称'
+    return false
+  }
+  if (existingBranchNames.value.has(candidate.toLowerCase())) {
+    errors.branchName = '当前仓库已存在该分支，请更换名称'
     return false
   }
   return true
@@ -498,22 +619,6 @@ select.input:focus {
 .field-error {
   font-size: 12px;
   color: #dc2626;
-}
-
-.preview-box {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-radius: 12px;
-  background: #eef2ff;
-  border: 1px solid #cbd5f5;
-  color: #4338ca;
-  font-weight: 600;
-}
-
-.preview-label {
-  font-size: 13px;
 }
 
 .summary-list {

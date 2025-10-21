@@ -89,6 +89,7 @@
             :is-active="branch.id === selectedBranchId"
             @select="selectBranch"
             @primary-action="handlePrimaryAction"
+            @quick-action="handleQuickAction"
             @view-detail="selectBranch"
           />
           <p v-if="!loading && !groupedBranches[type].length" class="empty-placeholder">
@@ -111,7 +112,7 @@
         </div>
         <button class="detail-close" @click="resetSelection">×</button>
       </header>
-      <GitflowBranchDetail :branch="focusBranch" />
+      <GitflowBranchDetail :branch="focusBranch" @quick-action="handleQuickAction" />
     </aside>
 
     <GitflowWizard
@@ -125,11 +126,19 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue'
+import { invoke } from '@tauri-apps/api/core'
 import GitflowBranchCard from './GitflowBranchCard.vue'
 import GitflowBranchDetail from './GitflowBranchDetail.vue'
 import GitflowWizard from './GitflowWizard.vue'
 import { useGitflow, branchTypeMeta } from '../../composables/useGitflow'
 import type { GitflowBranch, GitflowBranchType, GitflowWizardState } from '../../composables/useGitflow'
+import { useToast } from '../../composables/useToast'
+
+interface GitOperationResult {
+  success: boolean
+  message: string
+  details?: string
+}
 
 const {
   loading,
@@ -150,10 +159,14 @@ const {
   resetSelection,
   fetchGitflowBranches,
   createGitflowBranch,
+  setCustomPrefixForType,
+  setLastBranchNameForType,
+  setReleaseStageForBranch,
   lastSyncedAt
 } = useGitflow()
 
 const branchActionOrder: GitflowBranchType[] = ['feature', 'release', 'bugfix', 'hotfix']
+const toast = useToast()
 
 const configSnapshot = computed(() => {
   return (
@@ -170,19 +183,74 @@ const configSnapshot = computed(() => {
 
 const refresh = () => fetchGitflowBranches()
 
-const handlePrimaryAction = (branch: GitflowBranch) => {
+const resolvePrimaryActionId = (branch: GitflowBranch): string | null => {
+  if (branch.branchType === 'release') {
+    if (branch.lifecycleStage === 'published') return 'finalize-release'
+    if (branch.lifecycleStage === 'finished') return null
+    return 'finish-release'
+  }
+  if (branch.branchType === 'hotfix') {
+    return 'backport'
+  }
+  return null
+}
+
+const handlePrimaryAction = async (branch: GitflowBranch) => {
+  const actionId = resolvePrimaryActionId(branch)
+  if (actionId) {
+    const quickAction = branch.nextActions?.find(action => action.id === actionId)
+    if (quickAction) {
+      await handleQuickAction(branch, quickAction)
+      return
+    }
+  }
   selectBranch(branch.id)
 }
 
+const handleQuickAction = async (branch: GitflowBranch, action: any) => {
+  try {
+    const result = await runQuickAction(branch, action)
+    if (!result) {
+      return
+    }
+    if (result.success) {
+      toast.success(result.message, 'Gitflow 操作')
+      if (result.details) {
+        toast.info(result.details)
+      }
+    } else {
+      toast.error(result.message || 'Gitflow 操作失败', '操作失败')
+      if (result.details) {
+        toast.info(result.details)
+      }
+    }
+  } catch (err) {
+    console.error('快捷操作执行失败:', err)
+    const message =
+      err instanceof Error ? err.message : typeof err === 'string' ? err : '未知错误，请查看控制台'
+    toast.error(message, '操作失败', true)
+  }
+}
+
 const handleSubmitWizard = async (state: GitflowWizardState) => {
-  await createGitflowBranch({
-    branchType: state.branchType,
-    branchName: state.branchName,
-    baseBranch: state.metadata.base ?? undefined,
-    autoPush: state.autoPush,
-    metadata: state.metadata
-  })
-  closeWizard()
+  try {
+    setCustomPrefixForType(state.branchType, state.branchPrefix)
+    setLastBranchNameForType(state.branchType, state.branchName)
+    await createGitflowBranch({
+      branchType: state.branchType,
+      branchName: state.branchName,
+      baseBranch: state.metadata.base ?? undefined,
+      autoPush: state.autoPush,
+      metadata: state.metadata
+    })
+    toast.success('已创建 Gitflow 分支', 'Gitflow')
+    closeWizard()
+  } catch (err) {
+    console.error('创建 Gitflow 分支失败:', err)
+    const message =
+      err instanceof Error ? err.message : typeof err === 'string' ? err : '未知错误，请查看控制台'
+    toast.error(message, '创建失败', true)
+  }
 }
 
 const handleWizardUpdate = (payload: Partial<GitflowWizardState>) => {
@@ -201,6 +269,215 @@ const formatSLA = (deadline: string) => {
 const formatTimestamp = (timestamp: number) => {
   const date = new Date(timestamp)
   return `${date.getMonth() + 1}月${date.getDate()}日 ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+// 快捷操作执行调度
+const runQuickAction = async (branch: GitflowBranch, action: any): Promise<GitOperationResult | undefined> => {
+  switch (action.id) {
+    case 'sync-base':
+      return syncWithBase(branch)
+    case 'generate-status':
+      return generateStatusReport(branch)
+    case 'open-pr':
+      return openPullRequest(branch)
+    case 'qa-update':
+      return updateQAStatus(branch)
+    case 'finish-release':
+      return finishRelease(branch)
+    case 'finalize-release':
+      return finalizeRelease(branch)
+    case 'close-release':
+      return closeReleaseLocal(branch)
+    case 'backport':
+      return backportToDevelop(branch)
+    case 'generate-postmortem':
+      return generatePostmortem(branch)
+    case 'request-review':
+      return requestCodeReview(branch)
+    case 'generate-retro':
+      return generateRetrospective(branch)
+    default:
+      console.warn('未知快捷操作:', action.id)
+      toast.warning(`暂不支持的快捷操作：${action.label}`)
+      return undefined
+  }
+}
+
+// 快捷操作函数实现
+const syncWithBase = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  const result = (await invoke('execute_gitflow_action', {
+    request: {
+      branchName: branch.name,
+      action: 'sync_with_base'
+    }
+  })) as GitOperationResult
+  await fetchGitflowBranches()
+  return result
+}
+
+const generateStatusReport = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'generate_status_report'
+      }
+    })) as GitOperationResult
+    await fetchGitflowBranches() // 刷新状态
+    return result
+  } catch (error) {
+    console.error('生成状态报告失败:', error)
+    throw error
+  }
+}
+
+const openPullRequest = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'create_pull_request'
+      }
+    })) as GitOperationResult
+    return result
+  } catch (error) {
+    console.error('创建合并请求失败:', error)
+    throw error
+  }
+}
+
+const updateQAStatus = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'update_qa_status'
+      }
+    })) as GitOperationResult
+    await fetchGitflowBranches() // 刷新状态
+    return result
+  } catch (error) {
+    console.error('更新 QA 状态失败:', error)
+    throw error
+  }
+}
+
+const finishRelease = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'finish_release'
+      }
+    })) as GitOperationResult
+    if (result.success) {
+      setReleaseStageForBranch(branch.name, 'published')
+      await fetchGitflowBranches() // 刷新状态
+    }
+    return result
+  } catch (error) {
+    console.error('完成发布失败:', error)
+    throw error
+  }
+}
+
+const finalizeRelease = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'finalize_release'
+      }
+    })) as GitOperationResult
+    if (result.success) {
+      setReleaseStageForBranch(branch.name, 'finished')
+      await fetchGitflowBranches()
+    }
+    return result
+  } catch (error) {
+    console.error('收尾发布失败:', error)
+    throw error
+  }
+}
+
+const closeReleaseLocal = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'close_release_local'
+      }
+    })) as GitOperationResult
+    if (result.success) {
+      setReleaseStageForBranch(branch.name, 'finished')
+      await fetchGitflowBranches()
+    }
+    return result
+  } catch (error) {
+    console.error('关闭发布失败:', error)
+    throw error
+  }
+}
+
+const backportToDevelop = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'backport_to_develop'
+      }
+    })) as GitOperationResult
+    await fetchGitflowBranches() // 刷新状态
+    return result
+  } catch (error) {
+    console.error('回流失败:', error)
+    throw error
+  }
+}
+
+const generatePostmortem = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'generate_postmortem'
+      }
+    })) as GitOperationResult
+    return result
+  } catch (error) {
+    console.error('生成复盘报告失败:', error)
+    throw error
+  }
+}
+
+const requestCodeReview = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'request_code_review'
+      }
+    })) as GitOperationResult
+    return result
+  } catch (error) {
+    console.error('请求代码评审失败:', error)
+    throw error
+  }
+}
+
+const generateRetrospective = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'generate_retrospective'
+      }
+    })) as GitOperationResult
+    return result
+  } catch (error) {
+    console.error('生成回顾总结失败:', error)
+    throw error
+  }
 }
 
 onMounted(() => {

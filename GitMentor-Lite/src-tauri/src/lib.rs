@@ -226,6 +226,7 @@ pub fn run() {
             git_commands::get_file_stats,
             gitflow_commands::list_gitflow_branches,
             gitflow_commands::create_gitflow_branch,
+            gitflow_commands::execute_gitflow_action,
             // Daily report commands
             daily_report_commands::get_available_repositories,
             daily_report_commands::get_repo_contributors,

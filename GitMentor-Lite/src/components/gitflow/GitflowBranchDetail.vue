@@ -94,6 +94,7 @@
           class="action-chip"
           :disabled="action.disabled"
           :title="action.description"
+          @click="handleQuickAction(action)"
         >
           <span class="chip-icon">{{ action.icon }}</span>
           <span>{{ action.label }}</span>
@@ -111,7 +112,9 @@
           </header>
           <p>{{ draft.content }}</p>
           <footer>
-            <button class="outline-btn">复制文案</button>
+            <button class="outline-btn" @click="copyDraftContent(draft.content)">
+              复制文案
+            </button>
           </footer>
         </article>
       </div>
@@ -129,6 +132,10 @@ interface Props {
 }
 
 const props = defineProps<Props>()
+
+const emit = defineEmits<{
+  (e: 'quick-action', branch: GitflowBranch, action: any): void
+}>()
 
 const statusLabel = computed(() => statusText(props.branch.status))
 
@@ -174,6 +181,32 @@ const statusText = (status: GitflowBranchStatus) => {
       return '已合并'
     default:
       return '准备中'
+  }
+}
+
+const handleQuickAction = (action: any) => {
+  emit('quick-action', props.branch, action)
+}
+
+const copyDraftContent = async (content: string) => {
+  try {
+    await navigator.clipboard.writeText(content)
+    // TODO: 显示成功提示
+    console.log('文案已复制到剪贴板')
+  } catch (error) {
+    console.error('复制失败:', error)
+    // 降级方案：使用传统的复制方法
+    try {
+      const textArea = document.createElement('textarea')
+      textArea.value = content
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textArea)
+      console.log('文案已复制到剪贴板（降级方案）')
+    } catch (fallbackError) {
+      console.error('降级复制方案也失败:', fallbackError)
+    }
   }
 }
 </script>

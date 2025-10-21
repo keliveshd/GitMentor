@@ -37,9 +37,14 @@
         <div class="section-title">📂 本地分支</div>
         <div class="branch-list">
           <div v-for="branch in filteredLocalBranches" :key="branch.name" @click="switchBranch(branch.name, false)"
-            class="branch-item" :class="{ current: branch.is_current, loading: switchingBranch === branch.name }">
+            class="branch-item" :class="{ current: branch.is_current, loading: switchingBranch === branch.name }"
+            :title="branchHasTracking(branch) && branch.upstream ? `${branch.name} ↔ ${branch.upstream}` : branch.name">
             <span class="branch-icon">{{ branch.is_current ? '✓' : '📝' }}</span>
             <span class="branch-name">{{ branch.name }}</span>
+            <div v-if="branchHasTracking(branch)" class="branch-stats">
+              <span class="metric ahead" :class="{ muted: branch.ahead === 0 }">↑{{ branch.ahead }}</span>
+              <span class="metric behind" :class="{ muted: branch.behind === 0 }">↓{{ branch.behind }}</span>
+            </div>
             <span v-if="switchingBranch === branch.name" class="loading-spinner">⏳</span>
           </div>
         </div>
@@ -85,6 +90,15 @@ interface Props {
   currentBranch?: string
 }
 
+interface BranchListItem {
+  name: string
+  is_current: boolean
+  is_remote: boolean
+  upstream: string | null
+  ahead: number
+  behind: number
+}
+
 const props = withDefaults(defineProps<Props>(), {
   currentBranch: ''
 })
@@ -96,7 +110,7 @@ const emit = defineEmits<{
 
 // 响应式数据
 const showDropdown = ref(false)
-const branches = ref<any[]>([])
+const branches = ref<BranchListItem[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const switchingBranch = ref<string | null>(null)
@@ -105,6 +119,14 @@ const currentOperation = ref<string | null>(null)
 
 // Toast
 const toast = useToast()
+
+const toCount = (value: unknown): number => {
+  const num = Number(value)
+  if (!Number.isFinite(num) || Number.isNaN(num)) {
+    return 0
+  }
+  return Math.max(0, Math.trunc(num))
+}
 
 // 计算属性
 const filteredLocalBranches = computed(() => {
@@ -142,7 +164,14 @@ const loadBranches = async () => {
   try {
     loading.value = true
     const result = await invoke('get_branches') as any[]
-    branches.value = result
+    branches.value = result.map((branch: any): BranchListItem => ({
+      name: branch.name,
+      is_current: branch.is_current,
+      is_remote: branch.is_remote,
+      upstream: branch.upstream ?? null,
+      ahead: toCount(branch.ahead),
+      behind: toCount(branch.behind)
+    }))
   } catch (error) {
     console.error('Failed to load branches:', error)
     toast.error(`获取分支列表失败: ${error}`, '分支操作失败')
@@ -155,6 +184,8 @@ const refreshBranches = async () => {
   await loadBranches()
   toast.success('分支列表已刷新', '刷新成功')
 }
+
+const branchHasTracking = (branch: BranchListItem) => !branch.is_remote && !!branch.upstream
 
 const switchBranch = async (branchName: string, isRemote: boolean) => {
   if (switchingBranch.value) return // 防止重复点击
@@ -367,7 +398,7 @@ onUnmounted(() => {
   left: 0;
   right: 0;
   bottom: 0;
-  z-index: 999;
+  z-index: 10;
 }
 
 .dropdown-header {
@@ -504,6 +535,36 @@ onUnmounted(() => {
   white-space: nowrap;
 }
 
+.branch-stats {
+  display: flex;
+  gap: 6px;
+  margin-left: 8px;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-secondary, #656d76);
+}
+
+.branch-stats .metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--metric-bg, rgba(9, 105, 218, 0.08));
+}
+
+.branch-stats .metric.ahead {
+  color: var(--success-color, #1a7f37);
+}
+
+.branch-stats .metric.behind {
+  color: var(--danger-color, #cf222e);
+}
+
+.branch-stats .metric.muted {
+  opacity: 0.55;
+}
+
 .checkout-hint {
   font-size: 11px;
   color: var(--text-tertiary, #8c959f);
@@ -518,6 +579,7 @@ onUnmounted(() => {
 .loading-spinner {
   font-size: 12px;
   animation: spin 1s linear infinite;
+  margin-left: 8px;
 }
 
 @keyframes spin {

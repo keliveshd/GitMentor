@@ -96,6 +96,8 @@ pub struct BranchInfo {
     pub is_current: bool,
     pub is_remote: bool,
     pub upstream: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
 }
 
 /// Git操作结果
@@ -254,10 +256,7 @@ pub struct GitflowSummary {
     pub branches: Vec<GitflowBranchInfo>,
 }
 
-/// 创建 Gitflow 分支请求
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-
+/// Gitflow 操作请求
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GitflowActionRequest {
@@ -265,6 +264,9 @@ pub struct GitflowActionRequest {
     pub action: String,
 }
 
+/// 创建 Gitflow 分支请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct GitflowCreateRequest {
     pub branch_type: GitflowBranchType,
     pub branch_name: String,
