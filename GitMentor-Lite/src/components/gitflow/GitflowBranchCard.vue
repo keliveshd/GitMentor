@@ -70,6 +70,14 @@
         <button class="card-action secondary" @click.stop="$emit('view-detail', branch.id)">
           查看详情
         </button>
+        <button
+          class="card-action tertiary"
+          @click.stop="handleSwitchBranch()"
+          :disabled="branch.isCurrent"
+          :title="branch.isCurrent ? '当前已位于此分支' : '切换到此分支'"
+        >
+          切换到此分支
+        </button>
       </div>
     </footer>
   </div>
@@ -90,6 +98,7 @@ const emit = defineEmits<{
   (e: 'primary-action', branch: GitflowBranch): void
   (e: 'view-detail', id: string): void
   (e: 'quick-action', branch: GitflowBranch, action: any): void
+  (e: 'switch-branch', branch: GitflowBranch): void
 }>()
 
 const props = defineProps<Props>()
@@ -185,6 +194,10 @@ const handlePrimaryAction = () => {
 
 const handleQuickAction = (action: any) => {
   emit('quick-action', props.branch, action)
+}
+
+const handleSwitchBranch = () => {
+  emit('switch-branch', props.branch)
 }
 </script>
 
@@ -357,6 +370,22 @@ const handleQuickAction = (action: any) => {
 
 .card-action.secondary:hover {
   background: #f8fafc;
+}
+
+.card-action.tertiary {
+  border-color: #cbd5f5;
+  background: #f1f5f9;
+  color: #475569;
+}
+
+.card-action.tertiary:hover {
+  background: #e2e8f0;
+}
+
+.card-action.tertiary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  background: #f1f5f9;
 }
 
 .quick-actions {
