@@ -1,5 +1,5 @@
 <template>
-  <div class="gitflow-dashboard">
+  <div class="gitflow-dashboard" :class="{ 'detail-open': !!focusBranch }">
     <header class="gitflow-topbar">
       <div class="heading">
         <h1>Gitflow 仪表盘</h1>
@@ -490,8 +490,13 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 24px;
-  padding: 24px 0;
+  padding: 24px;
   position: relative;
+  padding-right: 24px;
+}
+
+.gitflow-dashboard.detail-open {
+  padding-right: calc(24px + min(440px, 30vw));
 }
 
 .gitflow-topbar {
@@ -743,18 +748,53 @@ onMounted(() => {
 }
 
 .gitflow-detail {
-  position: sticky;
-  top: 96px;
-  align-self: flex-end;
-  margin-left: auto;
-  padding: 20px 24px;
-  width: min(440px, 100%);
-  max-height: calc(100vh - 140px);
+  position: fixed;
+  top: 92px;
+  right: 32px;
+  bottom: 32px;
+  width: min(440px, 32vw);
+  max-height: calc(100vh - 124px);
   overflow-y: auto;
   border: 1px solid #cbd5f5;
   border-radius: 16px;
   background: #ffffff;
   box-shadow: 0 12px 32px rgba(15, 23, 42, 0.12);
+  padding: 20px 24px;
+  z-index: 200;
+}
+
+@media (max-width: 1280px) {
+  .gitflow-dashboard {
+    padding-right: 24px;
+  }
+
+  .gitflow-dashboard.detail-open {
+    padding-right: 24px;
+  }
+
+  .gitflow-detail {
+    width: min(400px, 85vw);
+    right: 16px;
+  }
+}
+
+@media (max-width: 960px) {
+  .gitflow-dashboard {
+    padding: 16px;
+  }
+
+  .gitflow-dashboard.detail-open {
+    padding: 16px;
+  }
+
+  .gitflow-detail {
+    top: 72px;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 96px);
+  }
 }
 
 .detail-header {
