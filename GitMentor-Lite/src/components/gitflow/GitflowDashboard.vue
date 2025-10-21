@@ -14,11 +14,11 @@
           v-for="type in branchActionOrder"
           :key="type"
           class="type-action"
-          :style="{ '--accent': branchTypeMeta[type].accent }"
+          :style="{ '--accent': branchTypeInfo(type).accent }"
           @click="openWizard(type)"
         >
           <span class="icon">＋</span>
-          <span class="label">新建 {{ branchTypeMeta[type].label }}</span>
+          <span class="label">新建 {{ branchTypeInfo(type).label }}</span>
         </button>
       </div>
     </header>
@@ -77,8 +77,8 @@
     <section class="gitflow-grid" :class="{ loading }">
       <article v-for="type in branchActionOrder" :key="type" class="grid-column">
         <header class="column-header">
-          <h2>{{ branchTypeMeta[type].label }}</h2>
-          <p>{{ branchTypeMeta[type].description }}</p>
+          <h2>{{ branchTypeInfo(type).label }}</h2>
+          <p>{{ branchTypeInfo(type).description }}</p>
         </header>
         <div class="column-body">
           <div v-if="loading" class="placeholder-card" />
@@ -94,7 +94,7 @@
             @view-detail="selectBranch"
           />
           <p v-if="!loading && !groupedBranches[type].length" class="empty-placeholder">
-            暂无 {{ branchTypeMeta[type].label }} 分支，点击上方按钮快速创建。
+            暂无 {{ branchTypeInfo(type).label }} 分支，点击上方按钮快速创建。
           </p>
         </div>
       </article>
@@ -105,9 +105,9 @@
         <div>
           <span
             class="detail-type"
-            :style="{ color: branchTypeMeta[focusBranch.branchType].accent }"
+            :style="{ color: focusBranchTypeMeta?.accent }"
           >
-            {{ branchTypeMeta[focusBranch.branchType].label }}
+            {{ focusBranchTypeMeta?.label || "" }}
           </span>
           <h3>{{ focusBranch.name }}</h3>
         </div>
@@ -168,6 +168,11 @@ const {
 } = useGitflow()
 
 const branchActionOrder: GitflowBranchType[] = ['feature', 'release', 'bugfix', 'hotfix']
+
+const branchTypeInfo = (type: GitflowBranchType) => branchTypeMeta[type]
+const focusBranchTypeMeta = computed(() =>
+  focusBranch.value ? branchTypeInfo(focusBranch.value.branchType) : null
+)
 const toast = useToast()
 
 const configSnapshot = computed(() => {

@@ -32,7 +32,8 @@ use serde::Serialize;
 
 use std::fmt::Write;
 
-use std::path::{Path, PathBuf};
+use std::ffi::OsStr;
+use std::path::{Component, Path, PathBuf};
 
 use std::process::Command;
 
@@ -279,14 +280,22 @@ impl GitEngine {
             move |res: Result<Event, notify::Error>| match res {
 
                 Ok(event) => {
+                    let path_list = event
+                        .paths
+                        .iter()
+                        .map(|p| p.to_string_lossy())
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    debug_log!("[DEBUG] repo watcher event: kind={:?}, paths=[{}]", event.kind, path_list);
 
                     if !GitEngine::should_emit_event(&event.kind) {
-
                         return;
-
                     }
 
-
+                    if GitEngine::is_noise_event(&event) {
+                        debug_log!("[DEBUG] repo watcher filtered as noise");
+                        return;
+                    }
 
                     let mut should_emit = true;
 
@@ -1710,10 +1719,29 @@ impl GitEngine {
 
         self.checkout_branch_internal(repo_path, base_branch)?;
 
+        let mut detail_parts: Vec<String> = Vec::new();
+
         if has_origin {
-            let _ = self.fetch_remote(Some("origin"));
-            if let Err(err) = self.pull_current_branch() {
-                return Err(anyhow!("更新 {} 失败: {}", base_branch, err));
+            let fetch_result = self.fetch_remote(Some("origin"))?;
+            if let Some(info) = fetch_result.details {
+                let trimmed = info.trim();
+                if !trimmed.is_empty() {
+                    detail_parts.push(trimmed.to_string());
+                }
+            }
+
+            match self.pull_current_branch() {
+                Ok(result) => {
+                    if let Some(info) = result.details {
+                        let trimmed = info.trim();
+                        if !trimmed.is_empty() {
+                            detail_parts.push(trimmed.to_string());
+                        }
+                    }
+                }
+                Err(err) => {
+                    return Err(anyhow!("更新 {} 失败: {}", base_branch, err));
+                }
             }
         }
 
@@ -1723,29 +1751,25 @@ impl GitEngine {
             println!("[WARN] 删除本地分支 {} 失败: {}", feature_branch, err);
         }
 
-        let mut details = String::new();
-        if has_origin {
-            details.push_str("已从 origin 拉取最新基线。");
-        }
         if feature_behind > 0 {
-            if !details.is_empty() {
-                details.push(' ');
-            }
-            details.push_str(&format!("合并前该分支落后基线 {} 个提交，现已同步。", feature_behind));
+            detail_parts.push(format!("合并前分支相对 {base_branch} 落后 {feature_behind} 个提交，已完成同步。"));
         }
+
         if feature_ahead > 0 {
-            if !details.is_empty() {
-                details.push(' ');
-            }
-            details.push_str(&format!("包含 {} 个待合并提交。", feature_ahead));
+            detail_parts.push(format!("包含 {feature_ahead} 个待合并提交。"));
         }
 
         Ok(GitOperationResult {
             success: true,
-            message: format!("已将 {} 合并至 {} 并关闭本地分支", feature_branch, base_branch),
-            details: if details.is_empty() { None } else { Some(details) },
+            message: format!("已将 {feature_branch} 合并至 {base_branch} 并关闭本地分支"),
+            details: if detail_parts.is_empty() {
+                None
+            } else {
+                Some(detail_parts.join(" "))
+            },
         })
     }
+
 
 
 
@@ -2300,15 +2324,25 @@ impl GitEngine {
 
 
     fn should_emit_event(kind: &EventKind) -> bool {
-
         matches!(
-
             kind,
-
             EventKind::Modify(_) | EventKind::Create(_) | EventKind::Remove(_) | EventKind::Any
-
         )
+    }
 
+    fn is_noise_event(event: &Event) -> bool {
+        if event.paths.is_empty() {
+            return false;
+        }
+
+        event.paths.iter().all(|path| Self::path_in_git_dir(path))
+    }
+
+    fn path_in_git_dir(path: &Path) -> bool {
+        path.components().any(|component| match component {
+            Component::Normal(name) => name == OsStr::new(".git"),
+            _ => false,
+        })
     }
 
 
