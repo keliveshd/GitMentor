@@ -444,6 +444,7 @@ const validateStepTwo = () => {
   background: #ffffff;
   box-shadow: 0 24px 48px rgba(15, 23, 42, 0.2);
   padding: 28px 32px;
+  overflow: hidden;
 }
 
 .wizard-header {
@@ -477,6 +478,9 @@ const validateStepTwo = () => {
 .wizard-body {
   display: flex;
   gap: 24px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .wizard-steps {
@@ -487,6 +491,7 @@ const validateStepTwo = () => {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  overflow-y: auto;
 }
 
 .wizard-steps li {
@@ -545,7 +550,9 @@ const validateStepTwo = () => {
   padding: 24px;
   background: #ffffff;
   display: flex;
+  flex-direction: column;
   overflow: auto;
+  min-width: 0;
 }
 
 .step-content {
@@ -648,6 +655,9 @@ select.input:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding-top: 12px;
 }
 
 .checkbox {
