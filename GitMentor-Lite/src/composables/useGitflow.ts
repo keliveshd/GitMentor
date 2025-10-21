@@ -912,6 +912,8 @@ const sampleBranches = (): GitflowBranch[] => [
   })
 ]
 
+const ENABLE_GITFLOW_SAMPLE_DATA = false
+
 const applySampleData = () => {
   gitflowConfig.value = defaultConfig
   const samples = sampleBranches()
@@ -922,7 +924,9 @@ const applySampleData = () => {
   usingSampleData.value = true
 }
 
-applySampleData()
+if (ENABLE_GITFLOW_SAMPLE_DATA) {
+  applySampleData()
+}
 
 const fetchGitflowBranches = async () => {
   try {
@@ -937,7 +941,10 @@ const fetchGitflowBranches = async () => {
     pruneReleaseStages(availableNames)
     gitflowBranches.value = summary.branches.map(decorateBranch)
     if (!gitflowBranches.value.length) {
-      applySampleData()
+      usingSampleData.value = false
+      if (ENABLE_GITFLOW_SAMPLE_DATA) {
+        applySampleData()
+      }
     } else {
       lastSyncedAt.value = Date.now()
     }
@@ -951,12 +958,21 @@ const fetchGitflowBranches = async () => {
     console.error('[Gitflow] fetch failed', err)
     const message = (err as Error).message || '无法获取 Gitflow 分支信息'
     if (message.includes('No repository opened')) {
-      error.value = '请先在消息生成页选择或打开仓库'
-      applySampleData()
+      error.value = '��������Ϣ����ҳѡ���򿪲ֿ�'
+      gitflowBranches.value = []
+      usingSampleData.value = false
+      gitflowConfig.value = null
+      hasOriginRemote.value = true
+      if (ENABLE_GITFLOW_SAMPLE_DATA) {
+        applySampleData()
+      }
     } else {
       error.value = message
       if (!gitflowBranches.value.length) {
-        applySampleData()
+        usingSampleData.value = false
+        if (ENABLE_GITFLOW_SAMPLE_DATA) {
+          applySampleData()
+        }
       }
     }
   } finally {
@@ -1015,7 +1031,13 @@ export const useGitflow = () => {
     if (pathValue) {
       fetchGitflowBranches()
     } else {
-      applySampleData()
+      gitflowBranches.value = []
+      gitflowConfig.value = null
+      usingSampleData.value = false
+      hasOriginRemote.value = true
+      if (ENABLE_GITFLOW_SAMPLE_DATA) {
+        applySampleData()
+      }
     }
   }
 
