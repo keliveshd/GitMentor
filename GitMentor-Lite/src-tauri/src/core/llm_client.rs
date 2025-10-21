@@ -1,6 +1,6 @@
+use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
-use anyhow::Result;
 use std::time::Duration;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,41 +63,41 @@ impl LLMClient {
             .timeout(Duration::from_secs(config.timeout_seconds))
             .build()
             .expect("Failed to create HTTP client");
-        
+
         Self { client, config }
     }
 
     pub async fn generate_commit_message(&self, prompt: &str) -> Result<String> {
         let request = ChatRequest {
             model: self.config.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: prompt.to_string(),
-                }
-            ],
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt.to_string(),
+            }],
             stream: false,
         };
 
-        let mut request_builder = self.client
+        let mut request_builder = self
+            .client
             .post(&format!("{}/v1/chat/completions", self.config.base_url))
             .header("Content-Type", "application/json")
             .json(&request);
 
         // Add Authorization header if API key is provided
         if let Some(api_key) = &self.config.api_key {
-            request_builder = request_builder.header("Authorization", format!("Bearer {}", api_key));
+            request_builder =
+                request_builder.header("Authorization", format!("Bearer {}", api_key));
         }
 
         let response = request_builder.send().await?;
-        
+
         if !response.status().is_success() {
             let error_text = response.text().await?;
             return Err(anyhow::anyhow!("LLM API error: {}", error_text));
         }
 
         let chat_response: ChatResponse = response.json().await?;
-        
+
         if let Some(choice) = chat_response.choices.first() {
             Ok(choice.message.content.clone())
         } else {

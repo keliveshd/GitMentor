@@ -11,6 +11,7 @@ GitMentor-Lite/src-tauri/.config/ai_config.json
 
 # === Project ignores added by Evilek on 2025-08-11 ===
 # Node/Vite outputs
+node_modules/
 GitMentor-Lite/node_modules/
 GitMentor-Lite/dist/
 
@@ -38,3 +39,12 @@ Thumbs.db
 # Large vendor icon set (we use public/icons instead)
 GitMentor-Lite/src/assets/static-webp/
 
+nextjs-shadcn-migration-analysis.md
+INITIALIZATION_REPORT.md
+GitMentor-Lite/src-tauri/src/CLAUDE.md
+CLAUDE.md
+.claude/update.py
+.claude/project_stats.md
+.claude/stats.py
+.claude/README.md
+.claude/index.json

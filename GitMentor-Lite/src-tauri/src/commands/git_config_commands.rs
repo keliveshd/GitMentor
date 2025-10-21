@@ -1,7 +1,7 @@
-use tauri::State;
-use tokio::sync::Mutex;
 use crate::core::git_config::{GitConfig, GitConfigManager, GitExecutionMode};
 use crate::core::git_engine::GitEngine;
+use tauri::State;
+use tokio::sync::Mutex;
 
 /**
  * Git配置相关命令
@@ -28,16 +28,17 @@ pub async fn update_git_config(
     // 更新配置管理器
     {
         let mut manager = git_config_manager.lock().await;
-        manager.update_config(config.clone())
+        manager
+            .update_config(config.clone())
             .map_err(|e| format!("Failed to save git config: {}", e))?;
     }
-    
+
     // 更新Git引擎配置
     {
         let mut engine = git_engine.lock().await;
         engine.update_config(config);
     }
-    
+
     Ok("Git配置已更新".to_string())
 }
 
@@ -53,17 +54,15 @@ pub async fn get_available_git_modes() -> Result<Vec<(GitExecutionMode, String)>
 
 /// 测试Git执行方式是否可用
 #[tauri::command]
-pub async fn test_git_execution_mode(
-    mode: GitExecutionMode,
-) -> Result<String, String> {
+pub async fn test_git_execution_mode(mode: GitExecutionMode) -> Result<String, String> {
     use crate::core::git_config::GitConfig;
-    
+
     let mut test_config = GitConfig::default();
     test_config.execution_mode = mode.clone();
-        
+
     // 这里可以添加实际的测试逻辑
     // 比如尝试执行git --version命令
-    
+
     match mode {
         GitExecutionMode::Auto => Ok("自动检测模式已设置".to_string()),
         GitExecutionMode::SystemGit => Ok("系统Git模式已设置".to_string()),
@@ -79,19 +78,20 @@ pub async fn reset_git_config(
     git_engine: State<'_, Mutex<GitEngine>>,
 ) -> Result<String, String> {
     let default_config = GitConfig::default();
-    
+
     // 更新配置管理器
     {
         let mut manager = git_config_manager.lock().await;
-        manager.update_config(default_config.clone())
+        manager
+            .update_config(default_config.clone())
             .map_err(|e| format!("Failed to reset git config: {}", e))?;
     }
-    
+
     // 更新Git引擎配置
     {
         let mut engine = git_engine.lock().await;
         engine.update_config(default_config);
     }
-    
+
     Ok("Git配置已重置为默认值".to_string())
 }

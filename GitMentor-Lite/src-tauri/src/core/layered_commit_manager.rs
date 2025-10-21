@@ -1,15 +1,15 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::core::ai_manager::AIManager;
-use crate::core::git_engine::GitEngine;
-use crate::core::conversation_logger::StepInfo;
 use crate::core::ai_provider::{AIRequest, ChatMessage};
-use crate::core::prompt_manager::{PromptManager, CommitContext};
+use crate::core::conversation_logger::StepInfo;
+use crate::core::git_engine::GitEngine;
+use crate::core::prompt_manager::{CommitContext, PromptManager};
 use crate::utils::token_counter::TokenCounter;
 
 /**
@@ -65,10 +65,7 @@ pub struct LayeredCommitManager {
 }
 
 impl LayeredCommitManager {
-    pub fn new(
-        ai_manager: Arc<RwLock<AIManager>>,
-        git_engine: Arc<RwLock<GitEngine>>,
-    ) -> Self {
+    pub fn new(ai_manager: Arc<RwLock<AIManager>>, git_engine: Arc<RwLock<GitEngine>>) -> Self {
         Self {
             ai_manager,
             git_engine,
@@ -97,7 +94,7 @@ impl LayeredCommitManager {
     ) -> Result<bool> {
         let ai_manager = self.ai_manager.read().await;
         let config = ai_manager.get_config().await;
-        
+
         // 检查是否启用了分层提交功能
         if !config.features.enable_layered_commit {
             return Ok(false);
@@ -105,11 +102,11 @@ impl LayeredCommitManager {
 
         // 获取当前模型的token限制
         let model_max_tokens = self.get_model_max_tokens(&config.base.model).await?;
-        
+
         // 构建基本的消息来估算token数量
         let system_message = "你是一个专业的Git提交消息生成助手。";
         let user_message = format!("请为以下代码变更生成提交消息:\n{}", diff_content);
-        
+
         let messages = vec![
             ChatMessage {
                 role: "system".to_string(),
@@ -120,7 +117,7 @@ impl LayeredCommitManager {
                 content: user_message,
             },
         ];
-        
+
         let request = AIRequest {
             messages,
             model: config.base.model.clone(),
@@ -151,7 +148,9 @@ impl LayeredCommitManager {
         let start_time = std::time::Instant::now();
 
         // 第一步：获取每个文件的diff
-        let files_with_diffs = self.get_files_with_diffs(&staged_files, template_id).await?;
+        let files_with_diffs = self
+            .get_files_with_diffs(&staged_files, template_id)
+            .await?;
         let total_files = files_with_diffs.len();
 
         // 初始化进度
@@ -162,7 +161,7 @@ impl LayeredCommitManager {
             current_file: None,
             status: "开始分层提交".to_string(),
             file_summaries: Vec::new(),
-            ai_stream_content: None,  // 初始化AI流式输出内容 - Author: Evilek, Date: 2025-01-10
+            ai_stream_content: None, // 初始化AI流式输出内容 - Author: Evilek, Date: 2025-01-10
         };
         progress_callback(progress.clone());
 
@@ -180,16 +179,18 @@ impl LayeredCommitManager {
             progress.current_file = Some(file_path.clone());
             progress.status = format!("分析文件 {}/{}: {}", index + 1, total_files, file_path);
 
-            let summary_result = self.analyze_single_file_with_stream(
-                file_path,
-                diff_content,
-                template_id,
-                &session_id,
-                index as u32 + 1,
-                total_files as u32,
-                repository_path.clone(),
-                &progress_callback,
-            ).await?;
+            let summary_result = self
+                .analyze_single_file_with_stream(
+                    file_path,
+                    diff_content,
+                    template_id,
+                    &session_id,
+                    index as u32 + 1,
+                    total_files as u32,
+                    repository_path.clone(),
+                    &progress_callback,
+                )
+                .await?;
 
             file_summaries.push(summary_result.summary.clone());
             conversation_records.push(summary_result.record_id);
@@ -201,14 +202,16 @@ impl LayeredCommitManager {
         progress.current_file = None;
         progress.status = "生成最终提交消息".to_string();
 
-        let final_result = self.generate_final_commit_message_with_stream(
-            template_id,
-            &file_summaries,
-            branch_name,
-            &session_id,
-            repository_path.clone(),
-            &progress_callback,
-        ).await?;
+        let final_result = self
+            .generate_final_commit_message_with_stream(
+                template_id,
+                &file_summaries,
+                branch_name,
+                &session_id,
+                repository_path.clone(),
+                &progress_callback,
+            )
+            .await?;
 
         conversation_records.push(final_result.record_id);
 
@@ -228,7 +231,11 @@ impl LayeredCommitManager {
     /// Author: Evilek, Date: 2025-01-08
     /// 支持处理带有特殊标记的文件（#truncated, #split）
     /// Updated: Evilek, Date: 2025-01-09 - 添加template_id参数用于文件分割控制
-    async fn get_files_with_diffs(&self, staged_files: &[String], template_id: &str) -> Result<Vec<(String, String)>> {
+    async fn get_files_with_diffs(
+        &self,
+        staged_files: &[String],
+        template_id: &str,
+    ) -> Result<Vec<(String, String)>> {
         let git_engine = self.git_engine.read().await;
         let mut files_with_diffs = Vec::new();
 
@@ -240,11 +247,21 @@ impl LayeredCommitManager {
                 match git_engine.get_simple_file_diff(&actual_path) {
                     Ok(diff_content) => {
                         // 截取文件内容的前面部分（根据模板的max_tokens限制）
-                        let truncated_content = self.truncate_new_file_content_with_template(&actual_path, &diff_content, template_id).await?;
+                        let truncated_content = self
+                            .truncate_new_file_content_with_template(
+                                &actual_path,
+                                &diff_content,
+                                template_id,
+                            )
+                            .await?;
                         files_with_diffs.push((actual_path, truncated_content));
-                    },
+                    }
                     Err(e) => {
-                        return Err(anyhow::anyhow!("获取新增文件diff失败 {}: {}", actual_path, e));
+                        return Err(anyhow::anyhow!(
+                            "获取新增文件diff失败 {}: {}",
+                            actual_path,
+                            e
+                        ));
                     }
                 }
             } else if file_path.contains("#split") {
@@ -253,23 +270,32 @@ impl LayeredCommitManager {
                 match git_engine.get_simple_file_diff(&actual_path) {
                     Ok(diff_content) => {
                         // 分割大文件内容，使用模板的max_tokens作为分割依据
-                        let split_contents = self.split_file_content_with_template(&actual_path, &diff_content, template_id).await?;
+                        let split_contents = self
+                            .split_file_content_with_template(
+                                &actual_path,
+                                &diff_content,
+                                template_id,
+                            )
+                            .await?;
                         for (index, content) in split_contents.into_iter().enumerate() {
                             let split_path = format!("{}#part{}", actual_path, index + 1);
                             files_with_diffs.push((split_path, content));
                         }
-                    },
+                    }
                     Err(e) => {
-                        return Err(anyhow::anyhow!("获取分割文件diff失败 {}: {}", actual_path, e));
+                        return Err(anyhow::anyhow!(
+                            "获取分割文件diff失败 {}: {}",
+                            actual_path,
+                            e
+                        ));
                     }
                 }
-
             } else {
                 // 普通文件处理
                 match git_engine.get_simple_file_diff(file_path) {
                     Ok(diff_content) => {
                         files_with_diffs.push((file_path.clone(), diff_content));
-                    },
+                    }
                     Err(e) => {
                         return Err(anyhow::anyhow!("获取文件diff失败 {}: {}", file_path, e));
                     }
@@ -322,7 +348,7 @@ impl LayeredCommitManager {
             messages,
             model: config.base.model.clone(),
             temperature: Some(0.3),
-            max_tokens: None,  // 移除token限制，让AI完整输出
+            max_tokens: None, // 移除token限制，让AI完整输出
             stream: Some(false),
         };
 
@@ -334,7 +360,10 @@ impl LayeredCommitManager {
             current_file: Some(file_path.to_string()),
             status: format!("分析文件 {}/{}: {}", step_index, total_steps, file_path),
             file_summaries: Vec::new(),
-            ai_stream_content: Some(format!("⚡ 正在分析文件: {}\n\n📤 发送请求到AI...", file_path)),
+            ai_stream_content: Some(format!(
+                "⚡ 正在分析文件: {}\n\n📤 发送请求到AI...",
+                file_path
+            )),
         };
         progress_callback(progress.clone());
 
@@ -390,7 +419,8 @@ impl LayeredCommitManager {
                 let chunk_str: String = chunk.iter().collect();
                 ai_output.push_str(&chunk_str);
 
-                progress.ai_stream_content = Some(format!("{}\n</think>\n\n📝 正在生成分析结果...", ai_output));
+                progress.ai_stream_content =
+                    Some(format!("{}\n</think>\n\n📝 正在生成分析结果...", ai_output));
                 progress_callback(progress.clone());
 
                 // 减少延迟，提高流式输出速度 - Author: Evilek, Date: 2025-01-10
@@ -425,16 +455,18 @@ impl LayeredCommitManager {
             description: Some(format!("分析文件: {}", file_path)),
         };
 
-        let record_id = ai_manager.log_conversation_with_session(
-            template_id.to_string(),
-            repository_path,
-            Some(session_id.to_string()),
-            Some("layered".to_string()),
-            Some(step_info),
-            request,
-            response.clone(),
-            processing_time,
-        ).await?;
+        let record_id = ai_manager
+            .log_conversation_with_session(
+                template_id.to_string(),
+                repository_path,
+                Some(session_id.to_string()),
+                Some("layered".to_string()),
+                Some(step_info),
+                request,
+                response.clone(),
+                processing_time,
+            )
+            .await?;
 
         let summary = FileSummary {
             file_path: file_path.to_string(),
@@ -442,10 +474,7 @@ impl LayeredCommitManager {
             tokens_used: response.usage.map(|u| u.total_tokens).unwrap_or(0),
         };
 
-        Ok(SingleFileResult {
-            summary,
-            record_id,
-        })
+        Ok(SingleFileResult { summary, record_id })
     }
 
     /// 分析单个文件（原方法，保持向后兼容）
@@ -487,7 +516,7 @@ impl LayeredCommitManager {
             model: config.base.model.clone(),
             temperature: Some(0.3),
             max_tokens: Some(config.advanced.max_tokens), // 使用系统全局配置的max_tokens，而不是硬编码
-            stream: Some(false),  // 当前提供商实现不支持流式输出，保持false
+            stream: Some(false),                          // 当前提供商实现不支持流式输出，保持false
         };
 
         let start_time = std::time::Instant::now();
@@ -504,16 +533,18 @@ impl LayeredCommitManager {
         };
 
         // 记录对话到日志
-        let record_id = ai_manager.log_conversation_with_session(
-            "layered_commit".to_string(),
-            repository_path,
-            Some(session_id.to_string()),
-            Some("layered".to_string()),
-            Some(step_info),
-            request,
-            response.clone(),
-            processing_time,
-        ).await?;
+        let record_id = ai_manager
+            .log_conversation_with_session(
+                "layered_commit".to_string(),
+                repository_path,
+                Some(session_id.to_string()),
+                Some("layered".to_string()),
+                Some(step_info),
+                request,
+                response.clone(),
+                processing_time,
+            )
+            .await?;
 
         let tokens_used = TokenCounter::estimate_tokens(&response.content);
 
@@ -552,13 +583,17 @@ impl LayeredCommitManager {
 
         // 获取模板内容并构建最终总结的提示词
         let prompt_manager = ai_manager.get_prompt_manager().await;
-        let _template = prompt_manager.get_template(template_id)
+        let _template = prompt_manager
+            .get_template(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", template_id))?;
 
         // 构建上下文
         let context = CommitContext {
             diff: summary_content.clone(),
-            staged_files: file_summaries.iter().map(|fs| fs.file_path.clone()).collect(),
+            staged_files: file_summaries
+                .iter()
+                .map(|fs| fs.file_path.clone())
+                .collect(),
             branch_name: None,
             commit_type: None,
             max_length: None,
@@ -566,8 +601,12 @@ impl LayeredCommitManager {
         };
 
         // 使用统一生成的消息（重构优化）
-        let file_summary_strs: Vec<&str> = file_summaries.iter().map(|fs| fs.summary.as_str()).collect();
-        let messages = prompt_manager.generate_summary_messages(template_id, &context, &file_summary_strs)
+        let file_summary_strs: Vec<&str> = file_summaries
+            .iter()
+            .map(|fs| fs.summary.as_str())
+            .collect();
+        let messages = prompt_manager
+            .generate_summary_messages(template_id, &context, &file_summary_strs)
             .map_err(|e| anyhow::anyhow!("生成总结消息失败: {}", e))?;
 
         // 使用统一生成的消息（重构优化），移除max_tokens限制 - Author: Evilek, Date: 2025-01-10
@@ -576,7 +615,7 @@ impl LayeredCommitManager {
             messages: messages.clone(),
             model: config.base.model.clone(),
             temperature: Some(0.3),
-            max_tokens: None,  // 移除token限制，让AI完整输出最终提交消息
+            max_tokens: None, // 移除token限制，让AI完整输出最终提交消息
             stream: Some(false),
         };
 
@@ -587,8 +626,10 @@ impl LayeredCommitManager {
             total_steps: file_summaries.len() as u32 + 1,
             current_file: None,
             status: "生成最终提交消息".to_string(),
-            file_summaries: file_summaries.to_vec(),  // 保持已有的文件摘要 - Author: Evilek, Date: 2025-01-10
-            ai_stream_content: Some("🎯 正在生成最终提交消息...\n\n📤 发送汇总请求到AI...".to_string()),
+            file_summaries: file_summaries.to_vec(), // 保持已有的文件摘要 - Author: Evilek, Date: 2025-01-10
+            ai_stream_content: Some(
+                "🎯 正在生成最终提交消息...\n\n📤 发送汇总请求到AI...".to_string(),
+            ),
         };
         progress_callback(progress.clone());
 
@@ -645,7 +686,10 @@ impl LayeredCommitManager {
                 let chunk_str: String = chunk.iter().collect();
                 ai_output.push_str(&chunk_str);
 
-                progress.ai_stream_content = Some(format!("{}\n</think>\n\n📝 正在生成最终提交消息...", ai_output));
+                progress.ai_stream_content = Some(format!(
+                    "{}\n</think>\n\n📝 正在生成最终提交消息...",
+                    ai_output
+                ));
                 progress_callback(progress.clone());
 
                 // 减少延迟，提高流式输出速度 - Author: Evilek, Date: 2025-01-10
@@ -680,16 +724,18 @@ impl LayeredCommitManager {
             description: Some("生成最终提交消息".to_string()),
         };
 
-        let record_id = ai_manager.log_conversation_with_session(
-            template_id.to_string(),
-            repository_path,
-            Some(session_id.to_string()),
-            Some("layered".to_string()),
-            Some(step_info),
-            request,
-            response.clone(),
-            processing_time,
-        ).await?;
+        let record_id = ai_manager
+            .log_conversation_with_session(
+                template_id.to_string(),
+                repository_path,
+                Some(session_id.to_string()),
+                Some("layered".to_string()),
+                Some(step_info),
+                request,
+                response.clone(),
+                processing_time,
+            )
+            .await?;
 
         Ok(FinalCommitResult {
             message: response.content,
@@ -721,13 +767,17 @@ impl LayeredCommitManager {
 
         // 获取模板内容并构建最终总结的提示词
         let prompt_manager = ai_manager.get_prompt_manager().await;
-        let _template = prompt_manager.get_template(template_id)
+        let _template = prompt_manager
+            .get_template(template_id)
             .ok_or_else(|| anyhow::anyhow!("Template '{}' not found", template_id))?;
 
         // 构建临时的CommitContext用于语言处理
         let temp_context = crate::core::prompt_manager::CommitContext {
             diff: summary_content.clone(),
-            staged_files: file_summaries.iter().map(|fs| fs.file_path.clone()).collect(),
+            staged_files: file_summaries
+                .iter()
+                .map(|fs| fs.file_path.clone())
+                .collect(),
             branch_name: _branch_name.clone(),
             commit_type: None,
             max_length: None,
@@ -768,16 +818,18 @@ impl LayeredCommitManager {
             description: Some("生成最终提交消息".to_string()),
         };
 
-        let record_id = ai_manager.log_conversation_with_session(
-            "layered_commit".to_string(),
-            repository_path,
-            Some(session_id.to_string()),
-            Some("layered".to_string()),
-            Some(step_info),
-            request,
-            response.clone(),
-            processing_time,
-        ).await?;
+        let record_id = ai_manager
+            .log_conversation_with_session(
+                "layered_commit".to_string(),
+                repository_path,
+                Some(session_id.to_string()),
+                Some("layered".to_string()),
+                Some(step_info),
+                request,
+                response.clone(),
+                processing_time,
+            )
+            .await?;
 
         Ok(FinalCommitResult {
             message: response.content,
@@ -796,8 +848,8 @@ impl LayeredCommitManager {
             m if m.contains("claude") => Some(100000),
             m if m.contains("gemini") => Some(32768),
             m if m.contains("qwen2.5:32b") => Some(32768), // qwen2.5:32b 支持32k上下文
-            m if m.contains("qwen") => Some(8192), // 其他qwen模型默认8k
-            _ => Some(4096), // 默认限制
+            m if m.contains("qwen") => Some(8192),         // 其他qwen模型默认8k
+            _ => Some(4096),                               // 默认限制
         };
 
         Ok(max_tokens)
@@ -806,12 +858,18 @@ impl LayeredCommitManager {
     /// 截取新增文件内容（使用模板配置）
     /// Author: Evilek, Date: 2025-01-09
     /// 根据模板的max_tokens限制截取新增文件的前面部分，并包含文件名上下文
-    async fn truncate_new_file_content_with_template(&self, file_path: &str, diff_content: &str, template_id: &str) -> Result<String> {
+    async fn truncate_new_file_content_with_template(
+        &self,
+        file_path: &str,
+        diff_content: &str,
+        template_id: &str,
+    ) -> Result<String> {
         // 获取模板的max_tokens配置作为截取依据
         // Author: Evilek, Date: 2025-01-09 - 修复PromptManager实例化问题，使用AI管理器中的实例
         let ai_manager = self.ai_manager.read().await;
         let prompt_manager = ai_manager.get_prompt_manager().await;
-        let template_max_tokens = prompt_manager.get_template_config(template_id)
+        let template_max_tokens = prompt_manager
+            .get_template_config(template_id)
             .and_then(|(max_tokens, _)| max_tokens)
             .unwrap_or(1000); // 修复：增加默认值到1000 tokens，避免过度截取
 
@@ -819,7 +877,8 @@ impl LayeredCommitManager {
         let safe_limit = (template_max_tokens as f32 * 0.7) as u32;
 
         // 预估文件名和格式开销的token数
-        let file_context_tokens = TokenCounter::estimate_tokens(&format!("文件: {}\n\n", file_path)) + 50;
+        let file_context_tokens =
+            TokenCounter::estimate_tokens(&format!("文件: {}\n\n", file_path)) + 50;
 
         let lines: Vec<&str> = diff_content.lines().collect();
         let total_lines = lines.len();
@@ -840,8 +899,10 @@ impl LayeredCommitManager {
 
         // 添加文件名上下文和截取说明
         let result = if truncated_line_count < total_lines {
-            format!("文件: {}\n\n{}\n\n# 文件内容已截取，显示前{}行（共{}行）",
-                file_path, truncated_content, truncated_line_count, total_lines)
+            format!(
+                "文件: {}\n\n{}\n\n# 文件内容已截取，显示前{}行（共{}行）",
+                file_path, truncated_content, truncated_line_count, total_lines
+            )
         } else {
             format!("文件: {}\n\n{}", file_path, truncated_content)
         };
@@ -883,7 +944,11 @@ impl LayeredCommitManager {
         let mut result = truncated_lines.join("\n");
         if truncated_lines.len() < total_lines {
             result.push_str("\n...");
-            result.push_str(&format!("\n# 文件内容已截取，显示前{}行（共{}行）", truncated_lines.len(), total_lines));
+            result.push_str(&format!(
+                "\n# 文件内容已截取，显示前{}行（共{}行）",
+                truncated_lines.len(),
+                total_lines
+            ));
         }
 
         Ok(result)
@@ -892,21 +957,33 @@ impl LayeredCommitManager {
     /// 分割文件内容（使用模板配置）
     /// Author: Evilek, Date: 2025-01-09
     /// 根据模板的max_tokens配置将大文件内容分割成多个部分，每个部分都包含文件名上下文
-    async fn split_file_content_with_template(&self, file_path: &str, diff_content: &str, template_id: &str) -> Result<Vec<String>> {
+    async fn split_file_content_with_template(
+        &self,
+        file_path: &str,
+        diff_content: &str,
+        template_id: &str,
+    ) -> Result<Vec<String>> {
         // 获取模板的max_tokens配置作为分割依据
         // Author: Evilek, Date: 2025-01-09 - 修复PromptManager实例化问题，使用AI管理器中的实例
         let ai_manager = self.ai_manager.read().await;
         let prompt_manager = ai_manager.get_prompt_manager().await;
-        let template_max_tokens = prompt_manager.get_template_config(template_id)
+        let template_max_tokens = prompt_manager
+            .get_template_config(template_id)
             .and_then(|(max_tokens, _)| max_tokens)
             .unwrap_or(1000); // 修复：增加默认值到1000 tokens，避免过度分割
 
-        println!("🔍 [split_file_content_with_template] 模板 {} 的max_tokens: {}", template_id, template_max_tokens);
+        println!(
+            "🔍 [split_file_content_with_template] 模板 {} 的max_tokens: {}",
+            template_id, template_max_tokens
+        );
 
         // 使用模板的max_tokens作为分割的安全限制（保留30%余量给文件名和格式）
         let safe_limit = (template_max_tokens as f32 * 0.7) as u32;
 
-        println!("🔍 [split_file_content_with_template] 分割安全限制: {} tokens", safe_limit);
+        println!(
+            "🔍 [split_file_content_with_template] 分割安全限制: {} tokens",
+            safe_limit
+        );
 
         let lines: Vec<&str> = diff_content.lines().collect();
         let mut split_contents = Vec::new();
@@ -914,15 +991,19 @@ impl LayeredCommitManager {
         let mut current_tokens = 0u32;
 
         // 预估文件名和格式开销的token数
-        let file_context_tokens = TokenCounter::estimate_tokens(&format!("文件: {}\n\n", file_path)) + 50;
+        let file_context_tokens =
+            TokenCounter::estimate_tokens(&format!("文件: {}\n\n", file_path)) + 50;
 
         for line in &lines {
             let line_tokens = TokenCounter::estimate_tokens(line);
 
             // 如果添加这一行会超过限制，保存当前块并开始新块
-            if current_tokens + line_tokens + file_context_tokens > safe_limit && !current_chunk.is_empty() {
+            if current_tokens + line_tokens + file_context_tokens > safe_limit
+                && !current_chunk.is_empty()
+            {
                 // 为每个分割部分添加文件名上下文
-                let chunk_with_context = format!("文件: {}\n\n{}", file_path, current_chunk.join("\n"));
+                let chunk_with_context =
+                    format!("文件: {}\n\n{}", file_path, current_chunk.join("\n"));
                 split_contents.push(chunk_with_context);
                 current_chunk.clear();
                 current_tokens = 0;
@@ -942,7 +1023,12 @@ impl LayeredCommitManager {
         if split_contents.len() > 1 {
             let total_parts = split_contents.len();
             for (index, content) in split_contents.iter_mut().enumerate() {
-                content.push_str(&format!("\n\n# 这是文件 {} 的第{}部分（共{}部分）", file_path, index + 1, total_parts));
+                content.push_str(&format!(
+                    "\n\n# 这是文件 {} 的第{}部分（共{}部分）",
+                    file_path,
+                    index + 1,
+                    total_parts
+                ));
             }
         }
 
@@ -997,7 +1083,11 @@ impl LayeredCommitManager {
         // 为每个分片添加说明
         let total_parts = split_contents.len();
         for (index, content) in split_contents.iter_mut().enumerate() {
-            content.push_str(&format!("\n# 这是文件的第{}部分（共{}部分）", index + 1, total_parts));
+            content.push_str(&format!(
+                "\n# 这是文件的第{}部分（共{}部分）",
+                index + 1,
+                total_parts
+            ));
         }
 
         Ok(split_contents)
@@ -1029,11 +1119,10 @@ impl LayeredCommitManager {
             "Thai" => "th",
             "Indonesian" => "id",
             _ => "en", // 默认英文
-        }.to_string()
+        }
+        .to_string()
     }
 }
-
-
 
 #[derive(Debug)]
 struct SingleFileResult {

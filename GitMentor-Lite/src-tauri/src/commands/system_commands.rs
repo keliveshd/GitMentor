@@ -37,7 +37,7 @@ pub async fn get_app_info() -> Result<AppInfo, String> {
     let name = env!("CARGO_PKG_NAME").to_string();
     let description = env!("CARGO_PKG_DESCRIPTION").to_string();
     let authors = env!("CARGO_PKG_AUTHORS").to_string();
-    
+
     Ok(AppInfo {
         name,
         version,
