@@ -195,14 +195,20 @@ const resolvePrimaryActionId = (branch: GitflowBranch): string | null => {
     return 'backport'
   }
   if (branch.branchType === 'feature') {
+    if (!hasOriginRemote.value) {
+      return 'finish-local'
+    }
     if (branch.status === 'awaiting_merge') {
-      return hasOriginRemote.value ? 'open-pr' : 'generate-status'
+      return 'open-pr'
     }
     return 'generate-status'
   }
   if (branch.branchType === 'bugfix') {
+    if (!hasOriginRemote.value) {
+      return 'finish-local'
+    }
     if (branch.status === 'awaiting_merge') {
-      return hasOriginRemote.value ? 'request-review' : 'generate-status'
+      return 'request-review'
     }
     return 'generate-status'
   }
@@ -306,6 +312,8 @@ const runQuickAction = async (branch: GitflowBranch, action: any): Promise<GitOp
       return openPullRequest(branch)
     case 'qa-update':
       return updateQAStatus(branch)
+    case 'finish-local':
+      return finishLocalMerge(branch)
     case 'finish-release':
       return finishRelease(branch)
     case 'finalize-release':
@@ -382,6 +390,21 @@ const updateQAStatus = async (branch: GitflowBranch): Promise<GitOperationResult
     return result
   } catch (error) {
     console.error('更新 QA 状态失败:', error)
+    throw error
+  }
+}
+
+const finishLocalMerge = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'finish_local'
+      }
+    })) as GitOperationResult
+    await fetchGitflowBranches()
+    return result
+  } catch (error) {
     throw error
   }
 }

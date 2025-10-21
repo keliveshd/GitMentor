@@ -814,6 +814,24 @@ impl GitEngine {
 
                 }
 
+                "finish_local" => {
+
+                    let branch_kind = branch_type
+                        .ok_or_else(|| anyhow!("无法识别分支类型: {}", request.branch_name))?;
+
+                    if !matches!(branch_kind, GitflowBranchType::Feature | GitflowBranchType::Bugfix) {
+                        return Err(anyhow!("当前分支类型不支持本地完成操作"));
+                    }
+
+                    let base_branch = Self::resolve_base_branch(&branch_kind, &config);
+
+                    return self.finish_branch_locally(
+                        repo_path,
+                        &request.branch_name,
+                        &base_branch,
+                    );
+                }
+
                 "finish_release" => {
 
                     let repo = Repository::open(repo_path)?;
@@ -1650,6 +1668,83 @@ impl GitEngine {
 
         }
 
+    }
+
+    fn finish_branch_locally(
+        &self,
+        repo_path: &str,
+        feature_branch: &str,
+        base_branch: &str,
+    ) -> Result<GitOperationResult> {
+        let repo = Repository::open(repo_path)?;
+
+        if repo
+            .find_branch(feature_branch, BranchType::Local)
+            .is_err()
+        {
+            return Err(anyhow!("当前仓库未找到分支 {}，请刷新 Gitflow 面板后重试", feature_branch));
+        }
+
+        if repo
+            .find_branch(base_branch, BranchType::Local)
+            .is_err()
+        {
+            return Err(anyhow!("未找到基线分支 {}，请先创建或检出后再执行合并", base_branch));
+        }
+
+        let has_origin = repo.find_remote("origin").is_ok();
+
+        let (feature_ahead, feature_behind) = {
+            let feature = repo.find_branch(feature_branch, BranchType::Local)?;
+            let base = repo.find_branch(base_branch, BranchType::Local)?;
+            let feature_target = feature.get().target();
+            let base_target = base.get().target();
+            if let (Some(feature_oid), Some(base_oid)) = (feature_target, base_target) {
+                repo.graph_ahead_behind(feature_oid, base_oid).unwrap_or((0, 0))
+            } else {
+                (0, 0)
+            }
+        };
+
+        drop(repo);
+
+        self.checkout_branch_internal(repo_path, base_branch)?;
+
+        if has_origin {
+            let _ = self.fetch_remote(Some("origin"));
+            if let Err(err) = self.pull_current_branch() {
+                return Err(anyhow!("更新 {} 失败: {}", base_branch, err));
+            }
+        }
+
+        self.merge_branch_into(repo_path, feature_branch, base_branch)?;
+
+        if let Err(err) = self.delete_local_branch(repo_path, feature_branch) {
+            println!("[WARN] 删除本地分支 {} 失败: {}", feature_branch, err);
+        }
+
+        let mut details = String::new();
+        if has_origin {
+            details.push_str("已从 origin 拉取最新基线。");
+        }
+        if feature_behind > 0 {
+            if !details.is_empty() {
+                details.push(' ');
+            }
+            details.push_str(&format!("合并前该分支落后基线 {} 个提交，现已同步。", feature_behind));
+        }
+        if feature_ahead > 0 {
+            if !details.is_empty() {
+                details.push(' ');
+            }
+            details.push_str(&format!("包含 {} 个待合并提交。", feature_ahead));
+        }
+
+        Ok(GitOperationResult {
+            success: true,
+            message: format!("已将 {} 合并至 {} 并关闭本地分支", feature_branch, base_branch),
+            details: if details.is_empty() { None } else { Some(details) },
+        })
     }
 
 

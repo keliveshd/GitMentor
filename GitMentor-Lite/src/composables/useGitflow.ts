@@ -280,6 +280,14 @@ const computeDefaultQuickActions = (branch: GitflowBranch): GitflowQuickAction[]
 
   switch (branch.branchType) {
     case 'feature': {
+      if (remoteUnavailable) {
+        actions.push({
+          id: 'finish-local',
+          label: `合并到 ${branch.base}`,
+          icon: '✅',
+          description: `将当前分支合并进 ${branch.base} 并关闭本地分支`
+        })
+      }
       if (behindCount > 0) {
         const baseSync: GitflowQuickAction = {
           id: 'sync-base',
@@ -356,6 +364,14 @@ const computeDefaultQuickActions = (branch: GitflowBranch): GitflowQuickAction[]
       break
     }
     case 'bugfix': {
+      if (remoteUnavailable) {
+        actions.push({
+          id: 'finish-local',
+          label: `合并到 ${branch.base}`,
+          icon: '✅',
+          description: `将当前分支合并进 ${branch.base} 并关闭本地分支`
+        })
+      }
       if (behindCount > 0) {
         const syncAction: GitflowQuickAction = {
           id: 'sync-base',
