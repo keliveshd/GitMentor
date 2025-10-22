@@ -114,6 +114,58 @@
           </div>
         </div>
 
+        <div v-if="remoteManagerVisible" class="remote-manager">
+          <div class="remote-manager-header">
+            <h4>����������</h4>
+            <button v-if="remoteFormMode === 'edit'" type="button" class="link-btn" @click="resetRemoteForm">ȡ���༭</button>
+          </div>
+          <form class="remote-form" @submit.prevent="submitRemoteForm">
+            <div class="form-row">
+              <label>��������</label>
+              <input v-model="remoteForm.name" :disabled="remoteFormMode === 'edit'" placeholder="���� origin" />
+            </div>
+            <div class="form-row">
+              <label>Զ��URL</label>
+              <input v-model="remoteForm.url" placeholder="https://..." />
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="primary" :disabled="remoteLoading">
+                {{ remoteFormMode === 'add' ? '��������' : '��������' }}
+              </button>
+              <button type="button" class="ghost" @click="resetRemoteForm" :disabled="remoteLoading && remoteFormMode === 'add'">
+                ����
+              </button>
+            </div>
+          </form>
+          <div v-if="remoteLoading" class="remote-loading">����Զ����Ϣ...</div>
+          <div v-else class="remote-list">
+            <p v-if="!remoteConfig || remoteConfig.remotes.length === 0" class="empty-state">��δ��⵽Զ�̿⣬���Ƚ���һ����</p>
+            <div v-for="remote in remoteConfig?.remotes || []" :key="remote.name" class="remote-card">
+              <div class="remote-card-header">
+                <div>
+                  <span class="remote-name">{{ remote.name }}</span>
+                  <span v-if="remote.is_current_upstream" class="remote-tag">��ǰ����</span>
+                </div>
+                <div class="remote-card-actions">
+                  <button type="button" class="link-btn" @click="startEditRemote(remote)">�༭</button>
+                  <button type="button" class="link-btn danger" @click="removeRemote(remote.name)">ɾ��</button>
+                </div>
+              </div>
+              <div class="remote-urls">
+                <div>Fetch: {{ remote.fetch_url || 'δ����' }}</div>
+                <div>Push: {{ remote.push_url || remote.fetch_url || 'δ����' }}</div>
+              </div>
+              <div v-if="remote.branches.length > 0" class="remote-branches">
+                <div class="branch-row" v-for="branch in remote.branches" :key="branch.full_name">
+                  <span class="branch-name">{{ branch.name }}</span>
+                  <span v-if="branch.is_tracking_current" class="branch-tag">��ǰ��Ӧ</span>
+                  <button v-else type="button" class="mini-btn" @click="setUpstream(remote.name, branch.name)" :disabled="remoteLoading">������Ӧ</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
         <div class="main-content">
           <!-- 暂存区 -->
           <div class="staged-files" v-if="gitStatus && gitStatus.staged_files.length > 0">
@@ -833,7 +885,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 import FileItem from './FileItem.vue'
@@ -873,6 +925,13 @@ const isGenerating = ref(false)
 const generationProgress = ref('')
 const isAIGenerated = ref(false)
 const isLayeredCommit = ref(false)
+const remoteConfig = ref<RemoteConfiguration | null>(null)
+const remoteManagerVisible = ref(false)
+const remoteLoading = ref(false)
+const remoteFormMode = ref<'add' | 'edit'>('add')
+const remoteForm = reactive({ name: '', url: '', originalName: '' })
+const upstreamSelection = reactive({ remote: '', branch: '' })
+
 // 推理内容相关状态 - Author: Evilek, Date: 2025-01-10
 const reasoningContent = ref<string | null>(null)
 const reasoningExpanded = ref(false)
@@ -1182,6 +1241,134 @@ const refreshHistory = async () => {
 }
 
 // 批量操作优化：收集多个操作后一次性刷新
+const loadRemoteConfiguration = async () => {
+  if (!currentRepoPath.value) {
+    remoteConfig.value = null
+    upstreamSelection.remote = ''
+    upstreamSelection.branch = ''
+    return
+  }
+
+  try {
+    remoteLoading.value = true
+    const config = await invoke('get_remote_configuration') as RemoteConfiguration
+    remoteConfig.value = config
+
+    if (config?.current_upstream) {
+      const [remoteName, ...rest] = config.current_upstream.split('/')
+      upstreamSelection.remote = remoteName || ''
+      upstreamSelection.branch = rest.join('/') || ''
+    } else {
+      upstreamSelection.remote = ''
+      upstreamSelection.branch = ''
+    }
+  } catch (error: any) {
+    console.error('获取远程配置失败:', error)
+    toast.error(`获取远程配置失败: ${error?.message || error}`, '操作失败')
+  } finally {
+    remoteLoading.value = false
+  }
+}
+
+const toggleRemoteManager = () => {
+  remoteManagerVisible.value = !remoteManagerVisible.value
+  if (remoteManagerVisible.value) {
+    void loadRemoteConfiguration()
+  } else {
+    resetRemoteForm()
+  }
+}
+
+const resetRemoteForm = () => {
+  remoteFormMode.value = 'add'
+  remoteForm.name = ''
+  remoteForm.url = ''
+  remoteForm.originalName = ''
+}
+
+const startEditRemote = (remote: RemoteInfo) => {
+  remoteManagerVisible.value = true
+  remoteFormMode.value = 'edit'
+  remoteForm.name = remote.name
+  remoteForm.url = remote.fetch_url || remote.push_url || ''
+  remoteForm.originalName = remote.name
+}
+
+const submitRemoteForm = async () => {
+  const name = remoteForm.name.trim()
+  const url = remoteForm.url.trim()
+
+  if (!name || !url) {
+    toast.error('请输入远程名称和地址', '信息不完整')
+    return
+  }
+
+  try {
+    remoteLoading.value = true
+
+    if (remoteFormMode.value === 'add') {
+      await invoke('add_remote', { name, url })
+      toast.success(`远程 ${name} 已添加`, '操作完成')
+    } else {
+      const target = remoteForm.originalName || name
+      await invoke('update_remote', { name: target, url })
+      toast.success(`远程 ${target} 已更新`, '操作完成')
+    }
+
+    resetRemoteForm()
+    await loadRemoteConfiguration()
+  } catch (error: any) {
+    console.error('保存远程失败:', error)
+    toast.error(`保存远程失败: ${error?.message || error}`, '操作失败')
+  } finally {
+    remoteLoading.value = false
+  }
+}
+
+const removeRemote = async (name: string) => {
+  const confirmed = await confirm(`确定要移除远程 ${name} 吗？`, '确认操作')
+  if (!confirmed) return
+
+  try {
+    remoteLoading.value = true
+    await invoke('remove_remote', { name })
+    toast.success(`远程 ${name} 已移除`, '操作完成')
+    if (remoteFormMode.value === 'edit' && remoteForm.originalName === name) {
+      resetRemoteForm()
+    }
+    await loadRemoteConfiguration()
+  } catch (error: any) {
+    console.error('移除远程失败:', error)
+    toast.error(`移除远程失败: ${error?.message || error}`, '操作失败')
+  } finally {
+    remoteLoading.value = false
+  }
+}
+
+const setUpstream = async (remote: string, branch: string) => {
+  if (!gitStatus.value) {
+    toast.error('当前未检测到有效分支', '操作失败')
+    return
+  }
+
+  try {
+    remoteLoading.value = true
+    await invoke('set_branch_upstream', {
+      branch: gitStatus.value.branch,
+      remote,
+      remoteBranch: branch,
+    })
+    toast.success(`已将 ${gitStatus.value.branch} 关联到 ${remote}/${branch}`, '操作完成')
+    await loadRemoteConfiguration()
+    await refreshGitStatus(true)
+  } catch (error: any) {
+    console.error('设置上游分支失败:', error)
+    toast.error(`设置上游分支失败: ${error?.message || error}`, '操作失败')
+  } finally {
+    remoteLoading.value = false
+  }
+}
+
 let pendingOperations = new Set<string>()
 let operationTimeout: number | null = null
 const OPERATION_BATCH_DELAY = 200 // 200ms内的操作会被批量处理
@@ -2269,6 +2456,12 @@ const handleKeydown = (event: KeyboardEvent) => {
 }
 
 // 监听提交消息变化，自动调整高度并重置AI生成标记
+watch(remoteManagerVisible, value => {
+  if (value) {
+    void loadRemoteConfiguration()
+  }
+})
+
 watch(commitMessage, (newValue, oldValue) => {
   nextTick(() => {
     adjustTextareaHeight()
@@ -5636,5 +5829,200 @@ const initializeHistoryReports = async () => {
   color: #64748b;
   margin-top: 2px;
 }
-</style>
+.remote-manager {
+  margin-top: 12px;
+  padding: 16px;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #f8fafc;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
 
+.remote-manager-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.remote-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px 16px;
+  align-items: end;
+}
+
+.remote-form .form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.remote-form label {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.remote-form input {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+}
+
+.remote-form .form-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.remote-form .form-actions .primary {
+  background: #2563eb;
+  color: #fff;
+  border: none;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.remote-form .form-actions .ghost {
+  background: transparent;
+  border: 1px solid #cbd5f5;
+  color: #2563eb;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.remote-loading {
+  padding: 12px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.remote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.remote-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  background: #fff;
+}
+
+.remote-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.remote-card-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.remote-card-actions .link-btn {
+  font-size: 12px;
+  color: #2563eb;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.remote-card-actions .danger {
+  color: #dc2626;
+}
+
+.remote-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.remote-tag {
+  margin-left: 8px;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.remote-urls {
+  font-size: 12px;
+  color: #4b5563;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.remote-branches {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.branch-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.branch-tag {
+  background: #dcfce7;
+  color: #15803d;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+}
+
+.branch-name {
+  min-width: 120px;
+}
+
+.mini-btn {
+  border: 1px solid #2563eb;
+  background: transparent;
+  color: #2563eb;
+  padding: 4px 8px;
+  border-radius: 6px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.remote-manager-btn {
+  margin-left: 12px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #2563eb;
+  background: transparent;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.remote-manager-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.link-btn {
+  background: none;
+  border: none;
+  color: #2563eb;
+  cursor: pointer;
+}
+
+.link-btn.danger {
+  color: #dc2626;
+}
+
+.empty-state {
+  font-size: 12px;
+  color: #6b7280;
+}
+</style>
