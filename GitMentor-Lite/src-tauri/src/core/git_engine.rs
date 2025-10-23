@@ -589,7 +589,7 @@ impl GitEngine {
 
 
 
-        let has_origin_remote = repo.find_remote("origin").is_ok();
+        let has_origin_remote = Self::resolve_default_remote(&repo).is_some();
 
         Ok(GitflowSummary {
             config,
@@ -1149,8 +1149,8 @@ impl GitEngine {
 
                     self.checkout_branch_internal(repo_path, &base_branch)?;
 
-                    let _ = self.fetch_remote(Some("origin"))?;
-
+                    let remote_name = self.require_remote_name(repo_path)?;
+                    let _ = self.fetch_remote(Some(remote_name.as_str()))?;
                     let _ = self.pull_current_branch()?;
 
 
@@ -1203,7 +1203,9 @@ impl GitEngine {
 
                         self.push_branch_with_upstream(repo_path, &request.branch_name)?;
 
-                    let remote_url = self.get_remote_url(repo_path, "origin")?;
+                    let remote_name = self.require_remote_name(repo_path)?;
+
+                    let remote_url = self.get_remote_url(repo_path, &remote_name)?;
 
                     let pr_hint = remote_url
 
@@ -1567,11 +1569,15 @@ impl GitEngine {
 
 
 
+        let remote_name = self.require_remote_name(repo_path)?;
+
+
+
         let output = Self::create_hidden_command(&git_command)
 
             .current_dir(repo_path)
 
-            .args(["push", "-u", "origin", branch_name])
+            .args(["push", "-u", remote_name.as_str(), branch_name])
 
             .output()?;
 
@@ -1621,15 +1627,21 @@ impl GitEngine {
 
         let git_command = self.get_git_command();
 
-        let mut args = vec!["push", "origin"];
+
+
+        let remote_name = self.require_remote_name(repo_path)?;
+
+
+
+        let mut args: Vec<String> = vec!["push".to_string(), remote_name.clone()];
 
         if force {
 
-            args.push("--force-with-lease");
+            args.push("--force-with-lease".to_string());
 
         }
 
-        args.push(branch_name);
+        args.push(branch_name.to_string());
 
 
 
@@ -1637,7 +1649,7 @@ impl GitEngine {
 
             .current_dir(repo_path)
 
-            .args(&args)
+            .args(args.iter().map(|arg| arg.as_str()))
 
             .output()?;
 
@@ -1701,7 +1713,7 @@ impl GitEngine {
             return Err(anyhow!("未找到基线分支 {}，请先创建或检出后再执行合并", base_branch));
         }
 
-        let has_origin = repo.find_remote("origin").is_ok();
+        let default_remote = Self::resolve_default_remote(&repo);
 
         let (feature_ahead, feature_behind) = {
             let feature = repo.find_branch(feature_branch, BranchType::Local)?;
@@ -1721,8 +1733,8 @@ impl GitEngine {
 
         let mut detail_parts: Vec<String> = Vec::new();
 
-        if has_origin {
-            let fetch_result = self.fetch_remote(Some("origin"))?;
+        if let Some(remote_name) = default_remote.as_ref() {
+            let fetch_result = self.fetch_remote(Some(remote_name.as_str()))?;
             if let Some(info) = fetch_result.details {
                 let trimmed = info.trim();
                 if !trimmed.is_empty() {
@@ -1777,11 +1789,17 @@ impl GitEngine {
 
         let git_command = self.get_git_command();
 
+
+
+        let remote_name = self.require_remote_name(repo_path)?;
+
+
+
         let output = Self::create_hidden_command(&git_command)
 
             .current_dir(repo_path)
 
-            .args(["push", "origin", "--delete", branch_name])
+            .args(["push", remote_name.as_str(), "--delete", branch_name])
 
             .output()?;
 
@@ -2081,11 +2099,13 @@ impl GitEngine {
 
             let git_command = self.get_git_command();
 
+            let remote_name = self.require_remote_name(repo_path)?;
+
             let output = Self::create_hidden_command(&git_command)
 
                 .current_dir(repo_path)
 
-                .args(["push", "-u", "origin", branch_name])
+                .args(["push", "-u", remote_name.as_str(), branch_name])
 
                 .output()
 
@@ -4375,6 +4395,90 @@ impl GitEngine {
 
 
 
+    fn resolve_default_remote(repo: &Repository) -> Option<String> {
+
+        if repo.find_remote("origin").is_ok() {
+
+            return Some("origin".to_string());
+
+        }
+
+
+
+        if let Ok(head) = repo.head() {
+
+            if head.is_branch() {
+
+                if let Some(reference_name) = head.name() {
+
+                    if let Ok(remote_buf) = repo.branch_upstream_remote(reference_name) {
+
+                        if let Some(remote_name) = remote_buf.as_str() {
+
+                            let trimmed = remote_name.trim();
+
+                            if !trimmed.is_empty() {
+
+                                return Some(trimmed.to_string());
+
+                            }
+
+                        }
+
+                    }
+
+                }
+
+            }
+
+        }
+
+
+
+        if let Ok(remotes) = repo.remotes() {
+
+            for remote_name in remotes.iter().flatten() {
+
+                let trimmed = remote_name.trim();
+
+                if !trimmed.is_empty() {
+
+                    return Some(trimmed.to_string());
+
+                }
+
+            }
+
+        }
+
+
+
+        None
+
+    }
+
+
+
+    fn get_default_remote_name(&self, repo_path: &str) -> Result<Option<String>> {
+
+        let repo = Repository::open(repo_path)?;
+
+        Ok(Self::resolve_default_remote(&repo))
+
+    }
+
+
+
+    fn require_remote_name(&self, repo_path: &str) -> Result<String> {
+
+        self.get_default_remote_name(repo_path)?
+
+            .ok_or_else(|| anyhow!("当前仓库未配置远程仓库，请先添加远程。"))
+
+    }
+
+
+
     /// 获取Git状态，类似VSCode Git面板的分类显示
 
     /// 智能选择最佳执行方式
@@ -5863,15 +5967,13 @@ impl GitEngine {
 
             // 检出远程分支，创建本地跟踪分支
 
-            let local_branch_name = if branch_name.starts_with("origin/") {
+            let local_branch_name = branch_name
 
-                branch_name.strip_prefix("origin/").unwrap_or(branch_name)
+                .split_once('/')
 
-            } else {
+                .map(|(_, rest)| rest)
 
-                branch_name
-
-            };
+                .unwrap_or(branch_name);
 
 
 
@@ -5971,15 +6073,13 @@ impl GitEngine {
 
             // 检出远程分支，创建本地跟踪分支
 
-            let local_branch_name = if branch_name.starts_with("origin/") {
+            let local_branch_name = branch_name
 
-                branch_name.strip_prefix("origin/").unwrap_or(branch_name)
+                .split_once('/')
 
-            } else {
+                .map(|(_, rest)| rest)
 
-                branch_name
-
-            };
+                .unwrap_or(branch_name);
 
 
 
@@ -6163,7 +6263,13 @@ impl GitEngine {
 
         // 第一步：Fetch
 
-        let mut remote = repo.find_remote("origin").or_else(|_| {
+        let remote_name = Self::resolve_default_remote(&repo)
+
+            .ok_or_else(|| anyhow!("当前仓库未配置远程仓库，请先添加远程。"))?;
+
+
+
+        let mut remote = repo.find_remote(&remote_name).or_else(|_| {
 
             let remotes = repo.remotes()?;
 
@@ -6219,7 +6325,7 @@ impl GitEngine {
 
         let branch_name = head.shorthand().unwrap_or("HEAD");
 
-        let upstream_branch = format!("refs/remotes/origin/{}", branch_name);
+        let upstream_branch = format!("refs/remotes/{}/{}", remote_name, branch_name);
 
 
 
@@ -6431,7 +6537,13 @@ impl GitEngine {
 
         // 获取远程仓库
 
-        let mut remote = repo.find_remote("origin").or_else(|_| {
+        let remote_name = Self::resolve_default_remote(&repo)
+
+            .ok_or_else(|| anyhow!("当前仓库未配置远程仓库，请先添加远程。"))?;
+
+
+
+        let mut remote = repo.find_remote(&remote_name).or_else(|_| {
 
             // 如果没有origin，尝试获取第一个远程仓库
 
@@ -6671,11 +6783,21 @@ impl GitEngine {
 
         let repo = self.get_repository()?;
 
-        let remote_name = remote_name.unwrap_or("origin");
+
+
+        let remote_name = match remote_name {
+
+            Some(name) => name.to_string(),
+
+            None => Self::resolve_default_remote(&repo)
+
+                .ok_or_else(|| anyhow!("��ǰ�ֿ�δ����Զ�ֿ̲⣬��������Զ�̡�"))?,
+
+        };
 
 
 
-        let mut remote = repo.find_remote(remote_name)?;
+        let mut remote = repo.find_remote(&remote_name)?;
 
         remote.fetch(&[] as &[&str], None, None)?;
 
