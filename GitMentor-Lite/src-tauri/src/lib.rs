@@ -54,10 +54,26 @@ use core::{
     git_engine::GitEngine,
     llm_client::{LLMClient, LLMConfig},
 };
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+
+fn resolve_log_file_path() -> PathBuf {
+    if cfg!(debug_assertions) {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("startup.log")
+    } else {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("startup.log")
+    }
+}
 
 /// 写入启动日志到文件
 /// Author: Evilek, Date: 2025-01-09
@@ -65,11 +81,15 @@ fn write_startup_log(message: &str) {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     let log_message = format!("[{}] {}\n", timestamp, message);
 
-    // 写入到当前目录的startup.log文件
+    let log_path = resolve_log_file_path();
+    if let Some(parent) = log_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("startup.log")
+        .open(&log_path)
     {
         let _ = file.write_all(log_message.as_bytes());
         let _ = file.flush();
@@ -85,11 +105,15 @@ fn write_error_log(error: &str) {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     let log_message = format!("[{}] ERROR: {}\n", timestamp, error);
 
-    // 写入到当前目录的startup.log文件
+    let log_path = resolve_log_file_path();
+    if let Some(parent) = log_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)
-        .open("startup.log")
+        .open(&log_path)
     {
         let _ = file.write_all(log_message.as_bytes());
         let _ = file.flush();
