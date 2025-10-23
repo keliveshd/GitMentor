@@ -92,6 +92,7 @@
             @primary-action="handlePrimaryAction"
             @quick-action="handleQuickAction"
             @view-detail="selectBranch"
+            @switch-branch="handleSwitchBranch"
           />
           <p v-if="!loading && !groupedBranches[type].length" class="empty-placeholder">
             暂无 {{ branchTypeInfo(type).label }} 分支，点击上方按钮快速创建。
@@ -162,6 +163,7 @@ const {
   createGitflowBranch,
   setCustomPrefixForType,
   setLastBranchNameForType,
+  setLastOwnerForType,
   setReleaseStageForBranch,
   lastSyncedAt,
   hasOriginRemote
@@ -267,10 +269,58 @@ const handleQuickAction = async (branch: GitflowBranch, action: any) => {
   }
 }
 
+const handleSwitchBranch = async (branch: GitflowBranch) => {
+  try {
+    const status = (await invoke('get_git_status')) as { has_changes?: boolean }
+    if (status?.has_changes) {
+      const confirmed = window.confirm(
+        `检测到当前工作区存在未提交改动。
+选择“确定”将打开 Smart Checkout 引导，取消则终止切换。`
+      )
+      if (confirmed) {
+        window.dispatchEvent(
+          new CustomEvent('gitpanel:open-smart-checkout', {
+            detail: { targetBranch: branch.name }
+          })
+        )
+        toast.info('已为你打开 Smart Checkout，请处理完改动后再尝试切换。', '需要先处理改动')
+      } else {
+        toast.info('已取消分支切换。', '操作取消')
+      }
+      return
+    }
+
+    const result = (await invoke('checkout_branch', {
+      branchName: branch.name,
+      isRemote: false
+    })) as any
+
+    if (result?.success) {
+      toast.success(result.message || `已切换到 ${branch.name}`, '分支切换')
+      selectBranch(branch.id)
+      await fetchGitflowBranches()
+    } else {
+      toast.error(result?.message || '分支切换失败', '操作失败')
+    }
+  } catch (error) {
+    console.error('切换分支失败:', error)
+    const message =
+      error instanceof Error ? error.message : typeof error === 'string' ? error : '未知错误，请查看控制台'
+
+    if (/untracked working tree files/i.test(message) || /overwritten by checkout/i.test(message)) {
+      toast.warning('检测到工作区仍有未处理文件，请先处理后再切换。', '无法切换')
+      return
+    }
+
+    toast.error(message, '操作失败')
+  }
+}
+
 const handleSubmitWizard = async (state: GitflowWizardState) => {
   try {
     setCustomPrefixForType(state.branchType, state.branchPrefix)
     setLastBranchNameForType(state.branchType, state.branchName)
+    setLastOwnerForType(state.branchType, state.metadata.owner || '')
     await createGitflowBranch({
       branchType: state.branchType,
       branchName: state.branchName,

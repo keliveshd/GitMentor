@@ -244,6 +244,29 @@ const bugfixWithSLA = computed(() =>
 
 const featureBranches = computed(() => groupedBranches.value.feature)
 
+const getLastOwnerForType = (type: GitflowBranchType) => {
+  const value = branchOwners.value[type]?.trim()
+  return value && value.length > 0 ? value : undefined
+}
+
+const setLastOwnerForType = (type: GitflowBranchType, owner: string) => {
+  const normalized = owner.trim()
+  if (!normalized) {
+    if (branchOwners.value[type]) {
+      const next = { ...branchOwners.value }
+      delete next[type]
+      branchOwners.value = next
+      persistBranchOwners()
+    }
+    return
+  }
+  branchOwners.value = {
+    ...branchOwners.value,
+    [type]: normalized
+  }
+  persistBranchOwners()
+}
+
 const openWizard = (type: GitflowBranchType) => {
   gitflowWizard.visible = true
   gitflowWizard.step = 1
@@ -254,7 +277,8 @@ const openWizard = (type: GitflowBranchType) => {
   gitflowWizard.branchName =
     lastBranchName && lastBranchName.startsWith(nextPrefix) ? lastBranchName : ''
   gitflowWizard.metadata = {
-    base: getDefaultBaseForType(type)
+    base: getDefaultBaseForType(type),
+    owner: getLastOwnerForType(type) ?? ''
   }
   gitflowWizard.autoPush = type !== 'feature'
 }
@@ -462,8 +486,10 @@ type CustomPrefixMap = Partial<Record<GitflowBranchType, string>>
 const CUSTOM_PREFIX_STORAGE_KEY = 'gitflow:custom-prefixes'
 const BRANCH_HISTORY_STORAGE_KEY = 'gitflow:last-branch-names'
 const RELEASE_STAGE_STORAGE_KEY = 'gitflow:release-stages'
+const BRANCH_OWNER_STORAGE_KEY = 'gitflow:last-owner'
 
 type BranchHistoryMap = Partial<Record<GitflowBranchType, string>>
+type BranchOwnerMap = Partial<Record<GitflowBranchType, string>>
 type ReleaseStageMap = Partial<Record<string, ReleaseLifecycleStage>>
 
 const loadCustomPrefixes = (): CustomPrefixMap => {
@@ -553,7 +579,39 @@ const loadBranchHistory = (): BranchHistoryMap => {
   return {}
 }
 
+const loadBranchOwners = (): BranchOwnerMap => {
+  if (typeof window === 'undefined') return {}
+  try {
+    const stored = window.localStorage.getItem(BRANCH_OWNER_STORAGE_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored) as BranchOwnerMap
+      return parsed ?? {}
+    }
+  } catch (error) {
+    console.warn('[Gitflow] Failed to load branch owners:', error)
+  }
+  return {}
+}
+
+const branchOwners = ref<BranchOwnerMap>(loadBranchOwners())
+
 const branchHistory = ref<BranchHistoryMap>(loadBranchHistory())
+
+const persistBranchOwners = () => {
+  if (typeof window === 'undefined') return
+  try {
+    if (Object.keys(branchOwners.value).length === 0) {
+      window.localStorage.removeItem(BRANCH_OWNER_STORAGE_KEY)
+    } else {
+      window.localStorage.setItem(
+        BRANCH_OWNER_STORAGE_KEY,
+        JSON.stringify(branchOwners.value)
+      )
+    }
+  } catch (error) {
+    console.warn('[Gitflow] Failed to persist branch owners:', error)
+  }
+}
 
 const persistBranchHistory = () => {
   if (typeof window === 'undefined') return
@@ -1098,6 +1156,7 @@ export const useGitflow = () => {
     getCustomPrefixForType,
     setCustomPrefixForType,
     setLastBranchNameForType,
+    setLastOwnerForType,
     setReleaseStageForBranch
   }
 }

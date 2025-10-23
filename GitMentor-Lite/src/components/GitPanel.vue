@@ -1011,6 +1011,8 @@ const tabs = ref([
   }
   // 预留其他tab页扩展空间
 ])
+const SMART_CHECKOUT_EVENT = 'gitpanel:open-smart-checkout'
+
 
 // 调试设置状态
 const showDebugSettings = ref(false)
@@ -2170,6 +2172,16 @@ const switchTab = (tabId: string) => {
   showMenu.value = false
 }
 
+const handleSmartCheckoutRequest = (event: Event) => {
+  const detail = (event as CustomEvent<{ targetBranch?: string }>).detail
+  switchTab('message-generation')
+  const targetBranch = detail?.targetBranch
+  const message = targetBranch
+    ? `已打开 Smart Checkout，请处理当前改动后再尝试切换到 ${targetBranch}。`
+    : '已打开 Smart Checkout，请处理当前改动后再尝试切换分支。'
+  toast.info(message, 'Smart Checkout')
+}
+
 // 调试设置功能
 const openDebugSettings = () => {
   showDebugSettings.value = true
@@ -2544,6 +2556,12 @@ onMounted(async () => {
   // 添加快捷键监听
   document.addEventListener('keydown', handleKeydown)
 
+  // Smart Checkout 请求监听
+  window.addEventListener(
+    SMART_CHECKOUT_EVENT,
+    handleSmartCheckoutRequest as EventListener
+  )
+
   // 监听仓库刷新事件 Author: Evilek, Date: 2025-01-10
   window.addEventListener('refreshRepository', handleRepositoryRefresh)
 
@@ -2556,6 +2574,11 @@ onMounted(async () => {
 // 清理
 onUnmounted(() => {
   document.removeEventListener('keydown', handleKeydown)
+  // 移除 Smart Checkout 请求监听
+  window.removeEventListener(
+    SMART_CHECKOUT_EVENT,
+    handleSmartCheckoutRequest as EventListener
+  )
   // 移除仓库刷新事件监听器 Author: Evilek, Date: 2025-01-10
   window.removeEventListener('refreshRepository', handleRepositoryRefresh)
 
