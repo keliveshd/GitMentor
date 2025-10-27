@@ -28,6 +28,7 @@ pub struct FileStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GitStatusResult {
     pub branch: String,
+    pub upstream: Option<String>,
     pub has_changes: bool,
     pub staged_files: Vec<FileStatus>,     // 暂存区文件
     pub unstaged_files: Vec<FileStatus>,   // 工作区文件
@@ -98,6 +99,32 @@ pub struct BranchInfo {
     pub upstream: Option<String>,
     pub ahead: u32,
     pub behind: u32,
+}
+
+/// 远程分支信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteBranchInfo {
+    pub name: String,
+    pub full_name: String,
+    pub is_tracking_current: bool,
+}
+
+/// 远程源信息
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteInfo {
+    pub name: String,
+    pub fetch_url: Option<String>,
+    pub push_url: Option<String>,
+    pub branches: Vec<RemoteBranchInfo>,
+    pub is_current_upstream: bool,
+}
+
+/// 远程配置汇总
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteConfiguration {
+    pub current_branch: Option<String>,
+    pub current_upstream: Option<String>,
+    pub remotes: Vec<RemoteInfo>,
 }
 
 /// Git操作结果

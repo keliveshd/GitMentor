@@ -7,7 +7,7 @@ use crate::core::git_engine::GitEngine;
 use crate::core::llm_client::LLMClient;
 use crate::types::git_types::{
     BranchInfo, CommitInfo, CommitMessageResult, CommitRequest, FileDiffRequest, FileDiffResult,
-    GitOperationResult, GitStatusResult, RevertRequest, StageRequest,
+    GitOperationResult, GitStatusResult, RemoteConfiguration, RevertRequest, StageRequest,
 };
 use std::time::Instant;
 use tokio::sync::Mutex;
@@ -56,6 +56,64 @@ pub async fn get_git_status(
 
     println!("[DEBUG] Git状态命令完成，耗时: {:?}", start_time.elapsed());
     result
+}
+
+#[tauri::command]
+pub async fn get_remote_configuration(
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<RemoteConfiguration, String> {
+    let engine = git_engine.lock().await;
+    engine
+        .get_remote_configuration()
+        .map_err(|e| format!("Failed to get remote configuration: {}", e))
+}
+
+#[tauri::command]
+pub async fn add_remote(
+    name: String,
+    url: String,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine
+        .add_remote(&name, &url)
+        .map_err(|e| format!("Failed to add remote: {}", e))
+}
+
+#[tauri::command]
+pub async fn update_remote(
+    name: String,
+    url: String,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine
+        .update_remote(&name, &url)
+        .map_err(|e| format!("Failed to update remote: {}", e))
+}
+
+#[tauri::command]
+pub async fn remove_remote(
+    name: String,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine
+        .remove_remote(&name)
+        .map_err(|e| format!("Failed to remove remote: {}", e))
+}
+
+#[tauri::command]
+pub async fn set_branch_upstream(
+    branch: String,
+    remote: String,
+    remote_branch: String,
+    git_engine: State<'_, Mutex<GitEngine>>,
+) -> Result<GitOperationResult, String> {
+    let engine = git_engine.lock().await;
+    engine
+        .set_branch_upstream(&branch, &remote, &remote_branch)
+        .map_err(|e| format!("Failed to set branch upstream: {}", e))
 }
 
 #[tauri::command]
