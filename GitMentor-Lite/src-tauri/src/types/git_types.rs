@@ -101,6 +101,8 @@ pub struct BranchInfo {
     pub behind: u32,
 }
 
+
+
 /// 远程分支信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteBranchInfo {

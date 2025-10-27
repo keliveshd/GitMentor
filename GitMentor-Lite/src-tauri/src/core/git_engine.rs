@@ -3255,6 +3255,8 @@ impl GitEngine {
 
             branch,
 
+            upstream: None, // TODO: 实现远程分支跟踪检测
+
             has_changes: !staged_files.is_empty()
 
                 || !unstaged_files.is_empty()
@@ -3378,6 +3380,31 @@ impl GitEngine {
     }
 
 
+
+    /// 使用Git命令获取当前分支的上游
+    fn get_current_upstream_with_command(&self, repo_path: &str) -> Result<Option<String>> {
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+            .output()
+            .map_err(|e| anyhow!("Failed to get upstream branch: {}", e))?;
+
+        if !output.status.success() {
+            // 如果没有上游分支，返回None
+            return Ok(None);
+        }
+
+        let output = String::from_utf8_lossy(&output.stdout);
+        let upstream = output.trim().to_string();
+
+        if upstream.is_empty() || upstream == "@{u}" {
+            Ok(None)
+        } else {
+            Ok(Some(upstream))
+        }
+    }
 
     /// 获取Git命令路径（根据当前使用的Git方式）
 
@@ -4678,6 +4705,8 @@ impl GitEngine {
         Ok(GitStatusResult {
 
             branch,
+
+            upstream: None, // TODO: 实现远程分支跟踪检测
 
             has_changes: !staged_files.is_empty()
 
@@ -9107,5 +9136,219 @@ impl GitEngine {
 
     }
 
+    /// 获取远程仓库配置
+    /// 作者：Evilek
+    pub fn get_remote_configuration(&self) -> Result<crate::types::git_types::RemoteConfiguration> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "-v"])
+            .output()
+            .map_err(|e| anyhow!("Failed to get remote configuration: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("Git command failed: {}", stderr));
+        }
+
+        // 获取当前分支信息
+        let current_branch = self.get_current_branch_with_command(repo_path).ok();
+        let current_upstream = self.get_current_upstream_with_command(repo_path).ok().flatten();
+
+        let output = String::from_utf8_lossy(&output.stdout);
+        let mut remote_map = std::collections::HashMap::new();
+
+        for line in output.lines() {
+            if let Some((name, url, remote_type)) = parse_remote_line(line) {
+                let entry = remote_map.entry(name.clone()).or_insert_with(|| crate::types::git_types::RemoteInfo {
+                    name: name.clone(),
+                    fetch_url: None,
+                    push_url: None,
+                    branches: Vec::new(),
+                    is_current_upstream: false,
+                });
+
+                match remote_type.as_str() {
+                    "fetch" => entry.fetch_url = Some(url),
+                    "push" => entry.push_url = Some(url),
+                    _ => {}
+                }
+            }
+        }
+
+        let mut remotes: Vec<_> = remote_map.into_values().collect();
+        
+        // 标记当前上游
+        if let Some(ref upstream) = current_upstream {
+            if let Some(remote_name) = upstream.split('/').next() {
+                for remote in &mut remotes {
+                    if remote.name == remote_name {
+                        remote.is_current_upstream = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(crate::types::git_types::RemoteConfiguration {
+            current_branch,
+            current_upstream,
+            remotes,
+        })
+    }
+
+    /// 添加远程仓库
+    /// 作者：Evilek
+    pub fn add_remote(&self, name: &str, url: &str) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "add", name, url])
+            .output()
+            .map_err(|e| anyhow!("Failed to add remote: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Remote '{}' added successfully", name),
+                details: Some(format!("URL: {}", url)),
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to add remote: {}", stderr),
+                details: None,
+            })
+        }
+    }
+
+    /// 更新远程仓库URL
+    /// 作者：Evilek
+    pub fn update_remote(&self, name: &str, url: &str) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "set-url", name, url])
+            .output()
+            .map_err(|e| anyhow!("Failed to update remote: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Remote '{}' updated successfully", name),
+                details: Some(format!("New URL: {}", url)),
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to update remote: {}", stderr),
+                details: None,
+            })
+        }
+    }
+
+    /// 删除远程仓库
+    /// 作者：Evilek
+    pub fn remove_remote(&self, name: &str) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "remove", name])
+            .output()
+            .map_err(|e| anyhow!("Failed to remove remote: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Remote '{}' removed successfully", name),
+                details: None,
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to remove remote: {}", stderr),
+                details: None,
+            })
+        }
+    }
+
+    /// 设置分支的上游跟踪分支
+    /// 作者：Evilek
+    pub fn set_branch_upstream(&self, branch: &str, remote: &str, remote_branch: &str) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+        let upstream_ref = format!("{}/{}", remote, remote_branch);
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["branch", "--set-upstream-to", &upstream_ref, branch])
+            .output()
+            .map_err(|e| anyhow!("Failed to set branch upstream: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Branch '{}' now tracks '{}'", branch, upstream_ref),
+                details: None,
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to set branch upstream: {}", stderr),
+                details: None,
+            })
+        }
+    }
+}
+
+/// 解析git remote -v输出行
+fn parse_remote_line(line: &str) -> Option<(String, String, String)> {
+    let parts: Vec<&str> = line.trim().split_whitespace().collect();
+    if parts.len() >= 2 {
+        let name = parts[0].to_string();
+        let url = parts[1].to_string();
+        let remote_type = if parts.len() > 2 && parts[2] == "(fetch)" {
+            "fetch".to_string()
+        } else if parts.len() > 2 && parts[2] == "(push)" {
+            "push".to_string()
+        } else {
+            "unknown".to_string()
+        };
+        Some((name, url, remote_type))
+    } else {
+        None
+    }
 }
 
