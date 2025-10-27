@@ -888,6 +888,7 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { RemoteConfiguration, RemoteInfo } from '../types/git'
 import FileItem from './FileItem.vue'
 import Toast from './Toast.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -1272,14 +1273,7 @@ const loadRemoteConfiguration = async () => {
   }
 }
 
-const toggleRemoteManager = () => {
-  remoteManagerVisible.value = !remoteManagerVisible.value
-  if (remoteManagerVisible.value) {
-    void loadRemoteConfiguration()
-  } else {
-    resetRemoteForm()
-  }
-}
+
 
 const resetRemoteForm = () => {
   remoteFormMode.value = 'add'
@@ -1328,7 +1322,7 @@ const submitRemoteForm = async () => {
 }
 
 const removeRemote = async (name: string) => {
-  const confirmed = await confirm(`确定要移除远程 ${name} 吗？`, '确认操作')
+  const confirmed = await confirm.ask(`确定要移除远程 ${name} 吗？`, '确认操作')
   if (!confirmed) return
 
   try {
