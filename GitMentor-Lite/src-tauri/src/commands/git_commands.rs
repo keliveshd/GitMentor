@@ -320,8 +320,13 @@ pub async fn unstage_all_changes(
 }
 
 #[tauri::command]
-pub async fn open_folder_dialog(app_handle: tauri::AppHandle) -> Result<Option<String>, String> {
+pub async fn open_folder_dialog(
+    app_handle: tauri::AppHandle,
+    require_git_repo: Option<bool>,
+) -> Result<Option<String>, String> {
     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
+
+    let require_git_repo = require_git_repo.unwrap_or(true);
 
     // 打开文件夹选择对话框
     let folder_path = app_handle.dialog().file().blocking_pick_folder();
@@ -329,6 +334,10 @@ pub async fn open_folder_dialog(app_handle: tauri::AppHandle) -> Result<Option<S
     match folder_path {
         Some(path) => {
             let path_str = path.to_string();
+
+            if !require_git_repo {
+                return Ok(Some(path_str));
+            }
 
             // 验证选择的路径是否是一个有效的Git仓库
             match git2::Repository::open(&path_str) {
