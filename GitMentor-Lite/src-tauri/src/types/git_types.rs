@@ -101,8 +101,6 @@ pub struct BranchInfo {
     pub behind: u32,
 }
 
-
-
 /// 远程分支信息
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RemoteBranchInfo {
@@ -127,6 +125,118 @@ pub struct RemoteConfiguration {
     pub current_branch: Option<String>,
     pub current_upstream: Option<String>,
     pub remotes: Vec<RemoteInfo>,
+}
+
+/// 仓库克隆请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckoutRequest {
+    pub repository_url: String,
+    pub target_path: String,
+    pub branch: Option<String>,
+    pub depth: Option<u32>,
+    pub recursive: bool,
+}
+
+/// 仓库克隆结果
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CheckoutResult {
+    pub success: bool,
+    pub repository_path: String,
+    pub duration_ms: u64,
+    pub commit_info: Option<CommitInfo>,
+    pub error_message: Option<String>,
+    pub suggestion: Option<String>,
+    pub error: Option<GitErrorInfo>,
+}
+
+/// 远程仓库操作
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum RemoteOperation {
+    Add,
+    Update,
+    Remove,
+    SetUpstream {
+        branch: String,
+        remote_branch: String,
+    },
+}
+
+/// 远程仓库配置请求
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RemoteConfigRequest {
+    pub remote_name: String,
+    pub remote_url: Option<String>,
+    pub operation: RemoteOperation,
+}
+
+/// Git 错误分类
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GitErrorKind {
+    Network,
+    FileSystem,
+    GitOperation,
+    Configuration,
+    Validation,
+}
+
+/// Git 错误详情
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GitErrorInfo {
+    pub kind: GitErrorKind,
+    pub user_message: String,
+    pub suggestion: Option<String>,
+    pub raw_message: Option<String>,
+}
+
+/// Git 错误
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GitError {
+    NetworkError(String),
+    FileSystemError(String),
+    GitOperationError(String),
+    ConfigurationError(String),
+    ValidationError(String),
+}
+
+impl GitError {
+    pub fn user_message(&self) -> String {
+        match self {
+            GitError::NetworkError(msg) => format!("网络连接错误: {}", msg),
+            GitError::FileSystemError(msg) => format!("文件系统错误: {}", msg),
+            GitError::GitOperationError(msg) => format!("Git 操作错误: {}", msg),
+            GitError::ConfigurationError(msg) => format!("配置错误: {}", msg),
+            GitError::ValidationError(msg) => format!("校验错误: {}", msg),
+        }
+    }
+
+    pub fn suggestion(&self) -> Option<String> {
+        match self {
+            GitError::NetworkError(_) => Some("请检查网络连接和仓库 URL 是否正确".to_string()),
+            GitError::FileSystemError(_) => Some("请确认目录访问权限和磁盘空间".to_string()),
+            GitError::GitOperationError(_) => Some("请检查 Git 配置和仓库状态".to_string()),
+            GitError::ConfigurationError(_) => Some("请确认配置参数填写正确".to_string()),
+            GitError::ValidationError(_) => Some("请检查输入参数的格式".to_string()),
+        }
+    }
+
+    pub fn kind(&self) -> GitErrorKind {
+        match self {
+            GitError::NetworkError(_) => GitErrorKind::Network,
+            GitError::FileSystemError(_) => GitErrorKind::FileSystem,
+            GitError::GitOperationError(_) => GitErrorKind::GitOperation,
+            GitError::ConfigurationError(_) => GitErrorKind::Configuration,
+            GitError::ValidationError(_) => GitErrorKind::Validation,
+        }
+    }
+
+    pub fn into_info(self, raw_message: Option<String>) -> GitErrorInfo {
+        GitErrorInfo {
+            kind: self.kind(),
+            user_message: self.user_message(),
+            suggestion: self.suggestion(),
+            raw_message,
+        }
+    }
 }
 
 /// Git操作结果

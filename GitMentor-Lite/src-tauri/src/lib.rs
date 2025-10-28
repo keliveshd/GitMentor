@@ -45,7 +45,7 @@ macro_rules! info_log {
 use chrono::Local;
 use commands::{
     ai_analysis_commands, ai_commands, daily_report_commands, debug_commands, git_commands,
-    git_config_commands, gitflow_commands, system_commands, template_commands,
+    git_config_commands, gitflow_commands, repository_commands, system_commands, template_commands,
     unified_template_commands, update_commands,
 };
 use core::{
@@ -86,11 +86,7 @@ fn write_startup_log(message: &str) {
         let _ = fs::create_dir_all(parent);
     }
 
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let _ = file.write_all(log_message.as_bytes());
         let _ = file.flush();
     }
@@ -110,11 +106,7 @@ fn write_error_log(error: &str) {
         let _ = fs::create_dir_all(parent);
     }
 
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log_path)
-    {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let _ = file.write_all(log_message.as_bytes());
         let _ = file.flush();
     }
@@ -224,6 +216,10 @@ pub fn run() {
             git_commands::update_remote,
             git_commands::remove_remote,
             git_commands::set_branch_upstream,
+            repository_commands::clone_repository,
+            repository_commands::configure_remote,
+            repository_commands::validate_remote_connection,
+            repository_commands::generate_initial_commit_message,
             git_commands::generate_commit_message,
             git_commands::stage_files,
             git_commands::commit_changes,
