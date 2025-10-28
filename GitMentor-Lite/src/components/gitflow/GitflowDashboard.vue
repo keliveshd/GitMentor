@@ -88,6 +88,7 @@
             :key="branch.id"
             :branch="branch"
             :is-active="branch.id === selectedBranchId"
+            :primary-action-label="primaryActionLabel(branch)"
             @select="selectBranch"
             @primary-action="handlePrimaryAction"
             @quick-action="handleQuickAction"
@@ -202,11 +203,15 @@ const resolvePrimaryActionId = (branch: GitflowBranch): string | null => {
     return 'backport'
   }
   if (branch.branchType === 'feature') {
+    const divergence = branch.divergence ?? { ahead: 0, behind: 0 }
     if (!hasOriginRemote.value) {
       return 'finish-local'
     }
-    if (branch.status === 'awaiting_merge') {
-      return 'open-pr'
+    if (divergence.behind > 0) {
+      return 'sync-base'
+    }
+    if (divergence.ahead > 0) {
+      return 'finish-feature'
     }
     return 'generate-status'
   }
@@ -220,6 +225,31 @@ const resolvePrimaryActionId = (branch: GitflowBranch): string | null => {
     return 'generate-status'
   }
   return null
+}
+
+const primaryActionLabel = (branch: GitflowBranch): string | undefined => {
+  const actionId = resolvePrimaryActionId(branch)
+  if (!actionId) {
+    return undefined
+  }
+  const quickAction = branch.nextActions?.find(action => action.id === actionId)
+  if (quickAction) {
+    return quickAction.label
+  }
+  switch (actionId) {
+    case 'finish-local':
+      return `合并到 ${branch.base}`
+    case 'finish-feature':
+      return `合并回 ${branch.base}`
+    case 'open-pr':
+      return '创建 PR'
+    case 'sync-base':
+      return `同步 ${branch.base}`
+    case 'generate-status':
+      return branch.branchType === 'bugfix' ? '生成事件记录' : '生成状态播报'
+    default:
+      return undefined
+  }
 }
 
 const handlePrimaryAction = async (branch: GitflowBranch) => {
@@ -363,6 +393,8 @@ const runQuickAction = async (branch: GitflowBranch, action: any): Promise<GitOp
       return syncWithBase(branch)
     case 'generate-status':
       return generateStatusReport(branch)
+    case 'finish-feature':
+      return finishFeature(branch)
     case 'open-pr':
       return openPullRequest(branch)
     case 'qa-update':
@@ -414,6 +446,24 @@ const generateStatusReport = async (branch: GitflowBranch): Promise<GitOperation
     return result
   } catch (error) {
     console.error('生成状态报告失败:', error)
+    throw error
+  }
+}
+
+const finishFeature = async (branch: GitflowBranch): Promise<GitOperationResult> => {
+  try {
+    const result = (await invoke('execute_gitflow_action', {
+      request: {
+        branchName: branch.name,
+        action: 'finish_feature'
+      }
+    })) as GitOperationResult
+    if (result.success) {
+      await fetchGitflowBranches()
+    }
+    return result
+  } catch (error) {
+    console.error('完成 Feature 合并失败:', error)
     throw error
   }
 }
