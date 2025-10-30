@@ -3,11 +3,11 @@ use crate::core::git_config::{GitConfig, GitExecutionMode};
 use crate::debug_log;
 
 use crate::types::git_types::{
-    BranchInfo, CommitInfo, CommitRequest, DiffHunk, DiffLine, DiffLineType, DiffType,
-    FileDiffRequest, FileDiffResult, FileStatus, FileStatusType, GitOperationResult,
-    GitStatusResult, GitflowActionRequest, GitflowBranchInfo, GitflowBranchStatus,
-    GitflowBranchType, GitflowConfig, GitflowCreateRequest, GitflowDivergence, GitflowSummary,
-    RemoteBranchInfo, RemoteConfiguration, RemoteInfo, RevertRequest, RevertType, StageRequest,
+    BranchInfo, CheckoutRequest, CheckoutResult, CommitInfo, CommitRequest, DiffHunk, DiffLine,
+    DiffLineType, DiffType, FileDiffRequest, FileDiffResult, FileStatus, FileStatusType, GitError,
+    GitOperationResult, GitStatusResult, GitflowActionRequest, GitflowBranchInfo,
+    GitflowBranchStatus, GitflowBranchType, GitflowConfig, GitflowCreateRequest, GitflowDivergence,
+    GitflowSummary, RemoteConfigRequest, RemoteOperation, RevertRequest, RevertType, StageRequest,
 };
 
 use anyhow::{anyhow, Result};
@@ -22,8 +22,8 @@ use notify::{
 
 use serde::Serialize;
 
-use std::collections::HashMap;
 use std::fmt::Write;
+use std::fs;
 
 use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
@@ -64,6 +64,22 @@ pub struct GitEngine {
     repo_watcher: Option<RepoWatcherHandle>,
 }
 
+impl Clone for GitEngine {
+    fn clone(&self) -> Self {
+        Self {
+            repo_path: self.repo_path.clone(),
+
+            git_method: self.git_method.clone(),
+
+            git_config: self.git_config.clone(),
+
+            git_path: self.git_path.clone(),
+
+            repo_watcher: None,
+        }
+    }
+}
+
 #[derive(Debug)]
 
 struct RepoWatcherHandle {
@@ -79,341 +95,7 @@ struct GitStatusDirtyPayload {
     event_kind: String,
 }
 
-impl Clone for GitEngine {
-    fn clone(&self) -> Self {
-        Self {
-            repo_path: self.repo_path.clone(),
-            git_method: self.git_method.clone(),
-            git_config: self.git_config.clone(),
-            git_path: self.git_path.clone(),
-            repo_watcher: None,
-        }
-    }
-}
-
 impl GitEngine {
-    pub fn get_remote_configuration(&self) -> Result<RemoteConfiguration> {
-        let repo_path = self
-            .get_repository_path()
-            .ok_or_else(|| anyhow!("未找到已打开的仓库路径"))?;
-
-        let repo = self.get_repository()?;
-
-        let current_branch = match self.get_current_branch_with_command(&repo_path) {
-            Ok(name) => Some(name),
-
-            Err(err) => {
-                println!("[WARN] 获取当前分支失败: {}", err);
-
-                None
-            }
-        };
-
-        let current_upstream = match self.get_upstream_with_command(&repo_path) {
-            Ok(value) => value,
-
-            Err(err) => {
-                println!("[WARN] 获取上游分支失败: {}", err);
-
-                None
-            }
-        };
-
-        let mut remote_branches: HashMap<String, Vec<RemoteBranchInfo>> = HashMap::new();
-
-        {
-            let branches = repo.branches(Some(BranchType::Remote))?;
-
-            for branch_res in branches {
-                let (branch, _branch_type) = branch_res?;
-
-                if let Some(name) = branch.name()? {
-                    if let Some((remote_name, branch_name)) = name.split_once('/') {
-                        let full_name = name.to_string();
-
-                        let entry = remote_branches
-                            .entry(remote_name.to_string())
-                            .or_insert_with(Vec::new);
-
-                        let is_tracking = current_upstream
-                            .as_ref()
-                            .map(|up| up == &full_name)
-                            .unwrap_or(false);
-
-                        entry.push(RemoteBranchInfo {
-                            name: branch_name.to_string(),
-
-                            full_name: full_name.clone(),
-
-                            is_tracking_current: is_tracking,
-                        });
-                    }
-                }
-            }
-        }
-
-        let mut remotes_info = Vec::new();
-
-        if let Ok(remotes) = repo.remotes() {
-            for remote_name_opt in remotes.iter() {
-                if let Some(remote_name) = remote_name_opt {
-                    let remote_name_str = remote_name.to_string();
-
-                    let fetch_url = self.get_remote_url(&repo_path, &remote_name_str)?;
-
-                    let push_url = self.get_remote_push_url(&repo_path, &remote_name_str)?;
-
-                    let branches = remote_branches.remove(&remote_name_str).unwrap_or_default();
-
-                    let is_current_upstream = current_upstream
-                        .as_ref()
-                        .map(|up| up.starts_with(&format!("{}/", remote_name_str)))
-                        .unwrap_or(false);
-
-                    remotes_info.push(RemoteInfo {
-                        name: remote_name_str.clone(),
-
-                        fetch_url,
-
-                        push_url,
-
-                        branches,
-
-                        is_current_upstream,
-                    });
-                }
-            }
-        }
-
-        // 如果仍有剩余的远程分支（比如已删除的 remote），一并追加
-
-        for (name, branches) in remote_branches {
-            remotes_info.push(RemoteInfo {
-                name: name.clone(),
-
-                fetch_url: None,
-
-                push_url: None,
-
-                branches,
-
-                is_current_upstream: current_upstream
-                    .as_ref()
-                    .map(|up| up.starts_with(&format!("{}/", name)))
-                    .unwrap_or(false),
-            });
-        }
-
-        Ok(RemoteConfiguration {
-            current_branch,
-
-            current_upstream,
-
-            remotes: remotes_info,
-        })
-    }
-
-    pub fn add_remote(&self, name: &str, url: &str) -> Result<GitOperationResult> {
-        let repo_path = self
-            .get_repository_path()
-            .ok_or_else(|| anyhow!("未找到已打开的仓库路径"))?;
-
-        let repo_path_path = Path::new(&repo_path);
-
-        self.ensure_index_lock_is_clear(repo_path_path)?;
-
-        let git_command = self.get_git_command();
-
-        let output = Self::create_hidden_command(&git_command)
-            .current_dir(&repo_path)
-            .args(["remote", "add", name, url])
-            .output()?;
-
-        if output.status.success() {
-            Ok(GitOperationResult {
-                success: true,
-
-                message: format!("成功添加远程 {}", name),
-
-                details: None,
-            })
-        } else {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-
-            if let Some(friendly) = Self::translate_git_error("添加远程", error_msg.as_ref()) {
-                Err(anyhow!(friendly))
-            } else {
-                Err(anyhow!(format!("添加远程失败: {}", error_msg.trim())))
-            }
-        }
-    }
-
-    pub fn update_remote(&self, name: &str, url: &str) -> Result<GitOperationResult> {
-        let repo_path = self
-            .get_repository_path()
-            .ok_or_else(|| anyhow!("未找到已打开的仓库路径"))?;
-
-        let repo_path_path = Path::new(&repo_path);
-
-        self.ensure_index_lock_is_clear(repo_path_path)?;
-
-        let git_command = self.get_git_command();
-
-        let output = Self::create_hidden_command(&git_command)
-            .current_dir(&repo_path)
-            .args(["remote", "set-url", name, url])
-            .output()?;
-
-        if output.status.success() {
-            Ok(GitOperationResult {
-                success: true,
-
-                message: format!("成功更新远程 {} 的地址", name),
-
-                details: None,
-            })
-        } else {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-
-            if let Some(friendly) = Self::translate_git_error("更新远程", error_msg.as_ref()) {
-                Err(anyhow!(friendly))
-            } else {
-                Err(anyhow!(format!("更新远程失败: {}", error_msg.trim())))
-            }
-        }
-    }
-
-    pub fn remove_remote(&self, name: &str) -> Result<GitOperationResult> {
-        let repo_path = self
-            .get_repository_path()
-            .ok_or_else(|| anyhow!("未找到已打开的仓库路径"))?;
-
-        let repo_path_path = Path::new(&repo_path);
-
-        self.ensure_index_lock_is_clear(repo_path_path)?;
-
-        let git_command = self.get_git_command();
-
-        let output = Self::create_hidden_command(&git_command)
-            .current_dir(&repo_path)
-            .args(["remote", "remove", name])
-            .output()?;
-
-        if output.status.success() {
-            Ok(GitOperationResult {
-                success: true,
-
-                message: format!("已移除远程 {}", name),
-
-                details: None,
-            })
-        } else {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-
-            if let Some(friendly) = Self::translate_git_error("移除远程", error_msg.as_ref()) {
-                Err(anyhow!(friendly))
-            } else {
-                Err(anyhow!(format!("移除远程失败: {}", error_msg.trim())))
-            }
-        }
-    }
-
-    pub fn set_branch_upstream(
-        &self,
-
-        branch: &str,
-
-        remote: &str,
-
-        remote_branch: &str,
-    ) -> Result<GitOperationResult> {
-        let repo_path = self
-            .get_repository_path()
-            .ok_or_else(|| anyhow!("未找到已打开的仓库路径"))?;
-
-        let repo_path_path = Path::new(&repo_path);
-
-        self.ensure_index_lock_is_clear(repo_path_path)?;
-
-        let git_command = self.get_git_command();
-
-        let upstream = format!("{}/{}", remote, remote_branch);
-
-        let output = Self::create_hidden_command(&git_command)
-            .current_dir(&repo_path)
-            .args(["branch", "--set-upstream-to", &upstream, branch])
-            .output()?;
-
-        if output.status.success() {
-            Ok(GitOperationResult {
-                success: true,
-
-                message: format!("已将分支 {} 追踪到 {}", branch, upstream),
-
-                details: None,
-            })
-        } else {
-            let error_msg = String::from_utf8_lossy(&output.stderr);
-
-            if let Some(friendly) = Self::translate_git_error("设置上游分支", error_msg.as_ref())
-            {
-                Err(anyhow!(friendly))
-            } else {
-                Err(anyhow!(format!("设置上游分支失败: {}", error_msg.trim())))
-            }
-        }
-    }
-
-    fn get_remote_push_url(&self, repo_path: &str, remote: &str) -> Result<Option<String>> {
-        let git_command = self.get_git_command();
-
-        let output = Self::create_hidden_command(&git_command)
-            .current_dir(repo_path)
-            .args(["remote", "get-url", "--push", remote])
-            .output()?;
-
-        if !output.status.success() {
-            return Ok(None);
-        }
-
-        let url = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-        if url.is_empty() {
-            Ok(None)
-        } else {
-            Ok(Some(url))
-        }
-    }
-
-    fn get_upstream_with_command(&self, repo_path: &str) -> Result<Option<String>> {
-        let git_command = self.get_git_command();
-
-        let output = Self::create_hidden_command(&git_command)
-            .current_dir(repo_path)
-            .args(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
-            .output()?;
-
-        if output.status.success() {
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let upstream = stdout.trim();
-            if upstream.is_empty() {
-                Ok(None)
-            } else {
-                Ok(Some(upstream.to_string()))
-            }
-        } else {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let message = stderr.trim();
-            if message.contains("no upstream configured for branch")
-                || message.contains("HEAD does not point to a branch")
-            {
-                Ok(None)
-            } else {
-                Err(anyhow!("获取上游信息失败: {}", message))
-            }
-        }
-    }
-
     #[allow(dead_code)]
 
     pub fn new() -> Self {
@@ -720,7 +402,7 @@ impl GitEngine {
 
         branches.sort_by(|a, b| a.name.cmp(&b.name));
 
-        let has_origin_remote = repo.find_remote("origin").is_ok();
+        let has_origin_remote = Self::resolve_default_remote(&repo).is_some();
 
         Ok(GitflowSummary {
             config,
@@ -1079,8 +761,8 @@ impl GitEngine {
 
                     self.checkout_branch_internal(repo_path, &base_branch)?;
 
-                    let _ = self.fetch_remote(Some("origin"))?;
-
+                    let remote_name = self.require_remote_name(repo_path)?;
+                    let _ = self.fetch_remote(Some(remote_name.as_str()))?;
                     let _ = self.pull_current_branch()?;
 
                     // 合并最新基线到目标分支
@@ -1116,7 +798,9 @@ impl GitEngine {
                     let push_details =
                         self.push_branch_with_upstream(repo_path, &request.branch_name)?;
 
-                    let remote_url = self.get_remote_url(repo_path, "origin")?;
+                    let remote_name = self.require_remote_name(repo_path)?;
+
+                    let remote_url = self.get_remote_url(repo_path, &remote_name)?;
 
                     let pr_hint = remote_url
                         .as_deref()
@@ -1342,17 +1026,18 @@ impl GitEngine {
     }
 
     fn push_branch_with_upstream(&self, repo_path: &str, branch_name: &str) -> Result<String> {
-        let repo_path_path = Path::new(repo_path);
-        self.ensure_index_lock_is_clear(repo_path_path)?;
         let git_command = self.get_git_command();
+
+        let remote_name = self.require_remote_name(repo_path)?;
 
         let output = Self::create_hidden_command(&git_command)
             .current_dir(repo_path)
-            .args(["push", "-u", "origin", branch_name])
+            .args(["push", "-u", remote_name.as_str(), branch_name])
             .output()?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
+
             let stderr = String::from_utf8_lossy(&output.stderr);
 
             let details = if !stderr.trim().is_empty() {
@@ -1365,11 +1050,7 @@ impl GitEngine {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            if let Some(friendly) = Self::translate_git_error("推送", stderr.as_ref()) {
-                Err(anyhow!(friendly))
-            } else {
-                Err(anyhow!(format!("推送分支失败: {}", stderr.trim())))
-            }
+            Err(anyhow!("推送分支失败: {}", stderr.trim()))
         }
     }
 
@@ -1382,25 +1063,26 @@ impl GitEngine {
 
         force: bool,
     ) -> Result<String> {
-        let repo_path_path = Path::new(repo_path);
-        self.ensure_index_lock_is_clear(repo_path_path)?;
         let git_command = self.get_git_command();
 
-        let mut args = vec!["push", "origin"];
+        let remote_name = self.require_remote_name(repo_path)?;
+
+        let mut args: Vec<String> = vec!["push".to_string(), remote_name.clone()];
 
         if force {
-            args.push("--force-with-lease");
+            args.push("--force-with-lease".to_string());
         }
 
-        args.push(branch_name);
+        args.push(branch_name.to_string());
 
         let output = Self::create_hidden_command(&git_command)
             .current_dir(repo_path)
-            .args(&args)
+            .args(args.iter().map(|arg| arg.as_str()))
             .output()?;
 
         if output.status.success() {
             let stdout = String::from_utf8_lossy(&output.stdout);
+
             let stderr = String::from_utf8_lossy(&output.stderr);
 
             let details = if !stderr.trim().is_empty() {
@@ -1413,15 +1095,11 @@ impl GitEngine {
         } else {
             let stderr = String::from_utf8_lossy(&output.stderr);
 
-            if let Some(friendly) = Self::translate_git_error("推送", stderr.as_ref()) {
-                Err(anyhow!(friendly))
-            } else {
-                Err(anyhow!(format!(
-                    "推送分支 {} 失败: {}",
-                    branch_name,
-                    stderr.trim()
-                )))
-            }
+            Err(anyhow!(format!(
+                "推送分支 {} 失败: {}",
+                branch_name,
+                stderr.trim()
+            )))
         }
     }
 
@@ -1447,7 +1125,7 @@ impl GitEngine {
             ));
         }
 
-        let has_origin = repo.find_remote("origin").is_ok();
+        let default_remote = Self::resolve_default_remote(&repo);
 
         let (feature_ahead, feature_behind) = {
             let feature = repo.find_branch(feature_branch, BranchType::Local)?;
@@ -1468,8 +1146,8 @@ impl GitEngine {
 
         let mut detail_parts: Vec<String> = Vec::new();
 
-        if has_origin {
-            let fetch_result = self.fetch_remote(Some("origin"))?;
+        if let Some(remote_name) = default_remote.as_ref() {
+            let fetch_result = self.fetch_remote(Some(remote_name.as_str()))?;
             if let Some(info) = fetch_result.details {
                 let trimmed = info.trim();
                 if !trimmed.is_empty() {
@@ -1522,9 +1200,11 @@ impl GitEngine {
     fn delete_remote_branch(&self, repo_path: &str, branch_name: &str) -> Result<()> {
         let git_command = self.get_git_command();
 
+        let remote_name = self.require_remote_name(repo_path)?;
+
         let output = Self::create_hidden_command(&git_command)
             .current_dir(repo_path)
-            .args(["push", "origin", "--delete", branch_name])
+            .args(["push", remote_name.as_str(), "--delete", branch_name])
             .output()?;
 
         if output.status.success() {
@@ -1698,9 +1378,11 @@ impl GitEngine {
         if request.auto_push {
             let git_command = self.get_git_command();
 
+            let remote_name = self.require_remote_name(repo_path)?;
+
             let output = Self::create_hidden_command(&git_command)
                 .current_dir(repo_path)
-                .args(["push", "-u", "origin", branch_name])
+                .args(["push", "-u", remote_name.as_str(), branch_name])
                 .output()
                 .map_err(|e| anyhow!("推送分支失败: {}", e))?;
 
@@ -2357,33 +2039,6 @@ impl GitEngine {
         }
     }
 
-    fn translate_git_error(operation: &str, stderr: &str) -> Option<String> {
-        let message = stderr.trim();
-        let normalized = message.to_lowercase();
-
-        if normalized.contains("index.lock")
-            || normalized.contains("another git process seems to be running")
-        {
-            return Some(format!(
-                "{}失败：检测到 Git 锁文件（.git/index.lock）或仍有其它 Git 进程在使用当前仓库。\n\n请先关闭可能占用仓库的 Git 命令、终端或图形化工具，必要时手动删除 `.git/index.lock` 后再试。如果问题仍然存在，请使用 Git 命令行进一步排查冲突。",
-                operation
-            ));
-        }
-
-        None
-    }
-
-    fn ensure_index_lock_is_clear(&self, repo_path: &Path) -> Result<()> {
-        let lock_path = repo_path.join(".git").join("index.lock");
-        if lock_path.exists() {
-            return Err(anyhow!(
-                "检测到 Git 锁文件：{}\n\n请确认没有其它 Git 操作正在进行，删除该文件后重试。",
-                lock_path.display()
-            ));
-        }
-        Ok(())
-    }
-
     /// 使用Git命令获取状态（超快速）
 
     /// 作者：Evilek
@@ -2411,13 +2066,6 @@ impl GitEngine {
         let branch_start = Instant::now();
 
         let branch = self.get_current_branch_with_command(repo_path)?;
-        let upstream = match self.get_upstream_with_command(repo_path) {
-            Ok(value) => value,
-            Err(err) => {
-                println!("[WARN] 获取上游分支失败: {}", err);
-                None
-            }
-        };
 
         println!(
             "[DEBUG] 分支获取完成: {}, 耗时: {:?}",
@@ -2478,7 +2126,9 @@ impl GitEngine {
 
         Ok(GitStatusResult {
             branch,
-            upstream,
+
+            upstream: None, // TODO: 实现远程分支跟踪检测
+
             has_changes: !staged_files.is_empty()
                 || !unstaged_files.is_empty()
                 || !untracked_files.is_empty(),
@@ -2563,6 +2213,31 @@ impl GitEngine {
 
                 Ok("unknown".to_string())
             }
+        }
+    }
+
+    /// 使用Git命令获取当前分支的上游
+    fn get_current_upstream_with_command(&self, repo_path: &str) -> Result<Option<String>> {
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+            .output()
+            .map_err(|e| anyhow!("Failed to get upstream branch: {}", e))?;
+
+        if !output.status.success() {
+            // 如果没有上游分支，返回None
+            return Ok(None);
+        }
+
+        let output = String::from_utf8_lossy(&output.stdout);
+        let upstream = output.trim().to_string();
+
+        if upstream.is_empty() || upstream == "@{u}" {
+            Ok(None)
+        } else {
+            Ok(Some(upstream))
         }
     }
 
@@ -2755,6 +2430,217 @@ impl GitEngine {
         }
 
         Ok(untracked_files)
+    }
+
+    pub fn clone_repository(&self, request: &CheckoutRequest) -> Result<CheckoutResult> {
+        let start_time = Instant::now();
+
+        if request.repository_url.trim().is_empty() {
+            return Err(anyhow!("Repository URL cannot be empty"));
+        }
+
+        let target_path = Path::new(&request.target_path);
+
+        if let Err(error) = Self::ensure_target_directory(target_path) {
+            let elapsed = start_time.elapsed().as_millis() as u64;
+            let info = error.into_info(None);
+            return Ok(CheckoutResult {
+                success: false,
+                repository_path: request.target_path.clone(),
+                duration_ms: elapsed,
+                commit_info: None,
+                error_message: Some(info.user_message.clone()),
+                suggestion: info.suggestion.clone(),
+                error: Some(info),
+            });
+        }
+
+        let clone_result = match self.git_method {
+            GitMethod::SystemGit | GitMethod::BundledGit => self.clone_with_cli(request),
+            GitMethod::Git2Api => self.clone_with_git2(request),
+        };
+
+        match clone_result {
+            Ok(_) => {
+                let elapsed = start_time.elapsed().as_millis() as u64;
+                let commit_info = self.get_commit_info(&request.target_path, "HEAD").ok();
+                Ok(CheckoutResult {
+                    success: true,
+                    repository_path: request.target_path.clone(),
+                    duration_ms: elapsed,
+                    commit_info,
+                    error_message: None,
+                    suggestion: None,
+                    error: None,
+                })
+            }
+            Err((git_error, raw_message)) => {
+                let elapsed = start_time.elapsed().as_millis() as u64;
+                let info = git_error.into_info(Some(raw_message.clone()));
+                Ok(CheckoutResult {
+                    success: false,
+                    repository_path: request.target_path.clone(),
+                    duration_ms: elapsed,
+                    commit_info: None,
+                    error_message: Some(info.user_message.clone()),
+                    suggestion: info.suggestion.clone(),
+                    error: Some(info),
+                })
+            }
+        }
+    }
+
+    fn ensure_target_directory(target_path: &Path) -> Result<(), GitError> {
+        if target_path.exists() {
+            if !target_path.is_dir() {
+                return Err(GitError::ValidationError(
+                    "目标路径已存在且不是目录".to_string(),
+                ));
+            }
+            return Err(GitError::ValidationError(
+                "目标目录已存在，请选择新的路径或使用空父目录".to_string(),
+            ));
+        } else if let Some(parent) = target_path.parent() {
+            if !parent.as_os_str().is_empty() && !parent.exists() {
+                fs::create_dir_all(parent)
+                    .map_err(|error| GitError::FileSystemError(error.to_string()))?;
+            }
+        }
+        Ok(())
+    }
+
+    fn clone_with_cli(&self, request: &CheckoutRequest) -> Result<(), (GitError, String)> {
+        let git_command = self.get_git_command();
+
+        let mut args: Vec<String> = vec!["clone".to_string()];
+
+        if let Some(depth) = request.depth {
+            if depth > 0 {
+                args.push("--depth".to_string());
+                args.push(depth.to_string());
+            }
+        }
+
+        if request.recursive {
+            args.push("--recurse-submodules".to_string());
+        }
+
+        if let Some(branch) = &request.branch {
+            let trimmed = branch.trim();
+            if !trimmed.is_empty() {
+                args.push("--branch".to_string());
+                args.push(trimmed.to_string());
+            }
+        }
+
+        args.push(request.repository_url.clone());
+        args.push(request.target_path.clone());
+
+        let output = Self::create_hidden_command(&git_command)
+            .args(&args)
+            .output()
+            .map_err(|error| {
+                (
+                    GitError::GitOperationError(format!("无法执行 git 命令: {}", error)),
+                    error.to_string(),
+                )
+            })?;
+
+        if output.status.success() {
+            Ok(())
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+            let classified = Self::classify_clone_error(&stderr);
+            Err((classified, stderr))
+        }
+    }
+
+    fn clone_with_git2(&self, request: &CheckoutRequest) -> Result<(), (GitError, String)> {
+        let mut fetch_options = git2::FetchOptions::new();
+        if let Some(depth) = request.depth {
+            if depth > 0 {
+                let limited_depth = std::cmp::min(depth, i32::MAX as u32) as i32;
+                fetch_options.depth(limited_depth);
+            }
+        }
+
+        let mut builder = git2::build::RepoBuilder::new();
+        builder.fetch_options(fetch_options);
+
+        if let Some(branch) = &request.branch {
+            let trimmed = branch.trim();
+            if !trimmed.is_empty() {
+                builder.branch(trimmed);
+            }
+        }
+
+        match builder.clone(
+            request.repository_url.as_str(),
+            Path::new(&request.target_path),
+        ) {
+            Ok(repo) => {
+                if request.recursive {
+                    if let Err(error) = Self::update_submodules(&repo) {
+                        return Err((
+                            GitError::GitOperationError(error.message().to_string()),
+                            error.to_string(),
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            Err(error) => {
+                let classified = Self::classify_git2_error(&error);
+                Err((classified, error.to_string()))
+            }
+        }
+    }
+
+    fn update_submodules(repo: &Repository) -> Result<(), git2::Error> {
+        let mut submodules = repo.submodules()?;
+        for submodule in submodules.iter_mut() {
+            submodule.init(true)?;
+            submodule.update(true, None)?;
+        }
+        Ok(())
+    }
+
+    fn classify_clone_error(stderr: &str) -> GitError {
+        let lower = stderr.to_lowercase();
+
+        if lower.contains("could not resolve host")
+            || lower.contains("failed to connect")
+            || lower.contains("timed out")
+        {
+            GitError::NetworkError(stderr.trim().to_string())
+        } else if lower.contains("authentication failed")
+            || lower.contains("repository not found")
+            || lower.contains("remote branch")
+        {
+            GitError::GitOperationError(stderr.trim().to_string())
+        } else if lower.contains("permission denied")
+            || lower.contains("access is denied")
+            || lower.contains("no such file or directory")
+        {
+            GitError::FileSystemError(stderr.trim().to_string())
+        } else if lower.contains("already exists and is not an empty directory")
+            || lower.contains("is not empty")
+        {
+            GitError::ValidationError("目标目录已存在且非空".to_string())
+        } else {
+            GitError::GitOperationError(stderr.trim().to_string())
+        }
+    }
+
+    fn classify_git2_error(error: &git2::Error) -> GitError {
+        use git2::ErrorClass;
+
+        match error.class() {
+            ErrorClass::Net => GitError::NetworkError(error.message().to_string()),
+            ErrorClass::Os => GitError::FileSystemError(error.message().to_string()),
+            ErrorClass::Config => GitError::ConfigurationError(error.message().to_string()),
+            _ => GitError::GitOperationError(error.message().to_string()),
+        }
     }
 
     pub fn open_repository(&mut self, path: &str) -> Result<()> {
@@ -3188,6 +3074,51 @@ impl GitEngine {
         Ok(Repository::open(repo_path)?)
     }
 
+    fn resolve_default_remote(repo: &Repository) -> Option<String> {
+        if repo.find_remote("origin").is_ok() {
+            return Some("origin".to_string());
+        }
+
+        if let Ok(head) = repo.head() {
+            if head.is_branch() {
+                if let Some(reference_name) = head.name() {
+                    if let Ok(remote_buf) = repo.branch_upstream_remote(reference_name) {
+                        if let Some(remote_name) = remote_buf.as_str() {
+                            let trimmed = remote_name.trim();
+
+                            if !trimmed.is_empty() {
+                                return Some(trimmed.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if let Ok(remotes) = repo.remotes() {
+            for remote_name in remotes.iter().flatten() {
+                let trimmed = remote_name.trim();
+
+                if !trimmed.is_empty() {
+                    return Some(trimmed.to_string());
+                }
+            }
+        }
+
+        None
+    }
+
+    fn get_default_remote_name(&self, repo_path: &str) -> Result<Option<String>> {
+        let repo = Repository::open(repo_path)?;
+
+        Ok(Self::resolve_default_remote(&repo))
+    }
+
+    fn require_remote_name(&self, repo_path: &str) -> Result<String> {
+        self.get_default_remote_name(repo_path)?
+            .ok_or_else(|| anyhow!("当前仓库未配置远程仓库，请先添加远程。"))
+    }
+
     /// 获取Git状态，类似VSCode Git面板的分类显示
 
     /// 智能选择最佳执行方式
@@ -3238,17 +3169,6 @@ impl GitEngine {
         let head = repo.head()?;
 
         let branch = head.shorthand().unwrap_or("unknown").to_string();
-        let upstream = if let Some(repo_path) = self.repo_path.as_ref() {
-            match self.get_upstream_with_command(repo_path) {
-                Ok(value) => value,
-                Err(err) => {
-                    println!("[WARN] 通过命令获取上游分支失败: {}", err);
-                    None
-                }
-            }
-        } else {
-            None
-        };
 
         // 获取文件状态
 
@@ -3328,7 +3248,8 @@ impl GitEngine {
 
         Ok(GitStatusResult {
             branch,
-            upstream,
+
+            upstream: None, // TODO: 实现远程分支跟踪检测
 
             has_changes: !staged_files.is_empty()
                 || !unstaged_files.is_empty()
@@ -4066,11 +3987,10 @@ impl GitEngine {
         if is_remote {
             // 检出远程分支，创建本地跟踪分支
 
-            let local_branch_name = if branch_name.starts_with("origin/") {
-                branch_name.strip_prefix("origin/").unwrap_or(branch_name)
-            } else {
-                branch_name
-            };
+            let local_branch_name = branch_name
+                .split_once('/')
+                .map(|(_, rest)| rest)
+                .unwrap_or(branch_name);
 
             let output = Self::create_hidden_command(&git_command)
                 .current_dir(&repo_path)
@@ -4131,11 +4051,10 @@ impl GitEngine {
         if is_remote {
             // 检出远程分支，创建本地跟踪分支
 
-            let local_branch_name = if branch_name.starts_with("origin/") {
-                branch_name.strip_prefix("origin/").unwrap_or(branch_name)
-            } else {
-                branch_name
-            };
+            let local_branch_name = branch_name
+                .split_once('/')
+                .map(|(_, rest)| rest)
+                .unwrap_or(branch_name);
 
             // 查找远程分支
 
@@ -4225,11 +4144,7 @@ impl GitEngine {
     fn pull_with_command(&self) -> Result<GitOperationResult> {
         let repo_path = self
             .get_repository_path()
-            .ok_or_else(|| anyhow!("�ֿ�·��δ����"))?;
-
-        let repo_path_path = Path::new(&repo_path);
-
-        self.ensure_index_lock_is_clear(repo_path_path)?;
+            .ok_or_else(|| anyhow!("仓库路径未设置"))?;
 
         let git_command = self.get_git_command();
 
@@ -4251,11 +4166,7 @@ impl GitEngine {
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr);
 
-            if let Some(friendly) = Self::translate_git_error("拉取", error_msg.as_ref()) {
-                Err(anyhow!(friendly))
-            } else {
-                Err(anyhow!(format!("拉取失败: {}", error_msg.trim())))
-            }
+            Err(anyhow!("拉取失败: {}", error_msg))
         }
     }
 
@@ -4266,7 +4177,10 @@ impl GitEngine {
 
         // 第一步：Fetch
 
-        let mut remote = repo.find_remote("origin").or_else(|_| {
+        let remote_name = Self::resolve_default_remote(&repo)
+            .ok_or_else(|| anyhow!("当前仓库未配置远程仓库，请先添加远程。"))?;
+
+        let mut remote = repo.find_remote(&remote_name).or_else(|_| {
             let remotes = repo.remotes()?;
 
             if let Some(remote_name) = remotes.get(0) {
@@ -4302,7 +4216,7 @@ impl GitEngine {
 
         let branch_name = head.shorthand().unwrap_or("HEAD");
 
-        let upstream_branch = format!("refs/remotes/origin/{}", branch_name);
+        let upstream_branch = format!("refs/remotes/{}/{}", remote_name, branch_name);
 
         // 检查是否有upstream分支
 
@@ -4441,7 +4355,10 @@ impl GitEngine {
 
         // 获取远程仓库
 
-        let mut remote = repo.find_remote("origin").or_else(|_| {
+        let remote_name = Self::resolve_default_remote(&repo)
+            .ok_or_else(|| anyhow!("当前仓库未配置远程仓库，请先添加远程。"))?;
+
+        let mut remote = repo.find_remote(&remote_name).or_else(|_| {
             // 如果没有origin，尝试获取第一个远程仓库
 
             let remotes = repo.remotes()?;
@@ -4596,9 +4513,14 @@ impl GitEngine {
     fn fetch_with_git2_api(&self, remote_name: Option<&str>) -> Result<GitOperationResult> {
         let repo = self.get_repository()?;
 
-        let remote_name = remote_name.unwrap_or("origin");
+        let remote_name = match remote_name {
+            Some(name) => name.to_string(),
 
-        let mut remote = repo.find_remote(remote_name)?;
+            None => Self::resolve_default_remote(&repo)
+                .ok_or_else(|| anyhow!("��ǰ�ֿ�δ����Զ�ֿ̲⣬��������Զ�̡�"))?,
+        };
+
+        let mut remote = repo.find_remote(&remote_name)?;
 
         remote.fetch(&[] as &[&str], None, None)?;
 
@@ -5863,11 +5785,11 @@ impl GitEngine {
 
         if parts.len() >= 6 {
             Some((
-                parts[0].to_string(),             // hash
-                parts[1].to_string(),             // short_hash
-                parts[2].to_string(),             // author
-                parts[3].to_string(),             // email
-                parts[4].to_string(),             // timestamp
+                parts[0].to_string(), // hash
+                parts[1].to_string(), // short_hash
+                parts[2].to_string(), // author
+                parts[3].to_string(), // email
+                parts[4].to_string(), // timestamp
                 parts[5..].join("|").to_string(), // message (可能包含|字符)
             ))
         } else {
@@ -6140,5 +6062,270 @@ impl GitEngine {
         }
 
         Ok(commits)
+    }
+
+    /// 获取远程仓库配置
+    /// 作者：Evilek
+    pub fn get_remote_configuration(&self) -> Result<crate::types::git_types::RemoteConfiguration> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "-v"])
+            .output()
+            .map_err(|e| anyhow!("Failed to get remote configuration: {}", e))?;
+
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            return Err(anyhow!("Git command failed: {}", stderr));
+        }
+
+        // 获取当前分支信息
+        let current_branch = self.get_current_branch_with_command(repo_path).ok();
+        let current_upstream = self
+            .get_current_upstream_with_command(repo_path)
+            .ok()
+            .flatten();
+
+        let output = String::from_utf8_lossy(&output.stdout);
+        let mut remote_map = std::collections::HashMap::new();
+
+        for line in output.lines() {
+            if let Some((name, url, remote_type)) = parse_remote_line(line) {
+                let entry = remote_map.entry(name.clone()).or_insert_with(|| {
+                    crate::types::git_types::RemoteInfo {
+                        name: name.clone(),
+                        fetch_url: None,
+                        push_url: None,
+                        branches: Vec::new(),
+                        is_current_upstream: false,
+                    }
+                });
+
+                match remote_type.as_str() {
+                    "fetch" => entry.fetch_url = Some(url),
+                    "push" => entry.push_url = Some(url),
+                    _ => {}
+                }
+            }
+        }
+
+        let mut remotes: Vec<_> = remote_map.into_values().collect();
+
+        // 标记当前上游
+        if let Some(ref upstream) = current_upstream {
+            if let Some(remote_name) = upstream.split('/').next() {
+                for remote in &mut remotes {
+                    if remote.name == remote_name {
+                        remote.is_current_upstream = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        Ok(crate::types::git_types::RemoteConfiguration {
+            current_branch,
+            current_upstream,
+            remotes,
+        })
+    }
+
+    /// 添加远程仓库
+    /// 作者：Evilek
+    pub fn add_remote(&self, name: &str, url: &str) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "add", name, url])
+            .output()
+            .map_err(|e| anyhow!("Failed to add remote: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Remote '{}' added successfully", name),
+                details: Some(format!("URL: {}", url)),
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to add remote: {}", stderr),
+                details: None,
+            })
+        }
+    }
+
+    /// 更新远程仓库URL
+    /// 作者：Evilek
+    pub fn update_remote(&self, name: &str, url: &str) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "set-url", name, url])
+            .output()
+            .map_err(|e| anyhow!("Failed to update remote: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Remote '{}' updated successfully", name),
+                details: Some(format!("New URL: {}", url)),
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to update remote: {}", stderr),
+                details: None,
+            })
+        }
+    }
+
+    /// 删除远程仓库
+    /// 作者：Evilek
+    pub fn remove_remote(&self, name: &str) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["remote", "remove", name])
+            .output()
+            .map_err(|e| anyhow!("Failed to remove remote: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Remote '{}' removed successfully", name),
+                details: None,
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to remove remote: {}", stderr),
+                details: None,
+            })
+        }
+    }
+
+    /// 设置分支的上游跟踪分支
+    /// 作者：Evilek
+    pub fn set_branch_upstream(
+        &self,
+        branch: &str,
+        remote: &str,
+        remote_branch: &str,
+    ) -> Result<GitOperationResult> {
+        let repo_path = self
+            .repo_path
+            .as_ref()
+            .ok_or_else(|| anyhow!("No repository opened"))?;
+
+        let git_command = self.get_git_command();
+        let upstream_ref = format!("{}/{}", remote, remote_branch);
+
+        let output = Self::create_hidden_command(&git_command)
+            .current_dir(repo_path)
+            .args(&["branch", "--set-upstream-to", &upstream_ref, branch])
+            .output()
+            .map_err(|e| anyhow!("Failed to set branch upstream: {}", e))?;
+
+        if output.status.success() {
+            Ok(GitOperationResult {
+                success: true,
+                message: format!("Branch '{}' now tracks '{}'", branch, upstream_ref),
+                details: None,
+            })
+        } else {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            Ok(GitOperationResult {
+                success: false,
+                message: format!("Failed to set branch upstream: {}", stderr),
+                details: None,
+            })
+        }
+    }
+
+    pub fn configure_remote(&self, request: &RemoteConfigRequest) -> Result<GitOperationResult> {
+        match &request.operation {
+            RemoteOperation::Add => {
+                let url = request
+                    .remote_url
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Remote URL is required for add operation"))?;
+                self.add_remote(&request.remote_name, url)
+            }
+            RemoteOperation::Update => {
+                let url = request
+                    .remote_url
+                    .as_ref()
+                    .ok_or_else(|| anyhow!("Remote URL is required for update operation"))?;
+                self.update_remote(&request.remote_name, url)
+            }
+            RemoteOperation::Remove => self.remove_remote(&request.remote_name),
+            RemoteOperation::SetUpstream {
+                branch,
+                remote_branch,
+            } => self.set_branch_upstream(branch, &request.remote_name, remote_branch),
+        }
+    }
+
+    pub fn validate_remote_connection(&self, url: &str) -> Result<bool> {
+        if url.trim().is_empty() {
+            return Err(anyhow!("Remote URL cannot be empty"));
+        }
+
+        let git_command = self.get_git_command();
+        let args = ["ls-remote", "--exit-code", url, "HEAD"];
+
+        let output = Self::create_hidden_command(&git_command)
+            .args(&args)
+            .output()
+            .map_err(|e| anyhow!("Failed to validate remote connection: {}", e))?;
+
+        Ok(output.status.success())
+    }
+}
+
+/// 解析git remote -v输出行
+fn parse_remote_line(line: &str) -> Option<(String, String, String)> {
+    let parts: Vec<&str> = line.trim().split_whitespace().collect();
+    if parts.len() >= 2 {
+        let name = parts[0].to_string();
+        let url = parts[1].to_string();
+        let remote_type = if parts.len() > 2 && parts[2] == "(fetch)" {
+            "fetch".to_string()
+        } else if parts.len() > 2 && parts[2] == "(push)" {
+            "push".to_string()
+        } else {
+            "unknown".to_string()
+        };
+        Some((name, url, remote_type))
+    } else {
+        None
     }
 }

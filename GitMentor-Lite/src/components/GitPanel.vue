@@ -350,33 +350,31 @@
                 :is-staged="false" @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer"
                 @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
+          </div>
 
-            <!-- 无更改状态 -->
-            <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
-              <p>✨ 工作区干净，没有待提交的更改</p>
+          <!-- 无更改状态 -->
+          <div v-if="gitStatus && !gitStatus.has_changes" class="no-changes">
+            <p>✨ 工作区干净，没有待提交的更改</p>
+          </div>
+
+          <!-- 提交历史 -->
+          <div class="commit-history" v-if="commitHistory.length > 0">
+            <div class="section-header">
+              <h4>📜 提交历史</h4>
+              <button @click="refreshHistory" class="action-btn">🔄</button>
             </div>
-
-            <!-- 提交历史 -->
-            <div class="commit-history" v-if="commitHistory.length > 0">
-              <div class="section-header">
-                <h4>📜 提交历史</h4>
-                <button @click="refreshHistory" class="action-btn">🔄</button>
-              </div>
-              <div class="history-list">
-                <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
-                  <div class="commit-info">
-                    <div class="commit-message">{{ commit.message }}</div>
-                    <div class="commit-meta">
-                      <span class="commit-author">{{ commit.author }}</span>
-                      <span class="commit-hash">{{ commit.short_hash }}</span>
-                      <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
-                    </div>
+            <div class="history-list">
+              <div v-for="commit in commitHistory" :key="commit.hash" class="commit-item">
+                <div class="commit-info">
+                  <div class="commit-message">{{ commit.message }}</div>
+                  <div class="commit-meta">
+                    <span class="commit-author">{{ commit.author }}</span>
+                    <span class="commit-hash">{{ commit.short_hash }}</span>
+                    <span class="commit-time">{{ formatTime(commit.timestamp) }}</span>
                   </div>
                 </div>
               </div>
             </div>
-
-
           </div>
         </div>
       </div>
@@ -384,6 +382,10 @@
 
     <!-- 日报生成Tab页 -->
     <!-- Author: Evilek, Date: 2025-08-21 -->
+      <div v-show="activeTab === 'repository-management'" class="tab-pane repository-manager-pane">
+        <RepositoryManager @clone-success="handleRepositoryCloneSuccess" />
+      </div>
+
       <div v-show="activeTab === 'gitflow'" class="tab-pane gitflow-pane">
         <GitflowDashboard />
       </div>
@@ -888,6 +890,7 @@
 import { ref, reactive, onMounted, onUnmounted, computed, watch, nextTick } from 'vue'
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
+import type { RemoteConfiguration, RemoteInfo } from '../types/git'
 import FileItem from './FileItem.vue'
 import Toast from './Toast.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -897,6 +900,7 @@ import BranchSwitcher from './BranchSwitcher.vue'
 import DebugSettings from './DebugSettings.vue'
 import UpdateDialog from './UpdateDialog.vue'
 import AboutDialog from './AboutDialog.vue'
+import RepositoryManager from './RepositoryManager.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
@@ -998,6 +1002,11 @@ const tabs = ref([
     id: 'message-generation',
     name: '消息生成',
     icon: '💬'
+  },
+  {
+    id: 'repository-management',
+    name: '仓库管理',
+    icon: '🗂️'
   },
   {
     id: 'gitflow',
@@ -1166,6 +1175,21 @@ const openRepoByPath = async (path: string) => {
 }
 
 
+const handleRepositoryCloneSuccess = async (path: string) => {
+  if (!path) {
+    return
+  }
+
+  try {
+    await openRepoByPath(path)
+    activeTab.value = 'message-generation'
+  } catch (error) {
+    console.error('打开克隆后的仓库失败:', error)
+    toast.error(`打开克隆后的仓库失败: ${error}`, '操作失败')
+  }
+}
+
+
 // 智能防抖刷新Git状态
 const refreshGitStatus = async (force = false) => {
   const now = Date.now()
@@ -1272,14 +1296,7 @@ const loadRemoteConfiguration = async () => {
   }
 }
 
-const toggleRemoteManager = () => {
-  remoteManagerVisible.value = !remoteManagerVisible.value
-  if (remoteManagerVisible.value) {
-    void loadRemoteConfiguration()
-  } else {
-    resetRemoteForm()
-  }
-}
+
 
 const resetRemoteForm = () => {
   remoteFormMode.value = 'add'
@@ -1309,31 +1326,49 @@ const submitRemoteForm = async () => {
     remoteLoading.value = true
 
     if (remoteFormMode.value === 'add') {
-      await invoke('add_remote', { name, url })
+      await invoke('configure_remote', {
+        request: {
+          remote_name: name,
+          remote_url: url,
+          operation: 'Add',
+        },
+      })
       toast.success(`远程 ${name} 已添加`, '操作完成')
     } else {
       const target = remoteForm.originalName || name
-      await invoke('update_remote', { name: target, url })
+      await invoke('configure_remote', {
+        request: {
+          remote_name: target,
+          remote_url: url,
+          operation: 'Update',
+        },
+      })
       toast.success(`远程 ${target} 已更新`, '操作完成')
     }
 
     resetRemoteForm()
     await loadRemoteConfiguration()
   } catch (error: any) {
-    console.error('保存远程失败:', error)
-    toast.error(`保存远程失败: ${error?.message || error}`, '操作失败')
+    console.error('更新远程失败:', error)
+    toast.error(`更新远程失败: ${error?.message || error}`, '操作失败')
   } finally {
     remoteLoading.value = false
   }
 }
 
 const removeRemote = async (name: string) => {
-  const confirmed = await confirm(`确定要移除远程 ${name} 吗？`, '确认操作')
+  const confirmed = await confirm.ask(`确认要移除远程 ${name} 吗`, '确认操作')
   if (!confirmed) return
 
   try {
     remoteLoading.value = true
-    await invoke('remove_remote', { name })
+    await invoke('configure_remote', {
+      request: {
+        remote_name: name,
+        remote_url: null,
+        operation: 'Remove',
+      },
+    })
     toast.success(`远程 ${name} 已移除`, '操作完成')
     if (remoteFormMode.value === 'edit' && remoteForm.originalName === name) {
       resetRemoteForm()
@@ -1355,17 +1390,24 @@ const setUpstream = async (remote: string, branch: string) => {
 
   try {
     remoteLoading.value = true
-    await invoke('set_branch_upstream', {
-      branch: gitStatus.value.branch,
-      remote,
-      remoteBranch: branch,
+    await invoke('configure_remote', {
+      request: {
+        remote_name: remote,
+        remote_url: null,
+        operation: {
+          SetUpstream: {
+            branch: gitStatus.value.branch,
+            remote_branch: branch,
+          },
+        },
+      },
     })
-    toast.success(`已将 ${gitStatus.value.branch} 关联到 ${remote}/${branch}`, '操作完成')
+    toast.success(`已将当前分支关联到 ${remote}/${branch}`, '操作完成')
     await loadRemoteConfiguration()
     await refreshGitStatus(true)
   } catch (error: any) {
-    console.error('设置上游分支失败:', error)
-    toast.error(`设置上游分支失败: ${error?.message || error}`, '操作失败')
+    console.error('设置上游失败:', error)
+    toast.error(`设置上游失败: ${error?.message || error}`, '操作失败')
   } finally {
     remoteLoading.value = false
   }

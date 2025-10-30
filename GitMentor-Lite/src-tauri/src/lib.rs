@@ -45,7 +45,7 @@ macro_rules! info_log {
 use chrono::Local;
 use commands::{
     ai_analysis_commands, ai_commands, daily_report_commands, debug_commands, git_commands,
-    git_config_commands, gitflow_commands, system_commands, template_commands,
+    git_config_commands, gitflow_commands, repository_commands, system_commands, template_commands,
     unified_template_commands, update_commands,
 };
 use core::{
@@ -54,10 +54,26 @@ use core::{
     git_engine::GitEngine,
     llm_client::{LLMClient, LLMConfig},
 };
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+
+fn resolve_log_file_path() -> PathBuf {
+    if cfg!(debug_assertions) {
+        std::env::current_dir()
+            .unwrap_or_else(|_| PathBuf::from("."))
+            .join("startup.log")
+    } else {
+        std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(|p| p.to_path_buf()))
+            .or_else(|| std::env::current_dir().ok())
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("startup.log")
+    }
+}
 
 /// 写入启动日志到文件
 /// Author: Evilek, Date: 2025-01-09
@@ -65,12 +81,12 @@ fn write_startup_log(message: &str) {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     let log_message = format!("[{}] {}\n", timestamp, message);
 
-    // 写入到当前目录的startup.log文件
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("startup.log")
-    {
+    let log_path = resolve_log_file_path();
+    if let Some(parent) = log_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let _ = file.write_all(log_message.as_bytes());
         let _ = file.flush();
     }
@@ -85,12 +101,12 @@ fn write_error_log(error: &str) {
     let timestamp = Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
     let log_message = format!("[{}] ERROR: {}\n", timestamp, error);
 
-    // 写入到当前目录的startup.log文件
-    if let Ok(mut file) = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open("startup.log")
-    {
+    let log_path = resolve_log_file_path();
+    if let Some(parent) = log_path.parent() {
+        let _ = fs::create_dir_all(parent);
+    }
+
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(&log_path) {
         let _ = file.write_all(log_message.as_bytes());
         let _ = file.flush();
     }
@@ -200,6 +216,10 @@ pub fn run() {
             git_commands::update_remote,
             git_commands::remove_remote,
             git_commands::set_branch_upstream,
+            repository_commands::clone_repository,
+            repository_commands::configure_remote,
+            repository_commands::validate_remote_connection,
+            repository_commands::generate_initial_commit_message,
             git_commands::generate_commit_message,
             git_commands::stage_files,
             git_commands::commit_changes,

@@ -304,6 +304,7 @@ const computeDefaultQuickActions = (branch: GitflowBranch): GitflowQuickAction[]
 
   switch (branch.branchType) {
     case 'feature': {
+      const aheadCount = divergence.ahead ?? 0
       if (remoteUnavailable) {
         actions.push({
           id: 'finish-local',
@@ -324,6 +325,14 @@ const computeDefaultQuickActions = (branch: GitflowBranch): GitflowQuickAction[]
           baseSync.description += remoteNote
         }
         actions.push(baseSync)
+      }
+      if (!remoteUnavailable && behindCount === 0 && aheadCount > 0) {
+        actions.push({
+          id: 'finish-feature',
+          label: `合并回 ${branch.base}`,
+          icon: '✅',
+          description: `将 ${branch.name} 的改动合并回 ${branch.base} 并保留本地分支`
+        })
       }
       actions.push({
         id: 'generate-status',

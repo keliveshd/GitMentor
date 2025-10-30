@@ -51,7 +51,7 @@
 
     <footer class="card-footer">
       <button class="card-action" @click.stop="handlePrimaryAction">
-        {{ primaryActionLabel }}
+        {{ primaryActionText }}
       </button>
       <div class="quick-actions" v-if="branch.nextActions?.length">
         <button
@@ -91,6 +91,7 @@ import { branchTypeMeta } from '../../composables/useGitflow'
 type Props = {
   branch: GitflowBranch
   isActive?: boolean
+  primaryActionLabel?: string
 }
 
 const emit = defineEmits<{
@@ -163,7 +164,7 @@ const riskLabel = computed(() => {
   }
 })
 
-const primaryActionLabel = computed(() => {
+const fallbackPrimaryActionLabel = computed(() => {
   const { branchType, status, lifecycleStage } = props.branch
   if (branchType === 'release') {
     if (lifecycleStage === 'published') {
@@ -182,6 +183,8 @@ const primaryActionLabel = computed(() => {
   }
   return '继续推进'
 })
+
+const primaryActionText = computed(() => props.primaryActionLabel ?? fallbackPrimaryActionLabel.value)
 
 const quickActions = computed(() => {
   // 只显示前3个最重要的快捷操作
