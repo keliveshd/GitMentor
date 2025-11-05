@@ -2,10 +2,13 @@ use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
+use std::env;
 use std::path::PathBuf;
+use std::process::{Command, Stdio};
 use std::time::Duration;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+use zip::ZipArchive;
 
 /**
  * GitMentor 自动更新管理器
@@ -209,11 +212,297 @@ impl UpdateManager {
         Ok(())
     }
 
-    /// 安装更新包（Windows MSI）
+    /// 安装更新包（支持 ZIP 便携版和 MSI）
     pub async fn install_update(&self, installer_path: &PathBuf) -> Result<()> {
         if !installer_path.exists() {
-            return Err(anyhow::anyhow!("Installer file not found"));
+            return Err(anyhow::anyhow!("安装包文件未找到"));
         }
+
+        let file_name = installer_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+
+        println!("[DEBUG] 开始安装更新: {}", file_name);
+
+        // 检测文件类型并选择安装方式
+        if file_name.to_lowercase().ends_with(".zip") {
+            // ZIP 文件 - 覆盖式更新
+            // 首先尝试直接更新（如果文件未被锁定）
+            match self.install_portable_zip(installer_path).await {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    // 如果直接更新失败，检查是否是文件锁定问题
+                    let error_msg = e.to_string().to_lowercase();
+                    if error_msg.contains("locked") || error_msg.contains("in use") || error_msg.contains("being used") {
+                        println!("[DEBUG] 检测到文件锁定，使用更新器进程");
+                        self.install_with_updater_process(installer_path).await
+                    } else {
+                        Err(e)
+                    }
+                }
+            }
+        } else if file_name.to_lowercase().ends_with(".msi") {
+            // MSI 文件 - 传统安装
+            self.install_msi(installer_path).await
+        } else if file_name.to_lowercase().ends_with(".exe") {
+            // EXE 文件 - 尝试直接运行或使用 msiexec
+            let output = tokio::process::Command::new(installer_path)
+                .arg("/S")
+                .arg("/SILENT")
+                .arg("/NORESTART")
+                .output()
+                .await
+                .map_err(|e| anyhow::anyhow!("启动安装程序失败: {}", e))?;
+
+            if !output.status.success() {
+                let error = String::from_utf8_lossy(&output.stderr);
+                return Err(anyhow::anyhow!("安装失败: {}", error));
+            }
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!(
+                "不支持的安装包格式: {}",
+                file_name
+            ))
+        }
+    }
+
+    /// 使用更新器进程安装（解决文件锁定问题）
+    async fn install_with_updater_process(&self, installer_path: &PathBuf) -> Result<()> {
+        println!("[DEBUG] 启动更新器进程...");
+
+        let current_exe = std::env::current_exe()
+            .map_err(|e| anyhow::anyhow!("获取当前可执行文件路径失败: {}", e))?;
+
+        let app_dir = current_exe
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("无法获取可执行文件目录"))?;
+
+        let installer_path_str = installer_path
+            .to_string_lossy()
+            .to_string();
+
+        // 准备更新器进程的参数
+        let updater_args = vec![
+            "updater".to_string(),
+            "--installer".to_string(),
+            installer_path_str,
+            "--app-dir".to_string(),
+            app_dir.to_string_lossy().to_string(),
+            "--exe-name".to_string(),
+            current_exe
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("GitMentorLite.exe")
+                .to_string(),
+        ];
+
+        println!("[DEBUG] 调用更新器进程...");
+        println!("[DEBUG] 更新器参数: {:?}", updater_args);
+
+        // 检查是否为便携版 ZIP（更新器只处理 ZIP）
+        let is_zip = installer_path
+            .file_name()
+            .and_then(|s| s.to_str())
+            .map(|s| s.to_lowercase().ends_with(".zip"))
+            .unwrap_or(false);
+
+        if !is_zip {
+            return Err(anyhow::anyhow!("更新器进程仅支持 ZIP 文件"));
+        }
+
+        // 启动更新器进程（独立进程）
+        let mut child = Command::new(&current_exe)
+            .args(&updater_args)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .map_err(|e| anyhow::anyhow!("启动更新器进程失败: {}", e))?;
+
+        println!("[DEBUG] 更新器进程已启动，PID: {}", child.id());
+
+        // 等待更新器进程完成（不应该等待太久，因为更新器会立即重启应用）
+        let timeout = tokio::time::timeout(Duration::from_secs(5), child.wait());
+        match timeout.await {
+            Ok(result) => {
+                match result {
+                    Ok(status) => {
+                        if status.success() {
+                            println!("[DEBUG] 更新器进程完成");
+                            Ok(())
+                        } else {
+                            Err(anyhow::anyhow!("更新器进程执行失败: {:?}", status))
+                        }
+                    }
+                    Err(e) => {
+                        Err(anyhow::anyhow!("等待更新器进程失败: {}", e))
+                    }
+                }
+            }
+            Err(_) => {
+                println!("[DEBUG] 更新器进程仍在运行，这是正常的（它会重启应用）");
+                Ok(())
+            }
+        }
+    }
+
+    /// 安装 Portable ZIP 包（覆盖式更新）
+    async fn install_portable_zip(&self, zip_path: &PathBuf) -> Result<()> {
+        println!("[DEBUG] 开始安装 Portable ZIP 包");
+
+        let current_exe = std::env::current_exe()
+            .map_err(|e| anyhow::anyhow!("获取当前可执行文件路径失败: {}", e))?;
+
+        let current_dir = current_exe
+            .parent()
+            .ok_or_else(|| anyhow::anyhow!("无法获取可执行文件目录"))?;
+
+        println!("[DEBUG] 应用程序目录: {:?}", current_dir);
+
+        // 读取 ZIP 文件
+        let zip_file = fs::File::open(zip_path).await?;
+        let mut archive = ZipArchive::new(zip_file)?;
+
+        println!("[DEBUG] ZIP 文件包含 {} 个条目", archive.len());
+
+        // 备份当前版本（可选）
+        let backup_dir = current_dir.join("backup-old");
+        if backup_dir.exists() {
+            fs::remove_dir_all(&backup_dir).await?;
+        }
+
+        // 解压并覆盖文件
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)?;
+
+            let file_path = match file.enclosed_name() {
+                Some(path) => path.to_owned(),
+                None => continue,
+            };
+
+            let target_path = current_dir.join(&file_path);
+
+            // 跳过目录创建，稍后统一创建
+            if file.is_dir() {
+                if !target_path.exists() {
+                    fs::create_dir_all(&target_path).await?;
+                }
+                continue;
+            }
+
+            // 确保父目录存在
+            if let Some(parent) = target_path.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent).await?;
+                }
+            }
+
+            // 读取文件内容
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer).await?;
+
+            // 写入文件
+            fs::write(&target_path, buffer).await?;
+
+            if i % 10 == 0 || i == archive.len() - 1 {
+                println!("[DEBUG] 已解压: {}/{}", i + 1, archive.len());
+            }
+        }
+
+        println!("[DEBUG] ZIP 安装完成");
+        Ok(())
+    }
+
+    /// 运行更新器进程（在独立进程中执行）
+    pub async fn run_updater_process(
+        &self,
+        installer_path: &PathBuf,
+        app_dir: &PathBuf,
+        exe_name: &str,
+    ) -> Result<()> {
+        println!("[UPDATER] === 更新器进程开始 ===");
+        println!("[UPDATER] 安装包: {:?}", installer_path);
+        println!("[UPDATER] 应用目录: {:?}", app_dir);
+
+        // 等待一段时间，确保主进程已经退出
+        println!("[UPDATER] 等待主进程退出...");
+        tokio::time::sleep(Duration::from_millis(500)).await;
+
+        // 备份旧版本（可选）
+        let backup_dir = app_dir.join("backup-old");
+        if backup_dir.exists() {
+            println!("[UPDATER] 清理旧备份...");
+            fs::remove_dir_all(&backup_dir).await?;
+        }
+
+        // 解压 ZIP 文件
+        println!("[UPDATER] 开始解压 ZIP...");
+        let zip_file = fs::File::open(installer_path).await?;
+        let mut archive = ZipArchive::new(zip_file)?;
+
+        println!("[UPDATER] ZIP 包含 {} 个条目", archive.len());
+
+        // 创建进度报告
+        let total_files = archive.len();
+
+        for i in 0..archive.len() {
+            let mut file = archive.by_index(i)?;
+
+            let file_path = match file.enclosed_name() {
+                Some(path) => path.to_owned(),
+                None => continue,
+            };
+
+            // 跳过更新器进程本身和备份目录
+            if file_path.to_string_lossy().contains("backup-old") {
+                continue;
+            }
+
+            let target_path = app_dir.join(&file_path);
+
+            if file.is_dir() {
+                if !target_path.exists() {
+                    fs::create_dir_all(&target_path).await?;
+                }
+                continue;
+            }
+
+            // 确保父目录存在
+            if let Some(parent) = target_path.parent() {
+                if !parent.exists() {
+                    fs::create_dir_all(parent).await?;
+                }
+            }
+
+            // 读取并写入文件
+            let mut buffer = Vec::new();
+            file.read_to_end(&mut buffer).await?;
+            fs::write(&target_path, buffer).await?;
+
+            // 显示进度（每10个文件报告一次）
+            if i % 10 == 0 || i == total_files - 1 {
+                let progress = (i as f64 / total_files as f64 * 100.0).round();
+                println!("[UPDATER] 进度: {}% ({}/{})", progress, i + 1, total_files);
+            }
+        }
+
+        println!("[UPDATER] === 文件解压完成 ===");
+
+        // 验证更新是否成功
+        let exe_path = app_dir.join(exe_name);
+        if !exe_path.exists() {
+            return Err(anyhow::anyhow!("更新后未找到可执行文件: {:?}", exe_path));
+        }
+
+        println!("[UPDATER] 更新验证成功");
+        println!("[UPDATER] 更新器进程结束");
+        Ok(())
+    }
+
+    /// 安装 MSI 包（传统方式）
+    async fn install_msi(&self, installer_path: &PathBuf) -> Result<()> {
+        println!("[DEBUG] 开始安装 MSI 包");
 
         // 生成安装日志路径（与安装包同目录）
         let log_path = installer_path.with_file_name(format!(
@@ -393,8 +682,24 @@ impl UpdateManager {
         current_padded.cmp(&latest_padded)
     }
 
-    /// 查找 Windows 安装包
+    /// 查找 Windows 安装包（优先 Portable zip）
     fn find_windows_installer(&self, assets: &[GitHubAsset]) -> Option<String> {
+        // 首先查找便携版 zip（避免杀毒软件拦截）
+        if let Some(asset) = assets.iter().find(|asset| {
+            asset.name.to_lowercase().contains("portable")
+                && (asset.name.ends_with(".zip") || asset.name.ends_with(".7z"))
+        }) {
+            println!("[DEBUG] 找到便携版: {}", asset.name);
+            return Some(asset.browser_download_url.clone());
+        }
+
+        // 其次查找普通 zip 包
+        if let Some(asset) = assets.iter().find(|asset| asset.name.ends_with(".zip")) {
+            println!("[DEBUG] 找到 ZIP 包: {}", asset.name);
+            return Some(asset.browser_download_url.clone());
+        }
+
+        // 最后回退到 MSI
         assets
             .iter()
             .find(|asset| {

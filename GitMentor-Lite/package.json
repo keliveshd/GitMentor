@@ -10,6 +10,7 @@
     "tauri": "tauri",
     "tauri:dev": "set LIBPNG_NO_WARN=1 && tauri dev",
     "tauri:build": "set LIBPNG_NO_WARN=1 && tauri build",
+    "tauri:build:portable": "set LIBPNG_NO_WARN=1 && tauri build && pwsh scripts/build-portable.ps1",
     "tauri:dev:unix": "LIBPNG_NO_WARN=1 tauri dev",
     "tauri:build:unix": "LIBPNG_NO_WARN=1 tauri build",
     "type-check": "vue-tsc --noEmit",

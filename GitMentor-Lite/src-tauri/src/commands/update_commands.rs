@@ -125,7 +125,7 @@ pub async fn download_update(
     println!("[DEBUG] 下载目录: {:?}", download_dir);
 
     let filename = extract_filename_from_url(&download_url)
-        .unwrap_or_else(|| "GitMentor-update.msi".to_string());
+        .unwrap_or_else(|| "GitMentor-update.zip".to_string());
     println!("[DEBUG] 文件名: {}", filename);
 
     let download_path = download_dir.join(&filename);
@@ -181,10 +181,71 @@ pub async fn install_update(installer_path: String) -> Result<(), String> {
     let update_manager = UpdateManager::new(current_version);
     let path = PathBuf::from(installer_path);
 
-    update_manager
-        .install_update(&path)
+    match update_manager.install_update(&path).await {
+        Ok(_) => {
+            println!("[DEBUG] 更新安装成功");
+            Ok(())
+        }
+        Err(e) => {
+            println!("[WARN] 直接更新失败，尝试延迟更新: {}", e);
+
+            // 如果直接更新失败，尝试延迟更新
+            let delayed_result = install_update_delayed(&path, &update_manager).await;
+
+            match delayed_result {
+                Ok(_) => {
+                    println!("[DEBUG] 延迟更新已准备，重启后应用");
+                    Ok(())
+                }
+                Err(delayed_e) => {
+                    println!("[ERROR] 延迟更新也失败: {}", delayed_e);
+                    Err(format!("安装更新失败: {}", e))
+                }
+            }
+        }
+    }
+}
+
+/// 延迟更新：在下次启动时应用更新
+async fn install_update_delayed(zip_path: &PathBuf, update_manager: &UpdateManager) -> Result<()> {
+    println!("[DEBUG] 准备延迟更新...");
+
+    let current_exe = std::env::current_exe()
+        .map_err(|e| format!("获取当前可执行文件路径失败: {}", e))?;
+
+    let app_dir = current_exe
+        .parent()
+        .ok_or_else(|| "无法获取可执行文件目录".to_string())?;
+
+    // 创建 pending-update 目录
+    let pending_dir = app_dir.join("pending-update");
+    if !pending_dir.exists() {
+        tokio::fs::create_dir_all(&pending_dir)
+            .await
+            .map_err(|e| format!("创建待更新目录失败: {}", e))?;
+    }
+
+    // 将 ZIP 文件复制到待更新目录
+    let zip_file_name = zip_path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("update.zip");
+
+    let pending_zip = pending_dir.join(zip_file_name);
+    tokio::fs::copy(zip_path, &pending_zip)
         .await
-        .map_err(|e| format!("安装更新失败: {}", e))?;
+        .map_err(|e| format!("复制待更新文件失败: {}", e))?;
+
+    // 创建标记文件
+    let marker_file = pending_dir.join(".update-pending");
+    tokio::fs::write(&marker_file, "pending")
+        .await
+        .map_err(|e| format!("创建更新标记失败: {}", e))?;
+
+    println!("[DEBUG] 延迟更新已准备: {:?}", pending_zip);
+
+    // 提示用户重启
+    println!("[INFO] 更新已下载，将在下次重启时应用");
 
     Ok(())
 }
