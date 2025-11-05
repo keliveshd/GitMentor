@@ -96,48 +96,176 @@ impl AIManager {
         factory.get_providers_info()
     }
 
-    /// 生成提交消息
+    /// 生成提交消息（带重试逻辑）
+    /// 作者：Evilek
+    /// 编写日期：2025-11-05
+    /// 更新日期：2025-11-05 - 添加429错误重试机制
     pub async fn generate_commit_message(&self, request: AIRequest) -> Result<AIResponse> {
         let config = self.get_config().await;
         let provider_id = &config.base.provider;
 
-        let factory = self.provider_factory.read().await;
-        factory.generate_commit(provider_id, &request).await
+        // 重试逻辑
+        let max_retries = config.advanced.retry_count.max(1);
+        let mut last_error = None;
+
+        for retry in 0..=max_retries {
+            let factory = self.provider_factory.read().await;
+            let result = factory.generate_commit(provider_id, &request).await;
+
+            match result {
+                Ok(response) => {
+                    if retry > 0 {
+                        let retry_type = if Self::is_quota_exceeded_error(last_error.as_ref()) {
+                            "配额重试"
+                        } else {
+                            "普通重试"
+                        };
+                        eprintln!("🔄 [Retry] {} 第 {} 次重试成功", retry_type, retry);
+                    }
+                    return Ok(response);
+                }
+                Err(error) => {
+                    last_error = Some(error);
+
+                    // 检测是否为429配额超限错误
+                    let is_quota_error = Self::is_quota_exceeded_error(last_error.as_ref());
+
+                    if retry < max_retries {
+                        if is_quota_error {
+                            // 配额超限错误：使用更长的指数退避等待
+                            let base_delay = 5000; // 5秒基础延迟
+                            let delay = base_delay * (2_u64.pow(retry as u32));
+                            eprintln!(
+                                "⚠️ [Quota Retry] 检测到配额超限错误，第 {} 次重试，等待 {} 秒后重试...",
+                                retry + 1,
+                                delay / 1000
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                        } else {
+                            // 普通错误：使用标准指数退避等待
+                            eprintln!("⚠️ [Retry] 第 {} 次尝试失败，准备重试...", retry + 1);
+                            let wait_time =
+                                tokio::time::Duration::from_millis(1000 * 2_u64.pow(retry as u32));
+                            tokio::time::sleep(wait_time).await;
+                        }
+                    } else {
+                        // 最后一次重试失败，记录详细错误信息
+                        if is_quota_error {
+                            eprintln!("❌ [Quota Error] 所有重试均失败，已达到最大重试次数。错误详情:");
+                            eprintln!("❌ [Quota Error] {}", last_error.as_ref().unwrap());
+                            eprintln!("❌ [Quota Error] 建议：1) 检查API配额设置 2) 升级API套餐 3) 等待配额重置");
+                        } else {
+                            eprintln!("❌ [Error] 所有重试均失败，已达到最大重试次数");
+                            eprintln!("❌ [Error] 最后错误: {}", last_error.as_ref().unwrap());
+                        }
+                    }
+                }
+            }
+        }
+
+        // 所有重试都失败
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("未知错误")))
     }
 
-    /// 生成AI分析报告
+    /// 生成AI分析报告（带重试逻辑）
+    /// 作者：Evilek
+    /// 编写日期：2025-11-05
+    /// 更新日期：2025-11-05 - 添加429错误重试机制
     pub async fn generate_analysis_report(&self, request: AIRequest) -> Result<AIResponse> {
         let start_time = std::time::Instant::now();
         let config = self.get_config().await;
         let provider_id = &config.base.provider;
 
-        let factory = self.provider_factory.read().await;
-        let result = factory.generate_commit(provider_id, &request).await;
+        // 重试逻辑
+        let max_retries = config.advanced.retry_count.max(1);
+        let mut last_error_string: Option<String> = None;
+        let mut result = None;
 
-        // 记录对话
-        let mut logger = self.conversation_logger.write().await;
-        match &result {
-            Ok(response) => {
-                let _ = logger.log_success(
-                    "ai_analysis_report".to_string(),
-                    None, // 仓库路径
-                    request.clone(),
-                    response.clone(),
-                    start_time.elapsed().as_millis() as u64,
-                );
+        for retry in 0..=max_retries {
+            let factory = self.provider_factory.read().await;
+            let current_result = factory.generate_commit(provider_id, &request).await;
+
+            // 记录对话
+            let mut logger = self.conversation_logger.write().await;
+            match &current_result {
+                Ok(response) => {
+                    let _ = logger.log_success(
+                        "ai_analysis_report".to_string(),
+                        None, // 仓库路径
+                        request.clone(),
+                        response.clone(),
+                        start_time.elapsed().as_millis() as u64,
+                    );
+                }
+                Err(error) => {
+                    let _ = logger.log_failure(
+                        "ai_analysis_report".to_string(),
+                        None, // 仓库路径
+                        request.clone(),
+                        error.to_string(),
+                        start_time.elapsed().as_millis() as u64,
+                    );
+                }
             }
-            Err(error) => {
-                let _ = logger.log_failure(
-                    "ai_analysis_report".to_string(),
-                    None, // 仓库路径
-                    request.clone(),
-                    error.to_string(),
-                    start_time.elapsed().as_millis() as u64,
-                );
+            drop(logger);
+
+            match current_result {
+                Ok(response) => {
+                    if retry > 0 {
+                        let retry_type = if last_error_string.as_ref().map_or(false, |s| {
+                            Self::is_quota_exceeded_error_string(s)
+                        }) {
+                            "配额重试"
+                        } else {
+                            "普通重试"
+                        };
+                        eprintln!("🔄 [Retry] {} 第 {} 次重试成功", retry_type, retry);
+                    }
+                    return Ok(response);
+                }
+                Err(error) => {
+                    let error_string = error.to_string();
+                    last_error_string = Some(error_string.clone());
+                    result = Some(Err(error));
+
+                    // 检测是否为429配额超限错误
+                    let is_quota_error = Self::is_quota_exceeded_error_string(&error_string);
+
+                    if retry < max_retries {
+                        if is_quota_error {
+                            // 配额超限错误：使用更长的指数退避等待
+                            let base_delay = 5000; // 5秒基础延迟
+                            let delay = base_delay * (2_u64.pow(retry as u32));
+                            eprintln!(
+                                "⚠️ [Quota Retry] 检测到配额超限错误，第 {} 次重试，等待 {} 秒后重试...",
+                                retry + 1,
+                                delay / 1000
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                        } else {
+                            // 普通错误：使用标准指数退避等待
+                            eprintln!("⚠️ [Retry] 第 {} 次尝试失败，准备重试...", retry + 1);
+                            let wait_time =
+                                tokio::time::Duration::from_millis(1000 * 2_u64.pow(retry as u32));
+                            tokio::time::sleep(wait_time).await;
+                        }
+                    } else {
+                        // 最后一次重试失败，记录详细错误信息
+                        if is_quota_error {
+                            eprintln!("❌ [Quota Error] 所有重试均失败，已达到最大重试次数。错误详情:");
+                            eprintln!("❌ [Quota Error] {}", error_string);
+                            eprintln!("❌ [Quota Error] 建议：1) 检查API配额设置 2) 升级API套餐 3) 等待配额重置");
+                        } else {
+                            eprintln!("❌ [Error] 所有重试均失败，已达到最大重试次数");
+                            eprintln!("❌ [Error] 最后错误: {}", error_string);
+                        }
+                    }
+                }
             }
         }
 
-        result
+        // 返回最后一次的结果
+        result.unwrap_or_else(|| Err(anyhow::anyhow!("未知错误")))
     }
 
     /// 获取指定提供商的模型列表
@@ -270,13 +398,19 @@ impl AIManager {
                     );
 
                     if retry > 0 {
-                        eprintln!("🔄 [Retry] 第 {} 次重试成功", retry);
+                        let retry_type = if Self::is_quota_exceeded_error(last_error.as_ref()) {
+                            "配额重试"
+                        } else {
+                            "普通重试"
+                        };
+                        eprintln!("🔄 [Retry] {} 第 {} 次重试成功", retry_type, retry);
                     }
 
                     return Ok(response);
                 }
                 Err(error) => {
                     last_error = Some(error);
+                    let error_string = last_error.as_ref().unwrap().to_string();
 
                     // 记录失败日志
                     let mut logger = self.conversation_logger.write().await;
@@ -284,17 +418,42 @@ impl AIManager {
                         template_id.to_string(),
                         repository_path.clone(),
                         request.clone(),
-                        last_error.as_ref().unwrap().to_string(),
+                        error_string.clone(),
                         processing_time,
                     );
                     drop(logger);
 
+                    // 检测是否为429配额超限错误
+                    let is_quota_error = Self::is_quota_exceeded_error(last_error.as_ref());
+
                     if retry < max_retries {
-                        eprintln!("⚠️ [Retry] 第 {} 次尝试失败，准备重试...", retry + 1);
-                        // 指数退避等待
-                        let wait_time =
-                            tokio::time::Duration::from_millis(1000 * 2_u64.pow(retry as u32));
-                        tokio::time::sleep(wait_time).await;
+                        if is_quota_error {
+                            // 配额超限错误：使用更长的指数退避等待
+                            let base_delay = 5000; // 5秒基础延迟
+                            let delay = base_delay * (2_u64.pow(retry as u32));
+                            eprintln!(
+                                "⚠️ [Quota Retry] 检测到配额超限错误，第 {} 次重试，等待 {} 秒后重试...",
+                                retry + 1,
+                                delay / 1000
+                            );
+                            tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+                        } else {
+                            // 普通错误：使用标准指数退避等待
+                            eprintln!("⚠️ [Retry] 第 {} 次尝试失败，准备重试...", retry + 1);
+                            let wait_time =
+                                tokio::time::Duration::from_millis(1000 * 2_u64.pow(retry as u32));
+                            tokio::time::sleep(wait_time).await;
+                        }
+                    } else {
+                        // 最后一次重试失败，记录详细错误信息
+                        if is_quota_error {
+                            eprintln!("❌ [Quota Error] 所有重试均失败，已达到最大重试次数。错误详情:");
+                            eprintln!("❌ [Quota Error] {}", error_string);
+                            eprintln!("❌ [Quota Error] 建议：1) 检查API配额设置 2) 升级API套餐 3) 等待配额重置");
+                        } else {
+                            eprintln!("❌ [Error] 所有重试均失败，已达到最大重试次数");
+                            eprintln!("❌ [Error] 最后错误: {}", error_string);
+                        }
                     }
                 }
             }
@@ -503,5 +662,39 @@ impl AIManager {
     pub async fn set_cache_max_age(&self, seconds: u64) {
         let mut cache = self.response_cache.write().await;
         cache.set_max_age(seconds);
+    }
+
+    /// 检测是否为429配额超限错误
+    /// 作者：Evilek
+    /// 编写日期：2025-11-05
+    fn is_quota_exceeded_error(error: Option<&anyhow::Error>) -> bool {
+        if let Some(error) = error {
+            let error_str = error.to_string().to_lowercase();
+            Self::is_quota_exceeded_error_string(&error_str)
+        } else {
+            false
+        }
+    }
+
+    /// 检测是否为429配额超限错误（字符串版本）
+    /// 作者：Evilek
+    /// 编写日期：2025-11-05
+    fn is_quota_exceeded_error_string(error_str: &str) -> bool {
+        // 检查常见的配额超限错误关键词
+        let quota_keywords = [
+            "quota",
+            "exceeded",
+            "429",
+            "rate limit",
+            "too many requests",
+            "usage limit",
+            "billing",
+            "payment required",
+            "free tier",
+            "credits",
+            "subscription",
+        ];
+
+        quota_keywords.iter().any(|keyword| error_str.contains(keyword))
     }
 }

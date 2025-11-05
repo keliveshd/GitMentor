@@ -207,7 +207,7 @@ pub async fn install_update(installer_path: String) -> Result<(), String> {
 }
 
 /// 延迟更新：在下次启动时应用更新
-async fn install_update_delayed(zip_path: &PathBuf, update_manager: &UpdateManager) -> Result<()> {
+async fn install_update_delayed(zip_path: &PathBuf, update_manager: &UpdateManager) -> Result<(), String> {
     println!("[DEBUG] 准备延迟更新...");
 
     let current_exe = std::env::current_exe()

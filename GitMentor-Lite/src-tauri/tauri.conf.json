@@ -4,8 +4,8 @@
   "version": "0.2.7",
   "identifier": "com.gitmentor-lite.app",
   "build": {
-    "beforeDevCommand": "npm run dev -- --port 1423",
-    "devUrl": "http://localhost:1423",
+    "beforeDevCommand": "npm run dev -- --port 1420",
+    "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
@@ -58,10 +58,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": [
-      "msi",
-      "zip"
-    ],
+    "targets": "all",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

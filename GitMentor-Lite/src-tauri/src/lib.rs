@@ -147,16 +147,18 @@ async fn handle_pending_updates() {
     println!("[STARTUP] 检测到待更新文件，开始应用更新...");
 
     // 查找 ZIP 文件
-    let mut zip_files: Vec<_> = fs::read_dir(&pending_dir)
-        .unwrap_or_else(|_| Vec::new())
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| {
-            entry.file_name()
-                .to_string_lossy()
-                .to_lowercase()
-                .ends_with(".zip")
-        })
-        .collect();
+    let mut zip_files: Vec<_> = match fs::read_dir(&pending_dir) {
+        Ok(dir) => dir
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry.file_name()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .ends_with(".zip")
+            })
+            .collect(),
+        Err(_) => return,
+    };
 
     if zip_files.is_empty() {
         println!("[STARTUP] 未找到 ZIP 文件");
@@ -173,11 +175,12 @@ async fn handle_pending_updates() {
 
     println!("[STARTUP] 应用延迟更新: {:?}", zip_path);
 
-    let update_manager = gitmentor_lite_lib::core::update_manager::UpdateManager::new(
+    let update_manager = crate::core::update_manager::UpdateManager::new(
         env!("CARGO_PKG_VERSION").to_string()
     );
 
-    match update_manager.install_portable_zip(&zip_path).await {
+    // 使用 install_update 而不是直接的 install_portable_zip
+    match update_manager.install_update(&zip_path).await {
         Ok(_) => {
             println!("[STARTUP] 延迟更新成功");
             // 清理待更新目录
@@ -239,7 +242,7 @@ fn handle_updater_mode() -> bool {
         // 执行更新
         let rt = tokio::runtime::Runtime::new().unwrap();
         rt.block_on(async {
-            let update_manager = gitmentor_lite_lib::core::update_manager::UpdateManager::new(
+            let update_manager = crate::core::update_manager::UpdateManager::new(
                 env!("CARGO_PKG_VERSION").to_string()
             );
 

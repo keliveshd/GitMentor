@@ -2,7 +2,7 @@ use anyhow::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
-use std::env;
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -320,14 +320,19 @@ impl UpdateManager {
             .spawn()
             .map_err(|e| anyhow::anyhow!("启动更新器进程失败: {}", e))?;
 
-        println!("[DEBUG] 更新器进程已启动，PID: {}", child.id());
+        let child_id = child.id();
+        println!("[DEBUG] 更新器进程已启动，PID: {}", child_id);
 
         // 等待更新器进程完成（不应该等待太久，因为更新器会立即重启应用）
-        let timeout = tokio::time::timeout(Duration::from_secs(5), child.wait());
-        match timeout.await {
+        // 使用 tokio 的 spawn_blocking 来运行同步的 wait()
+        let child_wait = tokio::task::spawn_blocking(move || {
+            child.wait()
+        });
+
+        match tokio::time::timeout(Duration::from_secs(5), child_wait).await {
             Ok(result) => {
                 match result {
-                    Ok(status) => {
+                    Ok(Ok(status)) => {
                         if status.success() {
                             println!("[DEBUG] 更新器进程完成");
                             Ok(())
@@ -335,8 +340,11 @@ impl UpdateManager {
                             Err(anyhow::anyhow!("更新器进程执行失败: {:?}", status))
                         }
                     }
-                    Err(e) => {
+                    Ok(Err(e)) => {
                         Err(anyhow::anyhow!("等待更新器进程失败: {}", e))
+                    }
+                    Err(e) => {
+                        Err(anyhow::anyhow!("等待更新器进程超时: {}", e))
                     }
                 }
             }
@@ -360,53 +368,72 @@ impl UpdateManager {
 
         println!("[DEBUG] 应用程序目录: {:?}", current_dir);
 
-        // 读取 ZIP 文件
-        let zip_file = fs::File::open(zip_path).await?;
-        let mut archive = ZipArchive::new(zip_file)?;
-
-        println!("[DEBUG] ZIP 文件包含 {} 个条目", archive.len());
-
         // 备份当前版本（可选）
         let backup_dir = current_dir.join("backup-old");
         if backup_dir.exists() {
             fs::remove_dir_all(&backup_dir).await?;
         }
 
-        // 解压并覆盖文件
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i)?;
+        // 克隆路径以避免生命周期问题
+        let zip_path_clone = zip_path.to_owned();
 
-            let file_path = match file.enclosed_name() {
-                Some(path) => path.to_owned(),
-                None => continue,
-            };
+        // 在同步块中处理 ZIP 文件（避免 Send 问题）
+        let files_to_extract = tokio::task::spawn_blocking(move || -> Result<Vec<(PathBuf, Vec<u8>, bool)>, anyhow::Error> {
+            // 打开 ZIP 文件
+            let zip_file = std::fs::File::open(&zip_path_clone)
+                .map_err(|e| anyhow::anyhow!("打开 ZIP 文件失败: {}", e))?;
+            let mut archive = ZipArchive::new(zip_file)?;
 
+            let total_files = archive.len();
+            println!("[DEBUG] ZIP 文件包含 {} 个条目", total_files);
+
+            let mut files = Vec::new();
+
+            // 遍历 ZIP 文件中的所有条目
+            for i in 0..total_files {
+                let mut file = archive.by_index(i)?;
+                let file_path = match file.enclosed_name() {
+                    Some(path) => path.to_owned(),
+                    None => continue,
+                };
+
+                let is_dir = file.is_dir();
+
+                if is_dir {
+                    files.push((file_path.to_path_buf(), Vec::new(), true));
+                } else {
+                    // 读取文件内容
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer)
+                        .map_err(|e| anyhow::anyhow!("读取 ZIP 文件内容失败: {}", e))?;
+                    files.push((file_path.to_path_buf(), buffer, false));
+                }
+
+                if i % 10 == 0 || i == total_files - 1 {
+                    println!("[DEBUG] 已读取: {}/{}", i + 1, total_files);
+                }
+            }
+
+            Ok(files)
+        }).await??;
+
+        // 现在在异步上下文中写入文件
+        for (file_path, buffer, is_dir) in files_to_extract {
             let target_path = current_dir.join(&file_path);
 
-            // 跳过目录创建，稍后统一创建
-            if file.is_dir() {
+            if is_dir {
                 if !target_path.exists() {
                     fs::create_dir_all(&target_path).await?;
                 }
-                continue;
-            }
-
-            // 确保父目录存在
-            if let Some(parent) = target_path.parent() {
-                if !parent.exists() {
-                    fs::create_dir_all(parent).await?;
+            } else {
+                // 确保父目录存在
+                if let Some(parent) = target_path.parent() {
+                    if !parent.exists() {
+                        fs::create_dir_all(parent).await?;
+                    }
                 }
-            }
-
-            // 读取文件内容
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).await?;
-
-            // 写入文件
-            fs::write(&target_path, buffer).await?;
-
-            if i % 10 == 0 || i == archive.len() - 1 {
-                println!("[DEBUG] 已解压: {}/{}", i + 1, archive.len());
+                // 写入文件
+                fs::write(&target_path, buffer).await?;
             }
         }
 
@@ -436,54 +463,77 @@ impl UpdateManager {
             fs::remove_dir_all(&backup_dir).await?;
         }
 
-        // 解压 ZIP 文件
-        println!("[UPDATER] 开始解压 ZIP...");
-        let zip_file = fs::File::open(installer_path).await?;
-        let mut archive = ZipArchive::new(zip_file)?;
+        // 克隆路径以避免生命周期问题
+        let installer_path_clone = installer_path.to_owned();
 
-        println!("[UPDATER] ZIP 包含 {} 个条目", archive.len());
+        // 在同步块中处理 ZIP 文件（避免 Send 问题）
+        let files_to_extract = tokio::task::spawn_blocking(move || -> Result<Vec<(PathBuf, Vec<u8>, bool)>, anyhow::Error> {
+            // 打开 ZIP 文件
+            let zip_file = std::fs::File::open(&installer_path_clone)
+                .map_err(|e| anyhow::anyhow!("打开 ZIP 文件失败: {}", e))?;
+            let mut archive = ZipArchive::new(zip_file)?;
 
-        // 创建进度报告
-        let total_files = archive.len();
+            let total_files = archive.len();
+            println!("[UPDATER] ZIP 包含 {} 个条目", total_files);
 
-        for i in 0..archive.len() {
-            let mut file = archive.by_index(i)?;
+            let mut files = Vec::new();
 
-            let file_path = match file.enclosed_name() {
-                Some(path) => path.to_owned(),
-                None => continue,
-            };
+            // 遍历 ZIP 文件中的所有条目
+            for i in 0..total_files {
+                let mut file = archive.by_index(i)?;
+                let file_path = match file.enclosed_name() {
+                    Some(path) => path.to_owned(),
+                    None => continue,
+                };
 
-            // 跳过更新器进程本身和备份目录
-            if file_path.to_string_lossy().contains("backup-old") {
-                continue;
+                // 跳过更新器进程本身和备份目录
+                if file_path.to_string_lossy().contains("backup-old") {
+                    continue;
+                }
+
+                let is_dir = file.is_dir();
+
+                if is_dir {
+                    files.push((file_path.to_path_buf(), Vec::new(), true));
+                } else {
+                    // 读取文件内容
+                    let mut buffer = Vec::new();
+                    file.read_to_end(&mut buffer)
+                        .map_err(|e| anyhow::anyhow!("读取 ZIP 文件内容失败: {}", e))?;
+                    files.push((file_path.to_path_buf(), buffer, false));
+                }
+
+                if i % 10 == 0 || i == total_files - 1 {
+                    println!("[UPDATER] 已读取: {}/{}", i + 1, total_files);
+                }
             }
 
-            let target_path = app_dir.join(&file_path);
+            Ok(files)
+        }).await??;
 
-            if file.is_dir() {
+        // 在异步上下文中写入文件
+        for (i, (file_path, buffer, is_dir)) in files_to_extract.iter().enumerate() {
+            let target_path = app_dir.join(file_path);
+
+            if *is_dir {
                 if !target_path.exists() {
                     fs::create_dir_all(&target_path).await?;
                 }
-                continue;
-            }
-
-            // 确保父目录存在
-            if let Some(parent) = target_path.parent() {
-                if !parent.exists() {
-                    fs::create_dir_all(parent).await?;
+            } else {
+                // 确保父目录存在
+                if let Some(parent) = target_path.parent() {
+                    if !parent.exists() {
+                        fs::create_dir_all(parent).await?;
+                    }
                 }
+                // 写入文件
+                fs::write(&target_path, buffer).await?;
             }
-
-            // 读取并写入文件
-            let mut buffer = Vec::new();
-            file.read_to_end(&mut buffer).await?;
-            fs::write(&target_path, buffer).await?;
 
             // 显示进度（每10个文件报告一次）
-            if i % 10 == 0 || i == total_files - 1 {
-                let progress = (i as f64 / total_files as f64 * 100.0).round();
-                println!("[UPDATER] 进度: {}% ({}/{})", progress, i + 1, total_files);
+            if i % 10 == 0 || i == files_to_extract.len() - 1 {
+                let progress = (i as f64 / files_to_extract.len() as f64 * 100.0).round();
+                println!("[UPDATER] 进度: {}% ({}/{})", progress, i + 1, files_to_extract.len());
             }
         }
 
