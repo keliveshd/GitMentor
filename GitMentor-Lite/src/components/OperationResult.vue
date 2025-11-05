@@ -17,7 +17,7 @@
 <script setup lang="ts">
 import type { OperationFeedback } from '../types/git'
 
-const props = defineProps<{
+const { result } = defineProps<{
   result: OperationFeedback | null
 }>()
 
