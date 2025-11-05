@@ -54,6 +54,7 @@ use core::{
     git_engine::GitEngine,
     llm_client::{LLMClient, LLMConfig},
 };
+use std::env;
 use std::fs::{self, OpenOptions};
 use std::io::Write;
 use std::path::PathBuf;
@@ -121,10 +122,166 @@ fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
 }
 
+/// 检查并处理延迟更新
+async fn handle_pending_updates() {
+    let current_exe = match std::env::current_exe() {
+        Ok(exe) => exe,
+        Err(_) => return,
+    };
+
+    let app_dir = match current_exe.parent() {
+        Some(dir) => dir.to_path_buf(),
+        None => return,
+    };
+
+    let pending_dir = app_dir.join("pending-update");
+    if !pending_dir.exists() {
+        return;
+    }
+
+    let marker_file = pending_dir.join(".update-pending");
+    if !marker_file.exists() {
+        return;
+    }
+
+    println!("[STARTUP] 检测到待更新文件，开始应用更新...");
+
+    // 查找 ZIP 文件
+    let mut zip_files: Vec<_> = match fs::read_dir(&pending_dir) {
+        Ok(dir) => dir
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry.file_name()
+                    .to_string_lossy()
+                    .to_lowercase()
+                    .ends_with(".zip")
+            })
+            .collect(),
+        Err(_) => return,
+    };
+
+    if zip_files.is_empty() {
+        println!("[STARTUP] 未找到 ZIP 文件");
+        let _ = fs::remove_dir_all(&pending_dir);
+        return;
+    }
+
+    // 取最新的 ZIP 文件（假设文件名包含版本号，按字母顺序排序）
+    zip_files.sort_by(|a, b| {
+        a.file_name()
+            .cmp(&b.file_name())
+    });
+    let zip_path = zip_files.last().unwrap().path();
+
+    println!("[STARTUP] 应用延迟更新: {:?}", zip_path);
+
+    let update_manager = crate::core::update_manager::UpdateManager::new(
+        env!("CARGO_PKG_VERSION").to_string()
+    );
+
+    // 使用 install_update 而不是直接的 install_portable_zip
+    match update_manager.install_update(&zip_path).await {
+        Ok(_) => {
+            println!("[STARTUP] 延迟更新成功");
+            // 清理待更新目录
+            let _ = fs::remove_dir_all(&pending_dir);
+        }
+        Err(e) => {
+            println!("[STARTUP] 延迟更新失败: {}", e);
+            // 不清理待更新目录，保留以便下次重试
+        }
+    }
+}
+
+/// 检查并处理更新器进程
+fn handle_updater_mode() -> bool {
+    let args: Vec<String> = std::env::args().collect();
+
+    if args.len() > 1 && args[1] == "updater" {
+        println!("[UPDATER] 进入更新器模式");
+        println!("[UPDATER] 参数: {:?}", args);
+
+        // 解析命令行参数
+        let mut installer_path = None;
+        let mut app_dir = None;
+        let mut exe_name = None;
+
+        let mut i = 2;
+        while i < args.len() {
+            match args[i].as_str() {
+                "--installer" if i + 1 < args.len() => {
+                    installer_path = Some(args[i + 1].clone());
+                    i += 2;
+                }
+                "--app-dir" if i + 1 < args.len() => {
+                    app_dir = Some(args[i + 1].clone());
+                    i += 2;
+                }
+                "--exe-name" if i + 1 < args.len() => {
+                    exe_name = Some(args[i + 1].clone());
+                    i += 2;
+                }
+                _ => i += 1,
+            }
+        }
+
+        // 验证参数
+        if installer_path.is_none() || app_dir.is_none() {
+            eprintln!("[UPDATER] 错误：缺少必要参数");
+            std::process::exit(1);
+        }
+
+        let installer_path = PathBuf::from(installer_path.unwrap());
+        let app_dir = PathBuf::from(app_dir.unwrap());
+        let exe_name = exe_name.unwrap_or_else(|| "GitMentorLite.exe".to_string());
+
+        println!("[UPDATER] 安装包路径: {:?}", installer_path);
+        println!("[UPDATER] 应用目录: {:?}", app_dir);
+        println!("[UPDATER] 可执行文件名: {}", exe_name);
+
+        // 执行更新
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            let update_manager = crate::core::update_manager::UpdateManager::new(
+                env!("CARGO_PKG_VERSION").to_string()
+            );
+
+            if let Err(e) = update_manager.run_updater_process(&installer_path, &app_dir, &exe_name).await {
+                eprintln!("[UPDATER] 更新失败: {}", e);
+                std::process::exit(1);
+            }
+        });
+
+        println!("[UPDATER] 更新完成，重新启动应用...");
+
+        // 重新启动应用
+        let app_exe = app_dir.join(&exe_name);
+        std::process::Command::new(&app_exe)
+            .spawn()
+            .expect("重新启动应用失败");
+
+        println!("[UPDATER] 应用已重启，更新器退出");
+        std::process::exit(0);
+    }
+
+    false
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     write_startup_log("=== GitMentor-Lite 启动开始 ===");
     write_startup_log("Author: Evilek, Date: 2025-01-09");
+
+    // 检查是否为更新器模式
+    if handle_updater_mode() {
+        return; // 更新器模式已处理并退出
+    }
+
+    // 检查并处理待更新文件（异步）
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        handle_pending_updates().await;
+    });
 
     // 记录当前工作目录
     match std::env::current_dir() {

@@ -1,0 +1,233 @@
+name: Release Build and Publish
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: '标记为预发布版本'
+        required: true
+        default: false
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  build:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: 'windows-latest'
+            artifact_name: 'GitMentorLite-${{ github.ref_name }}-x64'
+            asset_name: 'GitMentorLite-x64'
+          # 可以添加其他平台： macos-latest, ubuntu-latest
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 'lts/*'
+          cache: 'npm'
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
+
+      - name: 安装 Windows 构建工具
+        if: matrix.platform == 'windows-latest'
+        run: |
+          # 安装 WebView2 (Windows)
+          Invoke-WebRequest -Uri "https://developer.microsoft.com/en-us/microsoft-edge/webview2/" -OutFile "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -UseBasicParsing
+          Start-Process -FilePath "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -ArgumentList "/S" -Wait
+
+      - name: 安装前端依赖
+        run: npm ci
+
+      - name: 构建前端
+        run: npm run build
+        shell: bash
+
+      - name: 构建 Tauri 应用
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'GitMentor Lite v__VERSION__'
+          releaseBody: '请查看 CHANGELOG.md 获取更新详情'
+          releaseDraft: true
+          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
+
+      # 创建 Portable 版本（仅 Windows）
+      - name: 创建 Portable ZIP 版本
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        run: |
+          Write-Host "=== 开始创建 Portable 版本 ===" -ForegroundColor Green
+          $Version = "${{ github.ref_name }}".Replace('v', '')
+          Write-Host "版本: $Version" -ForegroundColor Yellow
+
+          $ReleaseDir = "src-tauri/target/release"
+          $BundleDir = "src-tauri/target/release/bundle"
+          $PortableDir = "$BundleDir/portable/GitMentorLite-$Version"
+
+          Write-Host "创建便携版目录: $PortableDir" -ForegroundColor Yellow
+
+          if (Test-Path $PortableDir) {
+            Remove-Item -Path $PortableDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
+
+          # 复制可执行文件
+          Write-Host "复制可执行文件..." -ForegroundColor Cyan
+          Copy-Item -Path "$ReleaseDir/GitMentorLite.exe" -Destination $PortableDir
+
+          # 复制 Git 二进制文件
+          if (Test-Path "$ReleaseDir/git.exe") {
+            Copy-Item -Path "$ReleaseDir/git.exe" -Destination $PortableDir
+            Write-Host "  ✓ git.exe" -ForegroundColor Green
+          }
+
+          # 复制资源文件
+          if (Test-Path "$ReleaseDir/resources") {
+            Copy-Item -Path "$ReleaseDir/resources" -Destination "$PortableDir/resources" -Recurse
+            Write-Host "  ✓ resources/" -ForegroundColor Green
+          }
+
+          # 创建启动脚本
+          Write-Host "创建启动脚本..." -ForegroundColor Cyan
+          $launcherScript = @"
+@echo off
+REM GitMentor Lite Portable Launcher
+REM Version: $Version
+
+echo 正在启动 GitMentor Lite...
+
+if not exist "GitMentorLite.exe" (
+    echo 错误: 找不到 GitMentorLite.exe
+    pause
+    exit /b 1
+)
+
+start "" "GitMentorLite.exe"
+"@
+          $launcherScript | Out-File -FilePath "$PortableDir/启动 GitMentor Lite.bat" -Encoding UTF8
+
+          # 创建 README
+          Write-Host "创建说明文档..." -ForegroundColor Cyan
+          $readmeContent = @"
+# GitMentor Lite Portable 版本
+
+## 版本
+$Version
+
+## 使用方法
+
+### Windows 用户
+1. 双击 `启动 GitMentor Lite.bat` 启动应用
+2. 或者直接双击 `GitMentorLite.exe` 启动
+
+### 注意事项
+- 这是便携版，无需安装，解压即可使用
+- 首次运行可能需要 Windows 防火墙允许
+- 所有数据保存在用户目录中
+
+## 文件说明
+- `GitMentorLite.exe` - 主程序
+- `git.exe` - Git 可执行文件（用于 Git 操作）
+- `resources/` - 应用程序资源文件
+- `启动 GitMentor Lite.bat` - 启动脚本（Windows）
+
+## 故障排除
+如果遇到问题，请检查：
+1. 是否有杀毒软件拦截
+2. 是否有足够的文件权限
+3. 尝试以管理员身份运行
+
+---
+GitMentor Lite - 轻量级 Git 图形化工具
+"@
+          $readmeContent | Out-File -FilePath "$PortableDir/README.txt" -Encoding UTF8
+
+          # 创建 ZIP 包
+          Write-Host "创建 Portable ZIP 包..." -ForegroundColor Cyan
+          $zipPath = "$BundleDir/GitMentorLite-$Version-portable.zip"
+          Compress-Archive -Path "$PortableDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+
+          $size = (Get-Item $zipPath).Length
+          $sizeMB = [math]::Round($size / 1MB, 2)
+          Write-Host "Portable ZIP: $zipPath" -ForegroundColor Green
+          Write-Host "文件大小: $sizeMB MB" -ForegroundColor Green
+
+      # 上传 Portable ZIP 到 Release
+      - name: 上传 Portable ZIP 到 Release
+        if: matrix.platform == 'windows-latest'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            src-tauri/target/release/bundle/GitMentorLite-${{ github.ref_name }}-portable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  create-changelog:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 生成 CHANGELOG
+        id: changelog
+        run: |
+          # 获取上一个标签
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
+
+          # 使用 git-cliff 生成 CHANGELOG
+          if [ -f "cliff.toml" ]; then
+            cargo install git-cliff
+            git-cliff --latest --output CHANGELOG.md
+          else
+            # 简单的 CHANGELOG 生成
+            cat > CHANGELOG.md << EOF
+            # Changelog
+
+            所有重要的更改都会记录在此文件中。
+
+            ## [${{ github.ref_name }}] - $(date +%Y-%m-%d)
+
+            ### 新功能
+            - 支持 Portable 版本更新
+            - 避免 PowerShell 脚本被杀毒软件拦截
+
+            ### 更改
+            - 使用 ZIP 包进行覆盖更新
+            - 保留原有 MSI 安装方式
+
+            EOF
+          fi
+
+      - name: 更新 Release 说明
+        if: steps.changelog.outputs.previous_tag != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
