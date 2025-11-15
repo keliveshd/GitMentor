@@ -38,13 +38,6 @@ jobs:
         with:
           targets: 'x86_64-pc-windows-msvc'
 
-      - name: 安装 Windows 构建工具
-        run: |
-          # 安装 WebView2 (Windows)
-          Write-Host "Installing WebView2..." -ForegroundColor Green
-          Invoke-WebRequest -Uri "https://developer.microsoft.com/en-us/microsoft-edge/webview2/" -OutFile "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -UseBasicParsing
-          Start-Process -FilePath "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -ArgumentList "/S" -Wait
-
       - name: 安装前端依赖
         run: npm ci
         working-directory: ./GitMentor-Lite
