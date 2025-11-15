@@ -135,7 +135,7 @@ start "" "GitMentorLite.exe"
 
           # 创建 ZIP
           Write-Host "创建 ZIP 包..." -ForegroundColor Cyan
-          $zipPath = "GitMentorLite-$Version-portable.zip"
+          $zipPath = "GitMentorLite-$Version.zip"
           Compress-Archive -Path "$PortableDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
 
           # 验证
@@ -146,6 +146,10 @@ start "" "GitMentorLite.exe"
             Write-Error "❌ ZIP 创建失败"
             exit 1
           }
+
+          # 列出当前目录所有文件以便调试
+          Write-Host "当前目录文件列表:" -ForegroundColor Yellow
+          Get-ChildItem -Name *.zip, *.msi | ForEach-Object { Write-Host "  - $_" -ForegroundColor Cyan }
 
       - name: 上传到 GitHub Release
         uses: softprops/action-gh-release@v1
