@@ -20,16 +20,7 @@ jobs:
   build:
     permissions:
       contents: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: 'windows-latest'
-            artifact_name: 'GitMentorLite-${{ github.ref_name }}-x64'
-            asset_name: 'GitMentorLite-x64'
-          # 可以添加其他平台： macos-latest, ubuntu-latest
-
-    runs-on: ${{ matrix.platform }}
+    runs-on: windows-latest
 
     steps:
       - name: Checkout repository
@@ -44,12 +35,12 @@ jobs:
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || 'x86_64-pc-windows-msvc' }}
+          targets: 'x86_64-pc-windows-msvc'
 
       - name: 安装 Windows 构建工具
-        if: matrix.platform == 'windows-latest'
         run: |
           # 安装 WebView2 (Windows)
+          Write-Host "Installing WebView2..." -ForegroundColor Green
           Invoke-WebRequest -Uri "https://developer.microsoft.com/en-us/microsoft-edge/webview2/" -OutFile "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -UseBasicParsing
           Start-Process -FilePath "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -ArgumentList "/S" -Wait
 
@@ -60,192 +51,104 @@ jobs:
         run: npm run build
         shell: bash
 
-      - name: 构建 Tauri 应用
-        uses: tauri-apps/tauri-action@v0
+      - name: 安装 Tauri CLI
+        run: npm install @tauri-apps/cli@latest --save-dev
+
+      - name: 构建 Tauri 应用（仅 MSI）
+        run: |
+          Write-Host "=== 开始构建 Tauri 应用 ===" -ForegroundColor Green
+          npx tauri build --target x86_64-pc-windows-msvc --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: ${{ github.ref_name }}
-          releaseName: 'GitMentor Lite v__VERSION__'
-          releaseBody: '请查看 CHANGELOG.md 获取更新详情'
-          releaseDraft: true
-          prerelease: ${{ github.event.inputs.prerelease == 'true' }}
 
-      # 创建 Portable 版本（仅 Windows）
-      - name: 创建 Portable ZIP 版本
-        if: matrix.platform == 'windows-latest'
+      - name: 验证构建输出
         shell: pwsh
         run: |
-          Write-Host "=== 开始创建 Portable 版本 ===" -ForegroundColor Green
-          $Version = "${{ github.ref_name }}".Replace('v', '')
-          Write-Host "版本: $Version" -ForegroundColor Yellow
-
-          # 检查并列出构建输出目录
-          Write-Host "`n[DEBUG] 检查构建输出..." -ForegroundColor Magenta
+          Write-Host "=== 验证构建输出 ===" -ForegroundColor Green
           $ReleaseDir = "src-tauri/target/release"
-          $BundleDir = "src-tauri/target/release/bundle"
-
           if (Test-Path $ReleaseDir) {
-            Write-Host "Release 目录存在: $ReleaseDir" -ForegroundColor Green
-            Get-ChildItem -Path $ReleaseDir -Name | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
+            Write-Host "✅ Release 目录存在" -ForegroundColor Green
+            Get-ChildItem -Path $ReleaseDir -Name | ForEach-Object { Write-Host "  - $_" -ForegroundColor Cyan }
           } else {
-            Write-Error "Release 目录不存在: $ReleaseDir"
-          }
-
-          if (Test-Path $BundleDir) {
-            Write-Host "Bundle 目录存在: $BundleDir" -ForegroundColor Green
-            Get-ChildItem -Path $BundleDir -Name | ForEach-Object { Write-Host "  - $_" -ForegroundColor Gray }
-          } else {
-            Write-Host "Bundle 目录不存在，将创建" -ForegroundColor Yellow
-          }
-
-          # 确保 bundle 目录存在
-          if (-not (Test-Path $BundleDir)) {
-            New-Item -ItemType Directory -Path $BundleDir -Force | Out-Null
-          }
-
-          $PortableDir = "$BundleDir/portable/GitMentorLite-$Version"
-          Write-Host "`n创建便携版目录: $PortableDir" -ForegroundColor Yellow
-
-          if (Test-Path $PortableDir) {
-            Remove-Item -Path $PortableDir -Recurse -Force
-          }
-          New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
-
-          # 复制可执行文件
-          Write-Host "`n[1/4] 复制可执行文件..." -ForegroundColor Cyan
-          $exePath = "$ReleaseDir/GitMentorLite.exe"
-          if (Test-Path $exePath) {
-            Copy-Item -Path $exePath -Destination $PortableDir
-            Write-Host "  ✓ GitMentorLite.exe" -ForegroundColor Green
-          } else {
-            Write-Error "未找到 GitMentorLite.exe: $exePath"
-            Write-Host "Release 目录内容:" -ForegroundColor Yellow
-            Get-ChildItem -Path $ReleaseDir -Recurse | ForEach-Object { Write-Host "  - $($_.FullName)" -ForegroundColor Gray }
-          }
-
-          # 复制 Git 二进制文件
-          Write-Host "`n[2/4] 复制 Git 二进制文件..." -ForegroundColor Cyan
-          $gitPath = "$ReleaseDir/git.exe"
-          if (Test-Path $gitPath) {
-            Copy-Item -Path $gitPath -Destination $PortableDir
-            Write-Host "  ✓ git.exe" -ForegroundColor Green
-          } else {
-            Write-Host "  ⊘ 未找到 git.exe（可选）" -ForegroundColor Gray
-          }
-
-          # 复制资源文件
-          Write-Host "`n[3/4] 复制资源文件..." -ForegroundColor Cyan
-          $resourcesPath = "$ReleaseDir/resources"
-          if (Test-Path $resourcesPath) {
-            Copy-Item -Path $resourcesPath -Destination "$PortableDir/resources" -Recurse
-            Write-Host "  ✓ resources/" -ForegroundColor Green
-          } else {
-            Write-Host "  ⊘ 未找到 resources 目录" -ForegroundColor Gray
-          }
-
-          # 复制 PDB 文件（可选）
-          Write-Host "`n[4/4] 复制调试文件（可选）..." -ForegroundColor Cyan
-          $pdbPath = "$ReleaseDir/GitMentorLite.pdb"
-          if (Test-Path $pdbPath) {
-            Copy-Item -Path $pdbPath -Destination $PortableDir
-            Write-Host "  ✓ GitMentorLite.pdb" -ForegroundColor Green
-          } else {
-            Write-Host "  ⊘ 未找到 PDB 文件（可选）" -ForegroundColor Gray
-          }
-
-          # 创建启动脚本
-          Write-Host "`n创建启动脚本..." -ForegroundColor Cyan
-          $launcherScript = @"
-@echo off
-REM GitMentor Lite Portable Launcher
-REM Version: $Version
-
-echo 正在启动 GitMentor Lite...
-
-if not exist "GitMentorLite.exe" (
-    echo 错误: 找不到 GitMentorLite.exe
-    pause
-    exit /b 1
-)
-
-start "" "GitMentorLite.exe"
-"@
-          $launcherScript | Out-File -FilePath "$PortableDir/启动 GitMentor Lite.bat" -Encoding UTF8
-          Write-Host "  ✓ 启动脚本已创建" -ForegroundColor Green
-
-          # 创建 README
-          Write-Host "创建说明文档..." -ForegroundColor Cyan
-          $readmeContent = @"
-# GitMentor Lite Portable 版本
-
-## 版本
-$Version
-
-## 使用方法
-
-### Windows 用户
-1. 双击 `启动 GitMentor Lite.bat` 启动应用
-2. 或者直接双击 `GitMentorLite.exe` 启动
-
-### 注意事项
-- 这是便携版，无需安装，解压即可使用
-- 首次运行可能需要 Windows 防火墙允许
-- 所有数据保存在用户目录中
-
-## 文件说明
-- `GitMentorLite.exe` - 主程序
-- `git.exe` - Git 可执行文件（用于 Git 操作）
-- `resources/` - 应用程序资源文件
-- `启动 GitMentor Lite.bat` - 启动脚本（Windows）
-
-## 故障排除
-如果遇到问题，请检查：
-1. 是否有杀毒软件拦截
-2. 是否有足够的文件权限
-3. 尝试以管理员身份运行
-
----
-GitMentor Lite - 轻量级 Git 图形化工具
-"@
-          $readmeContent | Out-File -FilePath "$PortableDir/README.txt" -Encoding UTF8
-          Write-Host "  ✓ README.txt 已创建" -ForegroundColor Green
-
-          # 创建 ZIP 包
-          Write-Host "`n创建 ZIP 包..." -ForegroundColor Cyan
-          $zipPath = "$BundleDir/GitMentorLite-$Version-portable.zip"
-          try {
-            Compress-Archive -Path "$PortableDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
-            Write-Host "  ✓ 已创建: $zipPath" -ForegroundColor Green
-
-            $size = (Get-Item $zipPath).Length
-            $sizeMB = [math]::Round($size / 1MB, 2)
-            Write-Host "  ✓ 文件大小: $sizeMB MB" -ForegroundColor Green
-
-            # 验证 ZIP 文件
-            Write-Host "`n[验证] 检查 ZIP 文件..." -ForegroundColor Magenta
-            if (Test-Path $zipPath) {
-              Write-Host "  ✓ ZIP 文件存在" -ForegroundColor Green
-              Get-Item $zipPath | Select-Object Name, Length, LastWriteTime | Format-List
-            } else {
-              Write-Error "ZIP 文件创建失败"
-            }
-          } catch {
-            Write-Error "创建 ZIP 失败: $_"
+            Write-Error "❌ Release 目录不存在"
             exit 1
           }
 
-          Write-Host "`n=== Portable 版本构建完成 ===" -ForegroundColor Green
-          Write-Host "输出路径: $OutputDir" -ForegroundColor Yellow
-          Write-Host "ZIP 文件: $zipPath" -ForegroundColor Yellow
+          $ExePath = "$ReleaseDir/GitMentorLite.exe"
+          if (Test-Path $ExePath) {
+            Write-Host "✅ 找到 GitMentorLite.exe" -ForegroundColor Green
+            $size = (Get-Item $ExePath).Length / 1MB
+            Write-Host "  文件大小: $([math]::Round($size, 2)) MB" -ForegroundColor Cyan
+          } else {
+            Write-Error "❌ 未找到 GitMentorLite.exe"
+            exit 1
+          }
 
-      # 上传 Portable ZIP 到 Release
-      - name: 上传 Portable ZIP 到 Release
-        if: matrix.platform == 'windows-latest'
+      - name: 创建便携版 ZIP
+        shell: pwsh
+        run: |
+          Write-Host "=== 创建便携版 ZIP ===" -ForegroundColor Green
+
+          # 获取版本号
+          $Version = "${{ github.ref_name }}".Replace('v', '')
+          Write-Host "版本: $Version" -ForegroundColor Yellow
+
+          # 设置路径
+          $ReleaseDir = "src-tauri/target/release"
+          $PortableDir = "portable-temp/GitMentorLite-$Version"
+
+          # 创建便携版目录
+          if (Test-Path $PortableDir) { Remove-Item $PortableDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
+
+          # 复制文件
+          Write-Host "复制可执行文件..." -ForegroundColor Cyan
+          Copy-Item "$ReleaseDir/GitMentorLite.exe" $PortableDir
+
+          if (Test-Path "$ReleaseDir/git.exe") {
+            Write-Host "复制 git.exe..." -ForegroundColor Cyan
+            Copy-Item "$ReleaseDir/git.exe" $PortableDir
+          }
+
+          if (Test-Path "$ReleaseDir/resources") {
+            Write-Host "复制 resources..." -ForegroundColor Cyan
+            Copy-Item "$ReleaseDir/resources" "$PortableDir/resources" -Recurse
+          }
+
+          # 创建启动脚本
+          Write-Host "创建启动脚本..." -ForegroundColor Cyan
+          $launcher = @"
+@echo off
+echo 启动 GitMentor Lite...
+start "" "GitMentorLite.exe"
+"@
+          $launcher | Out-File "$PortableDir/启动 GitMentor Lite.bat" -Encoding UTF8
+
+          # 创建 README
+          Write-Host "创建 README..." -ForegroundColor Cyan
+          $readme = "# GitMentor Lite Portable v$Version`n`n使用方法：双击 `启动 GitMentor Lite.bat`"
+          $readme | Out-File "$PortableDir/README.txt" -Encoding UTF8
+
+          # 创建 ZIP
+          Write-Host "创建 ZIP 包..." -ForegroundColor Cyan
+          $zipPath = "GitMentorLite-$Version-portable.zip"
+          Compress-Archive -Path "$PortableDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+
+          # 验证
+          if (Test-Path $zipPath) {
+            $size = (Get-Item $zipPath).Length / 1MB
+            Write-Host "✅ ZIP 创建成功: $zipPath ($([math]::Round($size, 2)) MB)" -ForegroundColor Green
+          } else {
+            Write-Error "❌ ZIP 创建失败"
+            exit 1
+          }
+
+      - name: 上传到 GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            src-tauri/target/release/bundle/GitMentorLite-${{ github.ref_name }}-portable.zip
+            src-tauri/target/release/bundle/msi/*.msi
+            GitMentorLite-*-portable.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
