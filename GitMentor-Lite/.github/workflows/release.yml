@@ -148,7 +148,7 @@ start "" "GitMentorLite.exe"
         with:
           files: |
             src-tauri/target/release/bundle/msi/*.msi
-            GitMentorLite-*-portable.zip
+            GitMentorLite-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
