@@ -1,252 +1,207 @@
-name: "Release GitMentor"
+name: Release Build and Publish
 
 on:
   push:
-    tags: ["v*"]
+    tags:
+      - 'v*.*.*'
   workflow_dispatch:
     inputs:
-      version:
-        description: "版本号 (示例: v0.1.4，不填则自动读取 package.json)"
-        required: false
-        type: string
-      create_tag:
-        description: "是否创建新的 Git 标签"
-        required: false
-        default: true
+      prerelease:
+        description: '标记为预发布版本'
+        required: true
+        default: false
         type: boolean
 
-permissions:
-  contents: write
-  pull-requests: write
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
 
 jobs:
-  publish-tauri:
+  build:
     permissions:
       contents: write
-      pull-requests: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: "windows-latest"
-            args: ""
+    runs-on: windows-latest
 
-    runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
         with:
-          fetch-depth: 0 # 获取完整 git 历史，确保可以读取 tag
+          node-version: 'lts/*'
+          cache: 'npm'
 
-      # 获取版本号 - Author: Evilek, Date: 2025-01-15
-      - name: Get version
-        id: get_version
-        shell: bash
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: 'x86_64-pc-windows-msvc'
+
+      - name: 安装 Windows 构建工具
         run: |
-          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref_type }}" = "tag" ]; then
-            VERSION="${{ github.ref_name }}"
-            echo "从 tag 读取版本号: $VERSION"
-          elif [ -n "${{ github.event.inputs.version }}" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-            echo "从手动输入读取版本号: $VERSION"
-          else
-            PACKAGE_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
-            VERSION="v$PACKAGE_VERSION"
-            echo "从 package.json 自动读取版本号: $VERSION"
-          fi
+          # 安装 WebView2 (Windows)
+          Write-Host "Installing WebView2..." -ForegroundColor Green
+          Invoke-WebRequest -Uri "https://developer.microsoft.com/en-us/microsoft-edge/webview2/" -OutFile "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -UseBasicParsing
+          Start-Process -FilePath "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -ArgumentList "/S" -Wait
 
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "最终使用的版本号: $VERSION"
+      - name: 安装前端依赖
+        run: npm ci
+        working-directory: ./GitMentor-Lite
 
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            echo "need_update=true" >> $GITHUB_OUTPUT
-            echo "需要更新版本文件"
-          else
-            echo "need_update=false" >> $GITHUB_OUTPUT
-            echo "版本文件保持不变"
-          fi
+      - name: 构建前端
+        run: npm run build
+        shell: bash
+        working-directory: ./GitMentor-Lite
 
-      # 手动触发时更新版本文件并创建 PR
-      - name: Update version files and create PR
-        if: steps.get_version.outputs.need_update == 'true'
+      - name: 安装 Tauri CLI
+        run: npm install @tauri-apps/cli@latest --save-dev
+        working-directory: ./GitMentor-Lite
+
+      - name: 构建 Tauri 应用（仅 MSI）
+        run: |
+          Write-Host "=== 开始构建 Tauri 应用 ===" -ForegroundColor Green
+          npx tauri build --target x86_64-pc-windows-msvc --verbose
         env:
-          VERSION: ${{ steps.get_version.outputs.version }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          OWNER: ${{ github.repository_owner }}
+        working-directory: ./GitMentor-Lite
+
+      - name: 验证构建输出
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-
-          $VERSION = $env:VERSION
-          $CLEAN_VERSION = $VERSION -replace '^v', ''
-          $DEFAULT_BRANCH = if ([string]::IsNullOrWhiteSpace($env:DEFAULT_BRANCH)) { "main" } else { $env:DEFAULT_BRANCH }
-          $BRANCH_NAME = "release/$VERSION"
-          Write-Host "创建或更新版本分支: $BRANCH_NAME (基线分支: $DEFAULT_BRANCH)"
-
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git fetch origin --prune
-
-          git rev-parse --verify "origin/$BRANCH_NAME" > $null 2>&1
-          $remoteBranchExists = $LASTEXITCODE -eq 0
-
-          if ($remoteBranchExists) {
-            Write-Host "远程已存在版本分支，直接同步最新提交"
-            git checkout -B $BRANCH_NAME "origin/$BRANCH_NAME"
-          }
-          else {
-            Write-Host "远程不存在版本分支，基于 $DEFAULT_BRANCH 创建"
-            git checkout -B $BRANCH_NAME "origin/$DEFAULT_BRANCH"
-          }
-
-          # 更新版本号文件
-          $packageJson = Get-Content "GitMentor-Lite/package.json" -Raw | ConvertFrom-Json
-          $packageJson.version = $CLEAN_VERSION
-          $packageJson | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/package.json"
-          Write-Host "✅ 已更新 package.json"
-
-          $cargoContent = Get-Content "GitMentor-Lite/src-tauri/Cargo.toml"
-          $cargoContent[2] = "version = `"$CLEAN_VERSION`""
-          $cargoContent | Set-Content "GitMentor-Lite/src-tauri/Cargo.toml"
-          Write-Host "✅ 已更新 Cargo.toml"
-
-          $tauriConfig = Get-Content "GitMentor-Lite/src-tauri/tauri.conf.json" -Raw | ConvertFrom-Json
-          $tauriConfig.version = $CLEAN_VERSION
-          $tauriConfig | ConvertTo-Json -Depth 10 | Set-Content "GitMentor-Lite/src-tauri/tauri.conf.json"
-          Write-Host "✅ 已更新 tauri.conf.json"
-
-          git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
-          $changes = git status --porcelain
-
-          if ([string]::IsNullOrWhiteSpace($changes)) {
-            Write-Host "⚠️ 版本号文件没有变化，跳过提交与推送"
-          }
-          else {
-            git commit -m "chore: bump version to $VERSION"
-            git push origin $BRANCH_NAME
-            Write-Host "✅ 已推送版本更新分支"
-          }
-
-          $ahead = [int](git rev-list --count "origin/$DEFAULT_BRANCH..HEAD")
-
-          if ($ahead -le 0) {
-            Write-Host "ℹ️ 分支 $BRANCH_NAME 与 $DEFAULT_BRANCH 无差异，跳过 PR 创建"
-            exit 0
-          }
-
-          $headers = @{
-            "Authorization" = "token $env:GITHUB_TOKEN"
-            "Accept" = "application/vnd.github+json"
-          }
-
-          $encodedHead = [System.Uri]::EscapeDataString("$($env:OWNER):$BRANCH_NAME")
-          $encodedBase = [System.Uri]::EscapeDataString($DEFAULT_BRANCH)
-          $prListUri = "https://api.github.com/repos/$($env:REPO)/pulls?head=$encodedHead&base=$encodedBase&state=open"
-          $existingPr = Invoke-RestMethod -Uri $prListUri -Method Get -Headers $headers -ContentType "application/json"
-
-          if ($existingPr.Count -gt 0) {
-            Write-Host "⚠️ 已存在版本更新 PR: $($existingPr[0].html_url)"
-            Write-Host "::notice::版本更新 PR 已存在，请直接检查并合并"
-            exit 0
-          }
-
-          $PR_BODY = @"
-          ## 🚀 版本更新 $VERSION
-
-          该 PR 由 Release workflow 自动生成，用于同步版本号改动。
-
-          ### 📦 本次更新
-          - 更新 package.json 版本号至 $CLEAN_VERSION
-          - 更新 Cargo.toml 版本号至 $CLEAN_VERSION
-          - 更新 tauri.conf.json 版本号至 $CLEAN_VERSION
-
-          ### ✅ 下一步
-          1. 合并本 PR
-          2. 再次执行 Release workflow
-          "@
-
-          $prData = @{
-            title = "chore: bump version to $VERSION"
-            head = $BRANCH_NAME
-            base = $DEFAULT_BRANCH
-            body = $PR_BODY
-          } | ConvertTo-Json
-
-          try {
-            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/$($env:REPO)/pulls" -Method Post -Headers $headers -Body $prData -ContentType "application/json"
-            Write-Host "✅ 已创建 Pull Request: $($response.html_url)"
-            Write-Host "::notice::已生成版本更新 PR，请合并后重新运行 Release workflow"
-            Write-Host "::notice::PR 合并前将自动跳过后续构建步骤"
-            exit 0
-          }
-          catch {
-            Write-Host "❌ 创建 PR 失败: $($_.Exception.Message)"
-            Write-Host "请手动创建 PR：$BRANCH_NAME -> $DEFAULT_BRANCH"
-            Write-Host "::error::请手动处理版本更新后重新运行 workflow"
+          Write-Host "=== 验证构建输出 ===" -ForegroundColor Green
+          $ReleaseDir = "GitMentor-Lite/src-tauri/target/release"
+          if (Test-Path $ReleaseDir) {
+            Write-Host "✅ Release 目录存在" -ForegroundColor Green
+            Get-ChildItem -Path $ReleaseDir -Name | ForEach-Object { Write-Host "  - $_" -ForegroundColor Cyan }
+          } else {
+            Write-Error "❌ Release 目录不存在"
             exit 1
           }
 
-      # 需要时创建 tag（PR 合并后再执行）
-      - name: Create tag
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true' && steps.get_version.outputs.need_update != 'true'
-        run: |
-          $VERSION = "${{ steps.get_version.outputs.version }}"
-          Write-Host "创建 tag: $VERSION"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$VERSION" -m "Release $VERSION"
-          git push origin "$VERSION"
+          $ExePath = "$ReleaseDir/GitMentorLite.exe"
+          if (Test-Path $ExePath) {
+            Write-Host "✅ 找到 GitMentorLite.exe" -ForegroundColor Green
+            $size = (Get-Item $ExePath).Length / 1MB
+            Write-Host "  文件大小: $([math]::Round($size, 2)) MB" -ForegroundColor Cyan
+          } else {
+            Write-Error "❌ 未找到 GitMentorLite.exe"
+            exit 1
+          }
+
+      - name: 创建便携版 ZIP
         shell: pwsh
+        run: |
+          Write-Host "=== 创建便携版 ZIP ===" -ForegroundColor Green
 
-      - name: setup node
-        if: steps.get_version.outputs.need_update != 'true'
-        uses: actions/setup-node@v4
+          # 获取版本号
+          $Version = "${{ github.ref_name }}".Replace('v', '')
+          Write-Host "版本: $Version" -ForegroundColor Yellow
+
+          # 设置路径
+          $ReleaseDir = "GitMentor-Lite/src-tauri/target/release"
+          $PortableDir = "portable-temp/GitMentorLite-$Version"
+
+          # 创建便携版目录
+          if (Test-Path $PortableDir) { Remove-Item $PortableDir -Recurse -Force }
+          New-Item -ItemType Directory -Path $PortableDir -Force | Out-Null
+
+          # 复制文件
+          Write-Host "复制可执行文件..." -ForegroundColor Cyan
+          Copy-Item "$ReleaseDir/GitMentorLite.exe" $PortableDir
+
+          if (Test-Path "$ReleaseDir/git.exe") {
+            Write-Host "复制 git.exe..." -ForegroundColor Cyan
+            Copy-Item "$ReleaseDir/git.exe" $PortableDir
+          }
+
+          if (Test-Path "$ReleaseDir/resources") {
+            Write-Host "复制 resources..." -ForegroundColor Cyan
+            Copy-Item "$ReleaseDir/resources" "$PortableDir/resources" -Recurse
+          }
+
+          # 创建启动脚本
+          Write-Host "创建启动脚本..." -ForegroundColor Cyan
+          $launcher = @"
+@echo off
+echo 启动 GitMentor Lite...
+start "" "GitMentorLite.exe"
+"@
+          $launcher | Out-File "$PortableDir/启动 GitMentor Lite.bat" -Encoding UTF8
+
+          # 创建 README
+          Write-Host "创建 README..." -ForegroundColor Cyan
+          $readme = "# GitMentor Lite Portable v$Version`n`n使用方法：双击 `启动 GitMentor Lite.bat`"
+          $readme | Out-File "$PortableDir/README.txt" -Encoding UTF8
+
+          # 创建 ZIP
+          Write-Host "创建 ZIP 包..." -ForegroundColor Cyan
+          $zipPath = "GitMentorLite-$Version-portable.zip"
+          Compress-Archive -Path "$PortableDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+
+          # 验证
+          if (Test-Path $zipPath) {
+            $size = (Get-Item $zipPath).Length / 1MB
+            Write-Host "✅ ZIP 创建成功: $zipPath ($([math]::Round($size, 2)) MB)" -ForegroundColor Green
+          } else {
+            Write-Error "❌ ZIP 创建失败"
+            exit 1
+          }
+
+      - name: 上传到 GitHub Release
+        uses: softprops/action-gh-release@v1
         with:
-          node-version: lts/*
-          cache: "npm"
-          cache-dependency-path: GitMentor-Lite/package-lock.json
-
-      - name: install Rust stable
-        if: steps.get_version.outputs.need_update != 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        if: steps.get_version.outputs.need_update != 'true'
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./GitMentor-Lite/src-tauri -> target"
-
-      - name: install frontend dependencies
-        if: steps.get_version.outputs.need_update != 'true'
-        working-directory: GitMentor-Lite
-        run: npm ci
-
-      - uses: tauri-apps/tauri-action@v0
-        if: steps.get_version.outputs.need_update != 'true'
+          files: |
+            GitMentor-Lite/src-tauri/target/release/bundle/msi/*.msi
+            GitMentorLite-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
+  create-changelog:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
         with:
-          projectPath: "./GitMentor-Lite"
-          tagName: ${{ steps.get_version.outputs.version }}
-          releaseName: "GitMentor ${{ steps.get_version.outputs.version }}"
-          releaseBody: |
-            ## GitMentor ${{ steps.get_version.outputs.version }}
+          fetch-depth: 0
 
-            ### ✨ 新功能
-            - AI 辅助生成 Git 提交信息
-            - 分层提交管理
-            - 多语言支持（19 种语言）
-            - 支持本地/远程仓库同步
+      - name: 生成 CHANGELOG
+        id: changelog
+        run: |
+          # 获取上一个标签
+          PREVIOUS_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          echo "previous_tag=$PREVIOUS_TAG" >> $GITHUB_OUTPUT
 
-            ### 📦 发布说明
-            - **Windows**: 提供 `.msi` 安装包
+          # 使用 git-cliff 生成 CHANGELOG
+          if [ -f "cliff.toml" ]; then
+            cargo install git-cliff
+            git-cliff --latest --output CHANGELOG.md
+          else
+            # 简单的 CHANGELOG 生成
+            cat > CHANGELOG.md << EOF
+            # Changelog
 
-            ### 🛠 系统要求
-            - Windows 10+
-            - Git 2.30+
-          releaseDraft: false
-          prerelease: ${{ contains(github.ref_name, 'beta') || contains(github.ref_name, 'alpha') }}
-          args: ${{ matrix.args }}
+            所有重要的更改都会记录在此文件中。
+
+            ## [${{ github.ref_name }}] - $(date +%Y-%m-%d)
+
+            ### 新功能
+            - 支持 Portable 版本更新
+            - 避免 PowerShell 脚本被杀毒软件拦截
+
+            ### 更改
+            - 使用 ZIP 包进行覆盖更新
+            - 保留原有 MSI 安装方式
+
+            EOF
+          fi
+
+      - name: 更新 Release 说明
+        if: steps.changelog.outputs.previous_tag != ''
+        uses: softprops/action-gh-release@v1
+        with:
+          body_path: CHANGELOG.md
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
