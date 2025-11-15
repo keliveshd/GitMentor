@@ -121,11 +121,9 @@ jobs:
 
           # 创建启动脚本
           Write-Host "创建启动脚本..." -ForegroundColor Cyan
-          $launcher = @"
-@echo off
-echo 启动 GitMentor Lite...
-start "" "GitMentorLite.exe"
-"@
+          $launcher = "@echo off`n"
+          $launcher += "echo 启动 GitMentor Lite...`n"
+          $launcher += 'start "" "GitMentorLite.exe"'
           $launcher | Out-File "$PortableDir/启动 GitMentor Lite.bat" -Encoding UTF8
 
           # 创建 README
