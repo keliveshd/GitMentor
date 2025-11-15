@@ -31,6 +31,7 @@ jobs:
         with:
           node-version: 'lts/*'
           cache: 'npm'
+          cache-dependency-path: 'GitMentor-Lite/package-lock.json'
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
@@ -46,13 +47,16 @@ jobs:
 
       - name: 安装前端依赖
         run: npm ci
+        working-directory: ./GitMentor-Lite
 
       - name: 构建前端
         run: npm run build
         shell: bash
+        working-directory: ./GitMentor-Lite
 
       - name: 安装 Tauri CLI
         run: npm install @tauri-apps/cli@latest --save-dev
+        working-directory: ./GitMentor-Lite
 
       - name: 构建 Tauri 应用（仅 MSI）
         run: |
@@ -60,12 +64,13 @@ jobs:
           npx tauri build --target x86_64-pc-windows-msvc --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ./GitMentor-Lite
 
       - name: 验证构建输出
         shell: pwsh
         run: |
           Write-Host "=== 验证构建输出 ===" -ForegroundColor Green
-          $ReleaseDir = "src-tauri/target/release"
+          $ReleaseDir = "GitMentor-Lite/src-tauri/target/release"
           if (Test-Path $ReleaseDir) {
             Write-Host "✅ Release 目录存在" -ForegroundColor Green
             Get-ChildItem -Path $ReleaseDir -Name | ForEach-Object { Write-Host "  - $_" -ForegroundColor Cyan }
@@ -94,7 +99,7 @@ jobs:
           Write-Host "版本: $Version" -ForegroundColor Yellow
 
           # 设置路径
-          $ReleaseDir = "src-tauri/target/release"
+          $ReleaseDir = "GitMentor-Lite/src-tauri/target/release"
           $PortableDir = "portable-temp/GitMentorLite-$Version"
 
           # 创建便携版目录
@@ -149,7 +154,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            src-tauri/target/release/bundle/msi/*.msi
+            GitMentor-Lite/src-tauri/target/release/bundle/msi/*.msi
             GitMentorLite-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
