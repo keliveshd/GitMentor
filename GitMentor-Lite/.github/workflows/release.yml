@@ -15,6 +15,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  WORKFLOW_VERSION: v20241116
 
 jobs:
   build:
