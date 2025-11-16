@@ -183,22 +183,21 @@ jobs:
             # 简单的 CHANGELOG 生成
             VERSION="${{ github.ref_name }}"
             DATE=$(date +%Y-%m-%d)
-            cat > CHANGELOG.md << EOF
-# Changelog
-
-所有重要的更改都会记录在此文件中。
-
-## [$VERSION] - $DATE
-
-### 新功能
-- 支持 Portable 版本更新
-- 避免 PowerShell 脚本被杀毒软件拦截
-
-### 更改
-- 使用 ZIP 包进行覆盖更新
-- 保留原有 MSI 安装方式
-
-EOF
+            {
+              echo "# Changelog"
+              echo ""
+              echo "所有重要的更改都会记录在此文件中。"
+              echo ""
+              echo "## [$VERSION] - $DATE"
+              echo ""
+              echo "### 新功能"
+              echo "- 支持 Portable 版本更新"
+              echo "- 避免 PowerShell 脚本被杀毒软件拦截"
+              echo ""
+              echo "### 更改"
+              echo "- 使用 ZIP 包进行覆盖更新"
+              echo "- 保留原有 MSI 安装方式"
+            } > CHANGELOG.md
           fi
 
       - name: 更新 Release 说明
