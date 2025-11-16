@@ -181,12 +181,14 @@ jobs:
             git-cliff --latest --output CHANGELOG.md
           else
             # 简单的 CHANGELOG 生成
+            VERSION="${{ github.ref_name }}"
+            DATE=$(date +%Y-%m-%d)
             cat > CHANGELOG.md << EOF
 # Changelog
 
 所有重要的更改都会记录在此文件中。
 
-## [${{ github.ref_name }}] - $(date +%Y-%m-%d)
+## [$VERSION] - $DATE
 
 ### 新功能
 - 支持 Portable 版本更新
