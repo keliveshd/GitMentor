@@ -118,17 +118,19 @@ jobs:
           $launcher = "@echo off`n"
           $launcher += "echo 启动 GitMentor Lite...`n"
           $launcher += 'start "" "GitMentorLite.exe"'
-          $launcher | Out-File ("$PortableDir/启动 GitMentor Lite.bat") -Encoding UTF8
+          $batPath = $PortableDir + "/启动 GitMentor Lite.bat"
+          Set-Content -Path $batPath -Value $launcher -Encoding UTF8
 
           # 创建 README
           Write-Host "创建 README..." -ForegroundColor Cyan
-          $readme = "# GitMentor Lite Portable v$Version`n`n使用方法：双击 `启动 GitMentor Lite.bat`"
-          $readme | Out-File ("$PortableDir/README.txt") -Encoding UTF8
+          $readme = "# GitMentor Lite Portable v" + $Version + "`n`n使用方法：双击 `启动 GitMentor Lite.bat`"
+          $readmePath = $PortableDir + "/README.txt"
+          Set-Content -Path $readmePath -Value $readme -Encoding UTF8
 
           # 创建 ZIP
           Write-Host "创建 ZIP 包..." -ForegroundColor Cyan
-          $zipPath = "GitMentorLite-$Version-portable.zip"
-          Compress-Archive -Path "$PortableDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+          $zipPath = "GitMentorLite-" + $Version + "-portable.zip"
+          Compress-Archive -Path ($PortableDir + "\*") -DestinationPath $zipPath -CompressionLevel Optimal
 
           # 验证
           if (Test-Path $zipPath) {
@@ -138,6 +140,10 @@ jobs:
             Write-Error "❌ ZIP 创建失败"
             exit 1
           }
+
+          # 列出当前目录所有文件以便调试
+          Write-Host "当前目录文件列表:" -ForegroundColor Yellow
+          Get-ChildItem -Name *.zip, *.msi | ForEach-Object { Write-Host "  - $_" -ForegroundColor Cyan }
 
       - name: 上传到 GitHub Release
         uses: softprops/action-gh-release@v1
