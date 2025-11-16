@@ -85,6 +85,55 @@ $readme += [char]10 + [char]10 + "使用方法：双击 '启动 GitMentor Lite.b
 
 ---
 
-**修复时间**: 2025-11-16 19:42
+## 第二次修复：Here-Document 语法错误
+
+**发现问题**: 2025-11-16 19:45
+**错误位置**: `.github/workflows/release.yml` 第 199 行
+**错误类型**: Shell 脚本语法错误
+
+### 问题概述
+
+在第二次构建时，第二个 job（create-changelog）失败，错误信息：
+
+```
+/home/runner/work/_temp/0b12bad6-9c7d-4f09-8f43-94010209fca4.sh: line 27: warning: here-document at line 11 delimited by end-of-file (wanted `EOF')
+/home/runner/work/_temp/0b12bad6-9c7d-4f09-8f43-94010209fca4.sh: line 28: syntax error: unexpected end of file
+```
+
+### 根本原因
+
+在 shell 脚本的 here-document (`cat << EOF`) 中，EOF 结束标记前面有前导空格，导致解析失败。
+
+### 解决方案
+
+移除 CHANGELOG 内容中所有行的前导空格：
+
+**修复前**（第 183-199 行）:
+```yaml
+cat > CHANGELOG.md << EOF
+            # Changelog
+            ...
+            EOF
+```
+
+**修复后**:
+```yaml
+cat > CHANGELOG.md << EOF
+# Changelog
+...
+EOF
+```
+
+### 验证
+
+修复后，GitHub Actions 应该能够：
+- ✅ 成功生成 CHANGELOG.md 文件
+- ✅ 完成 create-changelog job
+- ✅ 完整执行所有构建和发布步骤
+
+---
+
+**修复时间**: 2025-11-16 19:45
 **修复文件**: `.github/workflows/release.yml`
-**修复行数**: 第 128 行
+**修复行数**: 第 183-199 行（缩进和 EOF 标记）
+**总修复次数**: 2 次
