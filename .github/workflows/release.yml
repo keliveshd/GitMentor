@@ -36,6 +36,7 @@ jobs:
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: stable
           targets: 'x86_64-pc-windows-msvc'
 
       - name: 安装前端依赖
@@ -51,7 +52,7 @@ jobs:
         run: npm install @tauri-apps/cli@latest --save-dev
         working-directory: ./GitMentor-Lite
 
-      - name: 构建 Tauri 应用（仅 MSI）
+      - name: 构建 Tauri 应用
         run: |
           Write-Host "=== 开始构建 Tauri 应用 ===" -ForegroundColor Green
           npx tauri build --target x86_64-pc-windows-msvc --verbose
@@ -118,14 +119,14 @@ jobs:
           $launcher = "@echo off`n"
           $launcher += "echo 启动 GitMentor Lite...`n"
           $launcher += 'start "" "GitMentorLite.exe"'
-          $batFile = $PortableDir + "/启动 GitMentor Lite.bat"
+          $batFile = Join-Path -Path $PortableDir -ChildPath "启动 GitMentor Lite.bat"
           Set-Content -Path $batFile -Value $launcher -Encoding UTF8
 
           # 创建 README
           Write-Host "创建 README..." -ForegroundColor Cyan
           $readme = "# GitMentor Lite Portable v$Version"
           $readme += [char]10 + [char]10 + "使用方法：双击 `启动 GitMentor Lite.bat`"
-          $readmeFile = $PortableDir + "/README.txt"
+          $readmeFile = Join-Path -Path $PortableDir -ChildPath "README.txt"
           Set-Content -Path $readmeFile -Value $readme -Encoding UTF8
 
           # 创建 ZIP
@@ -150,7 +151,8 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            GitMentor-Lite/src-tauri/target/release/bundle/msi/*.msi
+            GitMentor-Lite/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            GitMentor-Lite/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             GitMentorLite-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
