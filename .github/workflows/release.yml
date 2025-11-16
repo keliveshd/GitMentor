@@ -123,7 +123,8 @@ jobs:
 
           # 创建 README
           Write-Host "创建 README..." -ForegroundColor Cyan
-          $readme = "# GitMentor Lite Portable v$Version`n`n使用方法：双击 `启动 GitMentor Lite.bat`"
+          $readme = "# GitMentor Lite Portable v$Version"
+          $readme += [char]10 + [char]10 + "使用方法：双击 `启动 GitMentor Lite.bat`"
           $readmeFile = $PortableDir + "/README.txt"
           Set-Content -Path $readmeFile -Value $readme -Encoding UTF8
 
