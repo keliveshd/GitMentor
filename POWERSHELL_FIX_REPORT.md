@@ -133,7 +133,61 @@ EOF
 
 ---
 
-**修复时间**: 2025-11-16 19:45
+## 第三次修复：YAML 变量语法错误
+
+**发现问题**: 2025-11-16 19:48
+**错误位置**: `.github/workflows/release.yml` 第 187 行
+**错误类型**: YAML 语法错误
+
+### 问题概述
+
+GitHub Actions 工作流验证失败：
+
+```
+Invalid workflow file: .github/workflows/release.yml#L187
+You have an error in your yaml syntax on line 187
+```
+
+### 根本原因
+
+在 YAML 多行字符串（here-document）中直接使用 GitHub Actions 变量语法 `${{ github.ref_name }}` 导致 YAML 解析器语法错误。YAML 解析器无法正确处理 `${{` 序列，认为这是无效语法。
+
+### 解决方案
+
+将 GitHub Actions 变量和 shell 命令替换为 shell 变量：
+
+**修复前**:
+```yaml
+cat > CHANGELOG.md << EOF
+## [${{ github.ref_name }}] - $(date +%Y-%m-%d)
+EOF
+```
+
+**修复后**:
+```yaml
+VERSION="${{ github.ref_name }}"
+DATE=$(date +%Y-%m-%d)
+cat > CHANGELOG.md << EOF
+## [$VERSION] - $DATE
+EOF
+```
+
+### 执行流程
+
+1. GitHub Actions 先替换 `${{ github.ref_name }}` 为实际版本号（如 "v0.4.17"）
+2. Shell 执行脚本，设置 `VERSION="v0.4.17"` 和 `DATE="2025-11-16"`
+3. Here-document 中引用 `$VERSION` 和 `$DATE` 变量
+
+### 验证
+
+修复后，GitHub Actions 应该能够：
+- ✅ 通过 YAML 语法验证
+- ✅ 成功执行脚本
+- ✅ 正确生成包含版本号和日期的 CHANGELOG.md
+
+---
+
+**修复时间**: 2025-11-16 19:48
 **修复文件**: `.github/workflows/release.yml`
-**修复行数**: 第 183-199 行（缩进和 EOF 标记）
-**总修复次数**: 2 次
+**修复行数**: 第 183-191 行（变量定义和引用）
+**总修复次数**: 3 次
