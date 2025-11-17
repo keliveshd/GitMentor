@@ -5162,6 +5162,32 @@ const initializeHistoryReports = async () => {
   transition: all 0.2s ease;
 }
 
+/* 确保日报生成区域的select-all-btn不会影响batch-toolbar中的按钮 */
+.batch-toolbar .select-all-btn {
+  padding: 3px 6px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #333;
+  height: 24px;
+  min-width: 50px;
+}
+
+/* 确保clear-btn在batch-toolbar中也有一致的样式 */
+.batch-toolbar .clear-btn {
+  padding: 3px 6px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #333;
+  height: 24px;
+  min-width: 50px;
+}
+
 .select-all-btn:hover:not(:disabled) {
   background: #e5e7eb;
 }
