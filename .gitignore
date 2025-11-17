@@ -48,9 +48,16 @@ CLAUDE.md
 .claude/stats.py
 .claude/README.md
 .claude/index.json
+<<<<<<< HEAD
+.spec-workflow/templates/design-template.md
+.spec-workflow/templates/product-template.md
+.spec-workflow/templates/requirements-template.md
+.spec-workflow/templates/structure-template.md
+=======
 .spec-workflow/templates/product-template.md
 .spec-workflow/templates/design-template.md
 .spec-workflow/templates/structure-template.md
 .spec-workflow/templates/requirements-template.md
+>>>>>>> 7bb3db98e35e2cf8cbd027338c7425d949819424
 .spec-workflow/templates/tasks-template.md
 .spec-workflow/templates/tech-template.md
