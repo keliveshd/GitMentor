@@ -15,6 +15,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  WORKFLOW_VERSION: v20241116
 
 jobs:
   build:
@@ -31,28 +32,25 @@ jobs:
         with:
           node-version: 'lts/*'
           cache: 'npm'
+          cache-dependency-path: 'GitMentor-Lite/package-lock.json'
 
       - name: 安装 Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: 'x86_64-pc-windows-msvc'
 
-      - name: 安装 Windows 构建工具
-        run: |
-          # 安装 WebView2 (Windows)
-          Write-Host "Installing WebView2..." -ForegroundColor Green
-          Invoke-WebRequest -Uri "https://developer.microsoft.com/en-us/microsoft-edge/webview2/" -OutFile "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -UseBasicParsing
-          Start-Process -FilePath "$env:TEMP\MicrosoftEdgeWebview2Setup.exe" -ArgumentList "/S" -Wait
-
       - name: 安装前端依赖
         run: npm ci
+        working-directory: ./GitMentor-Lite
 
       - name: 构建前端
         run: npm run build
         shell: bash
+        working-directory: ./GitMentor-Lite
 
       - name: 安装 Tauri CLI
         run: npm install @tauri-apps/cli@latest --save-dev
+        working-directory: ./GitMentor-Lite
 
       - name: 构建 Tauri 应用（仅 MSI）
         run: |
@@ -60,12 +58,13 @@ jobs:
           npx tauri build --target x86_64-pc-windows-msvc --verbose
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        working-directory: ./GitMentor-Lite
 
       - name: 验证构建输出
         shell: pwsh
         run: |
           Write-Host "=== 验证构建输出 ===" -ForegroundColor Green
-          $ReleaseDir = "src-tauri/target/release"
+          $ReleaseDir = "GitMentor-Lite/src-tauri/target/x86_64-pc-windows-msvc/release"
           if (Test-Path $ReleaseDir) {
             Write-Host "✅ Release 目录存在" -ForegroundColor Green
             Get-ChildItem -Path $ReleaseDir -Name | ForEach-Object { Write-Host "  - $_" -ForegroundColor Cyan }
@@ -94,7 +93,7 @@ jobs:
           Write-Host "版本: $Version" -ForegroundColor Yellow
 
           # 设置路径
-          $ReleaseDir = "src-tauri/target/release"
+          $ReleaseDir = "GitMentor-Lite/src-tauri/target/x86_64-pc-windows-msvc/release"
           $PortableDir = "portable-temp/GitMentorLite-$Version"
 
           # 创建便携版目录
@@ -117,22 +116,22 @@ jobs:
 
           # 创建启动脚本
           Write-Host "创建启动脚本..." -ForegroundColor Cyan
-          $launcher = @"
-@echo off
-echo 启动 GitMentor Lite...
-start "" "GitMentorLite.exe"
-"@
-          $launcher | Out-File "$PortableDir/启动 GitMentor Lite.bat" -Encoding UTF8
+          $launcher = "@echo off`n"
+          $launcher += "echo 启动 GitMentor Lite...`n"
+          $launcher += 'start "" "GitMentorLite.exe"'
+          $batPath = $PortableDir + "/启动 GitMentor Lite.bat"
+          Set-Content -Path $batPath -Value $launcher -Encoding UTF8
 
           # 创建 README
           Write-Host "创建 README..." -ForegroundColor Cyan
-          $readme = "# GitMentor Lite Portable v$Version`n`n使用方法：双击 `启动 GitMentor Lite.bat`"
-          $readme | Out-File "$PortableDir/README.txt" -Encoding UTF8
+          $readme = "# GitMentor Lite Portable v" + $Version + "`n`n使用方法：双击 `启动 GitMentor Lite.bat`"
+          $readmePath = $PortableDir + "/README.txt"
+          Set-Content -Path $readmePath -Value $readme -Encoding UTF8
 
           # 创建 ZIP
           Write-Host "创建 ZIP 包..." -ForegroundColor Cyan
-          $zipPath = "GitMentorLite-$Version-portable.zip"
-          Compress-Archive -Path "$PortableDir\*" -DestinationPath $zipPath -CompressionLevel Optimal
+          $zipPath = "GitMentorLite-" + $Version + "-portable.zip"
+          Compress-Archive -Path ($PortableDir + "\*") -DestinationPath $zipPath -CompressionLevel Optimal
 
           # 验证
           if (Test-Path $zipPath) {
@@ -143,11 +142,16 @@ start "" "GitMentorLite.exe"
             exit 1
           }
 
+          # 列出当前目录所有文件以便调试
+          Write-Host "当前目录文件列表:" -ForegroundColor Yellow
+          Get-ChildItem -Name *.zip, *.msi | ForEach-Object { Write-Host "  - $_" -ForegroundColor Cyan }
+
       - name: 上传到 GitHub Release
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            src-tauri/target/release/bundle/msi/*.msi
+            GitMentor-Lite/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/msi/*.msi
+            GitMentor-Lite/src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
             GitMentorLite-*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

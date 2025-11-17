@@ -206,7 +206,7 @@
             <div class="file-list">
               <FileItem v-for="file in gitStatus?.staged_files || []" :key="file.path" :file="file" :is-staged="true"
                 :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-                @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection"
+                @revert-click="handleRevertClick" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection"
                 @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
           </div>
@@ -317,7 +317,7 @@
             <div class="file-list">
               <FileItem v-for="file in gitStatus?.unstaged_files || []" :key="file.path" :file="file" :is-staged="false"
                 :batch-mode="batchMode" :selected="selectedFiles.has(file.path)" @toggle-stage="toggleStage"
-                @revert="revertFile" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection"
+                @revert-click="handleRevertClick" @viewDiff="openDiffViewer" @toggle-select="toggleFileSelection"
                 @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
           </div>
@@ -335,7 +335,7 @@
             <div class="file-list">
               <FileItem v-for="file in gitStatus?.untracked_files || []" :key="file.path" :file="file"
                 :is-staged="false" :batch-mode="batchMode" :selected="selectedFiles.has(file.path)"
-                @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer"
+                @toggle-stage="toggleStage" @revert-click="handleRevertClick" @viewDiff="openDiffViewer"
                 @toggle-select="toggleFileSelection" @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
           </div>
@@ -347,7 +347,7 @@
             </div>
             <div class="file-list">
               <FileItem v-for="file in gitStatus?.conflicted_files || []" :key="file.path" :file="file"
-                :is-staged="false" @toggle-stage="toggleStage" @revert="revertFile" @viewDiff="openDiffViewer"
+                :is-staged="false" @toggle-stage="toggleStage" @revert-click="handleRevertClick" @viewDiff="openDiffViewer"
                 @refresh="refreshGitStatus" @contextMenu="handleFileContextMenu" />
             </div>
           </div>
@@ -1884,11 +1884,17 @@ const toggleBatchMode = () => {
 }
 
 const toggleFileSelection = (filePath: string) => {
+  console.log('toggleFileSelection called for:', filePath)
+  console.log('Current selected files:', Array.from(selectedFiles.value))
   if (selectedFiles.value.has(filePath)) {
     selectedFiles.value.delete(filePath)
+    console.log('Removed file from selection')
   } else {
     selectedFiles.value.add(filePath)
+    console.log('Added file to selection')
   }
+  console.log('Updated selected files:', Array.from(selectedFiles.value))
+  console.log('Selected count:', selectedFiles.value.size)
 }
 
 const selectAllUnstaged = () => {
@@ -2101,17 +2107,20 @@ const commitChanges = async () => {
   }
 }
 
-const revertFile = async (filePath: string, isStaged: boolean) => {
+const revertFile = async (filePath: string, isStaged: boolean, skipConfirm = false) => {
   const fileName = filePath.split(/[/\\]/).pop() || filePath
   const revertType = isStaged ? '暂存区' : '工作区'
 
-  const confirmed = await confirm.danger(
-    '撤销文件更改',
-    `确定要撤销${revertType}中的文件 "${fileName}" 的更改吗？`,
-    '此操作将丢失该文件的所有未提交更改，且无法撤销。'
-  )
+  // 如果没有跳过确认，显示确认对话框
+  if (!skipConfirm) {
+    const confirmed = await confirm.danger(
+      '撤销文件更改',
+      `确定要撤销${revertType}中的文件 "${fileName}" 的更改吗？`,
+      '此操作将丢失该文件的所有未提交更改，且无法撤销。'
+    )
 
-  if (!confirmed) return
+    if (!confirmed) return
+  }
 
   try {
     setLoading(true, `正在撤销${revertType}文件更改...`)
@@ -2134,6 +2143,23 @@ const revertFile = async (filePath: string, isStaged: boolean) => {
     toast.error('撤销文件更改失败: ' + error, '操作失败')
     setLoading(false)
   }
+}
+
+// 处理来自 FileItem 的撤销按钮点击事件，使用自定义确认对话框
+const handleRevertClick = async (filePath: string, isStaged: boolean) => {
+  const fileName = filePath.split(/[/\\]/).pop() || filePath
+  const revertType = isStaged ? '暂存区' : '工作区'
+
+  const confirmed = await confirm.danger(
+    '撤销文件更改',
+    `确定要撤销${revertType}中的文件 "${fileName}" 的更改吗？`,
+    '此操作将丢失该文件的所有未提交更改，且无法撤销。'
+  )
+
+  if (!confirmed) return
+
+  // 如果确认，则执行实际的撤销操作（跳过内部确认）
+  await revertFile(filePath, isStaged, true)
 }
 
 // 工具函数
@@ -4079,22 +4105,23 @@ const initializeHistoryReports = async () => {
 /* 暂存区 - 根据内容自适应高度 */
 .staged-files {
   flex: 0 1 auto;
-  /* 移除 min-height，让暂存区根据内容自适应 */
-  max-height: 280px;
+  /* 设置合理的最小和最大高度范围 */
+  min-height: 120px;
+  max-height: 400px;
 }
 
 /* 工作区 - 根据内容自适应高度 */
 .unstaged-files {
   flex: 0 1 auto;
-  /* 移除 min-height，让工作区根据内容自适应 */
-  max-height: 300px;
+  min-height: 140px;
+  max-height: 450px;
 }
 
 /* 未跟踪文件和冲突文件 - 根据内容自适应高度 */
 .file-section {
   flex: 0 1 auto;
-  /* 移除 min-height，让未跟踪文件区域根据内容自适应 */
-  max-height: 220px;
+  min-height: 100px;
+  max-height: 350px;
 }
 
 /* 现代化区域标题样式 - Author: Evilek, Date: 2025-08-21 */
@@ -4151,10 +4178,11 @@ const initializeHistoryReports = async () => {
 .file-list {
   padding: 4px;
   background: white;
-  /* 移除 flex: 1，改为根据内容自适应高度 - 修复暂存区空时占用大量空间的问题 */
+  /* 允许文件列表根据容器高度自适应 */
+  flex: 1;
   overflow-y: auto;
-  /* 设置最大高度约为10条文件的高度(每条约24px) + padding */
-  max-height: 248px;
+  /* 移除固定的最大高度限制，改为根据容器剩余空间自适应 */
+  max-height: 100%;
 }
 
 /* 提交区域 - 移除overflow避免裁剪问题 */
@@ -4791,19 +4819,22 @@ const initializeHistoryReports = async () => {
 
   /* 在较小屏幕上进一步优化区域设置 */
   .staged-files {
-    max-height: 180px;
+    min-height: 100px;
+    max-height: 300px;
   }
 
   .unstaged-files {
-    max-height: 200px;
+    min-height: 120px;
+    max-height: 350px;
+  }
+
+  .file-section {
+    min-height: 80px;
+    max-height: 280px;
   }
 
   .commit-area {
     min-height: 120px;
-  }
-
-  .file-section {
-    max-height: 160px;
   }
 }
 
@@ -4811,15 +4842,18 @@ const initializeHistoryReports = async () => {
 
   /* 在很小的屏幕上进一步优化压缩 */
   .staged-files {
-    max-height: 120px;
+    min-height: 80px;
+    max-height: 200px;
   }
 
   .unstaged-files {
-    max-height: 140px;
+    min-height: 100px;
+    max-height: 250px;
   }
 
   .file-section {
-    max-height: 100px;
+    min-height: 60px;
+    max-height: 200px;
   }
 
   .commit-area {
@@ -5126,6 +5160,32 @@ const initializeHistoryReports = async () => {
   color: #374151;
   cursor: pointer;
   transition: all 0.2s ease;
+}
+
+/* 确保日报生成区域的select-all-btn不会影响batch-toolbar中的按钮 */
+.batch-toolbar .select-all-btn {
+  padding: 3px 6px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #333;
+  height: 24px;
+  min-width: 50px;
+}
+
+/* 确保clear-btn在batch-toolbar中也有一致的样式 */
+.batch-toolbar .clear-btn {
+  padding: 3px 6px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #333;
+  height: 24px;
+  min-width: 50px;
 }
 
 .select-all-btn:hover:not(:disabled) {
