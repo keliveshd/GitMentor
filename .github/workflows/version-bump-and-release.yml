@@ -42,6 +42,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          # 不指定 ref，让工作流在默认分支上运行，然后创建dev分支
 
       - name: 配置 Git
         run: |
@@ -130,20 +131,24 @@ jobs:
           echo "验证版本号更新..."
           echo ""
           echo "📦 package.json: $(node -p "require('./GitMentor-Lite/package.json').version")"
-          echo "📦 Cargo.toml: $(grep '^version = ' GitMentor-Lite/src-tauri/Cargo.toml | cut -d'\"' -f2)"
+          echo "📦 Cargo.toml: $(grep '^version = ' GitMentor-Lite/src-tauri/Cargo.toml | cut -d'"' -f2)"
           echo "📦 tauri.conf.json: $(node -p "require('./GitMentor-Lite/src-tauri/tauri.conf.json').version")"
           echo ""
 
-      - name: 提交版本号更改
+      - name: 创建dev分支并提交版本号更改
         if: steps.version.outputs.bumped == 'true'
         run: |
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          # 创建并切换到dev分支
+          git checkout -b dev
+          # 添加并提交版本号更改到dev分支
           git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
           git commit -m "chore: bump version to v$NEW_VERSION
 
           🤖 Generated with [Claude Code](https://claude.com/claude-code)
 
           Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>" || echo "没有更改需要提交"
+          # 推送到远程dev分支
           git push origin dev
 
   merge-to-main:
@@ -156,6 +161,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          # 从dev分支检出以创建PR
           ref: dev
 
       - name: 配置 Git
