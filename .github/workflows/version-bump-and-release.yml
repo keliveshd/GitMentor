@@ -53,8 +53,8 @@ jobs:
         run: |
           # 从 package.json 获取当前版本号
           CURRENT_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
-          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
-          echo "当前版本: $CURRENT_VERSION" >> $GITHUB_STDOUT
+          echo "current_version=$CURRENT_VERSION" GITHUB_OUTPUT
+          echo "当前版本: $CURRENT_VERSION" GITHUB_STDOUT
 
       - name: 计算新版本号
         id: version
@@ -68,8 +68,8 @@ jobs:
               echo "❌ 当选择手动版本号时，必须提供新版本号"
               exit 1
             fi
-            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-            echo "bumped=true" >> $GITHUB_OUTPUT
+            echo "new_version=$NEW_VERSION" GITHUB_OUTPUT
+            echo "bumped=true" GITHUB_OUTPUT
             echo "使用手动指定的版本号: $NEW_VERSION"
           else
             # 自动递增版本号
@@ -83,8 +83,8 @@ jobs:
             PATCH=$((PATCH + 1))
 
             NEW_VERSION="$MAJOR.$MINOR.$PATCH"
-            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
-            echo "bumped=true" >> $GITHUB_OUTPUT
+            echo "new_version=$NEW_VERSION" GITHUB_OUTPUT
+            echo "bumped=true" GITHUB_OUTPUT
             echo "自动递增版本号: $CURRENT_VERSION -> $NEW_VERSION"
           fi
 
