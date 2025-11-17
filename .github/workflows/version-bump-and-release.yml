@@ -156,22 +156,59 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: dev
 
       - name: 配置 Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/keliveshd/GitMentor.git
 
-      - name: 合并 dev 到 main
+      - name: 创建 Pull Request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump version to v${{ needs.version-bump.outputs.new_version }}"
+          title: "🚀 版本发布 v${{ needs.version-bump.outputs.new_version }}"
+          body: |
+            ## 📦 版本发布
+
+            **新版本号：** v${{ needs.version-bump.outputs.new_version }}
+
+            ### 变更内容
+            - 自动递增版本号
+            - 更新 `package.json` 版本
+            - 更新 `Cargo.toml` 版本
+            - 更新 `tauri.conf.json` 版本
+
+            ### 后续步骤
+            - [ ] PR 合并后，标签创建工作流将自动触发
+            - [ ] 构建工作流将自动运行
+
+            ---
+            🤖 此 PR 由自动化工作流生成
+          branch: release/v${{ needs.version-bump.outputs.new_version }}
+          base: main
+
+      - name: 显示结果
         run: |
-          echo "🔀 合并 dev 分支到 main 分支..."
-          git checkout main
-          git merge origin/dev --no-edit
-          git push origin main
-          echo "✅ 成功合并到 main 分支"
+          NEW_VERSION="${{ needs.version-bump.outputs.new_version }}"
+          echo ""
+          echo "================================================"
+          echo "🚀 Pull Request 已创建！"
+          echo "================================================"
+          echo "📦 版本号: $NEW_VERSION"
+          echo "📝 PR 分支: release/v$NEW_VERSION"
+          echo "🔗 PR 链接: https://github.com/keliveshd/GitMentor/compare/main...release/v$NEW_VERSION"
+          echo ""
+          echo "接下来的步骤："
+          echo "1. 请手动合并此 PR 到 main 分支"
+          echo "2. 合并后，再次运行此工作流创建标签"
+          echo "3. 标签创建后将自动触发构建工作流"
+          echo "================================================"
 
   create-and-push-tag:
-    needs: [version-bump, merge-to-main]
+    needs: version-bump
     runs-on: ubuntu-latest
     if: github.event.inputs.create_tag == 'true'
     steps:
@@ -180,18 +217,35 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ref: main
 
       - name: 配置 Git
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/keliveshd/GitMentor.git
+
+      - name: 验证 main 分支已更新
+        run: |
+          CURRENT_MAIN_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
+          EXPECTED_VERSION="${{ needs.version-bump.outputs.new_version }}"
+          echo "当前 main 分支版本: $CURRENT_MAIN_VERSION"
+          echo "预期版本: $EXPECTED_VERSION"
+
+          if [ "$CURRENT_MAIN_VERSION" != "$EXPECTED_VERSION" ]; then
+            echo "⚠️  警告：main 分支版本与预期不符"
+            echo "请确保 PR 已合并到 main 分支"
+            echo "https://github.com/keliveshd/GitMentor/pulls"
+            exit 1
+          fi
+          echo "✅ main 分支版本已更新"
 
       - name: 创建并推送标签
         run: |
           NEW_VERSION="${{ needs.version-bump.outputs.new_version }}"
           TAG_NAME="v$NEW_VERSION"
 
-          echo "🏷️  创建标签: $TAG_NAME"
+          echo "🏷️  在 main 分支创建标签: $TAG_NAME"
           git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
           git push origin "$TAG_NAME"
 
@@ -202,7 +256,7 @@ jobs:
           NEW_VERSION="${{ needs.version-bump.outputs.new_version }}"
           echo ""
           echo "================================================"
-          echo "🎉 版本发布流程完成！"
+          echo "🎉 标签创建完成！"
           echo "================================================"
           echo "📦 新版本号: $NEW_VERSION"
           echo "🏷️  标签: v$NEW_VERSION"
@@ -211,4 +265,6 @@ jobs:
           echo "接下来的步骤："
           echo "1. 'Release Build and Publish' 工作流将自动触发构建"
           echo "2. 构建完成后会在 GitHub Releases 中创建发布"
+          echo ""
+          echo "🔗 查看 PR: https://github.com/keliveshd/GitMentor/pulls"
           echo "================================================"
