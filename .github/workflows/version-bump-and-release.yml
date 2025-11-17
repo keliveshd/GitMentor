@@ -1,0 +1,214 @@
+name: Version Bump and Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_type:
+        description: '版本号类型'
+        required: true
+        default: 'auto'
+        type: choice
+        options:
+          - auto
+          - manual
+      new_version:
+        description: '新版本号 (例如: 0.4.21) - 仅在版本号类型选择"manual"时需要'
+        required: false
+        type: string
+      push_to_main:
+        description: '自动推送到 main 分支'
+        required: true
+        default: true
+        type: boolean
+      create_tag:
+        description: '自动创建并推送标签'
+        required: true
+        default: true
+        type: boolean
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  version-bump:
+    runs-on: ubuntu-latest
+    outputs:
+      new_version: ${{ steps.version.outputs.new_version }}
+      bumped: ${{ steps.version.outputs.bumped }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 配置 Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: 获取当前版本号
+        id: current_version
+        run: |
+          # 从 package.json 获取当前版本号
+          CURRENT_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
+          echo "current_version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
+          echo "当前版本: $CURRENT_VERSION" >> $GITHUB_STDOUT
+
+      - name: 计算新版本号
+        id: version
+        run: |
+          CURRENT_VERSION="${{ steps.current_version.outputs.current_version }}"
+          VERSION_TYPE="${{ github.event.inputs.version_type }}"
+          NEW_VERSION="${{ github.event.inputs.new_version }}"
+
+          if [ "$VERSION_TYPE" == "manual" ]; then
+            if [ -z "$NEW_VERSION" ]; then
+              echo "❌ 当选择手动版本号时，必须提供新版本号"
+              exit 1
+            fi
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "bumped=true" >> $GITHUB_OUTPUT
+            echo "使用手动指定的版本号: $NEW_VERSION"
+          else
+            # 自动递增版本号
+            # 将版本号分割为主版本、次版本、补丁版本
+            IFS='.' read -ra VERSION_PARTS <<< "$CURRENT_VERSION"
+            MAJOR=${VERSION_PARTS[0]}
+            MINOR=${VERSION_PARTS[1]}
+            PATCH=${VERSION_PARTS[2]}
+
+            # 增加补丁版本号
+            PATCH=$((PATCH + 1))
+
+            NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+            echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+            echo "bumped=true" >> $GITHUB_OUTPUT
+            echo "自动递增版本号: $CURRENT_VERSION -> $NEW_VERSION"
+          fi
+
+      - name: 更新 package.json
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          echo "更新 package.json 版本号到: $NEW_VERSION"
+
+          # 使用 Node.js 更新 package.json
+          node -e "
+            const fs = require('fs');
+            const packageJson = JSON.parse(fs.readFileSync('./GitMentor-Lite/package.json', 'utf8'));
+            packageJson.version = '$NEW_VERSION';
+            fs.writeFileSync('./GitMentor-Lite/package.json', JSON.stringify(packageJson, null, 2) + '\n');
+            console.log('✅ package.json 已更新');
+          "
+
+      - name: 更新 Cargo.toml
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          echo "更新 Cargo.toml 版本号到: $NEW_VERSION"
+
+          # 使用 sed 更新 Cargo.toml
+          sed -i 's/^version = .*/version = "'$NEW_VERSION'"/' GitMentor-Lite/src-tauri/Cargo.toml
+          echo "✅ Cargo.toml 已更新"
+
+      - name: 更新 tauri.conf.json
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          echo "更新 tauri.conf.json 版本号到: $NEW_VERSION"
+
+          # 使用 Node.js 更新 tauri.conf.json
+          node -e "
+            const fs = require('fs');
+            const config = JSON.parse(fs.readFileSync('./GitMentor-Lite/src-tauri/tauri.conf.json', 'utf8'));
+            config.version = '$NEW_VERSION';
+            fs.writeFileSync('./GitMentor-Lite/src-tauri/tauri.conf.json', JSON.stringify(config, null, 2) + '\n');
+            console.log('✅ tauri.conf.json 已更新');
+          "
+
+      - name: 验证版本号更新
+        run: |
+          echo "验证版本号更新..."
+          echo ""
+          echo "📦 package.json: $(node -p "require('./GitMentor-Lite/package.json').version")"
+          echo "📦 Cargo.toml: $(grep '^version = ' GitMentor-Lite/src-tauri/Cargo.toml | cut -d'\"' -f2)"
+          echo "📦 tauri.conf.json: $(node -p "require('./GitMentor-Lite/src-tauri/tauri.conf.json').version")"
+          echo ""
+
+      - name: 提交版本号更改
+        if: steps.version.outputs.bumped == 'true'
+        run: |
+          NEW_VERSION="${{ steps.version.outputs.new_version }}"
+          git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
+          git commit -m "chore: bump version to v$NEW_VERSION
+
+          🤖 Generated with [Claude Code](https://claude.com/claude-code)
+
+          Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>" || echo "没有更改需要提交"
+          git push origin dev
+
+  merge-to-main:
+    needs: version-bump
+    runs-on: ubuntu-latest
+    if: github.event.inputs.push_to_main == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 配置 Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: 合并 dev 到 main
+        run: |
+          echo "🔀 合并 dev 分支到 main 分支..."
+          git checkout main
+          git merge origin/dev --no-edit
+          git push origin main
+          echo "✅ 成功合并到 main 分支"
+
+  create-and-push-tag:
+    needs: [version-bump, merge-to-main]
+    runs-on: ubuntu-latest
+    if: github.event.inputs.create_tag == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 配置 Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: 创建并推送标签
+        run: |
+          NEW_VERSION="${{ needs.version-bump.outputs.new_version }}"
+          TAG_NAME="v$NEW_VERSION"
+
+          echo "🏷️  创建标签: $TAG_NAME"
+          git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
+          git push origin "$TAG_NAME"
+
+          echo "✅ 标签 $TAG_NAME 已创建并推送到远程"
+
+      - name: 显示结果
+        run: |
+          NEW_VERSION="${{ needs.version-bump.outputs.new_version }}"
+          echo ""
+          echo "================================================"
+          echo "🎉 版本发布流程完成！"
+          echo "================================================"
+          echo "📦 新版本号: $NEW_VERSION"
+          echo "🏷️  标签: v$NEW_VERSION"
+          echo "🌿 分支: main"
+          echo ""
+          echo "接下来的步骤："
+          echo "1. 'Release Build and Publish' 工作流将自动触发构建"
+          echo "2. 构建完成后会在 GitHub Releases 中创建发布"
+          echo "================================================"
