@@ -1,7 +1,7 @@
 <template>
   <div class="file-item" :class="{ 'staged': isStaged, 'selected': selected }" @contextmenu="handleContextMenu">
     <!-- 批量选择复选框 -->
-    <div v-if="batchMode" class="file-checkbox" @click.stop="toggleSelection">
+    <div v-if="batchMode" class="file-checkbox">
       <input type="checkbox" :checked="selected" @change="toggleSelection" />
     </div>
 
@@ -65,6 +65,7 @@ const props = defineProps<Props>()
 const emit = defineEmits<{
   toggleStage: [filePath: string, shouldStage: boolean]
   revert: [filePath: string, isStaged: boolean]
+  revertClick: [filePath: string, isStaged: boolean]
   viewDiff: [filePath: string, isStaged: boolean]
   toggleSelect: [filePath: string]
   refresh: []
@@ -179,9 +180,8 @@ const handleToggleStage = () => {
 }
 
 const handleRevert = () => {
-  if (confirm(`确定要回滚 ${props.file.path} 的更改吗？此操作不可撤销。`)) {
-    emit('revert', props.file.path, props.isStaged)
-  }
+  // 通过 emits 通知父组件处理确认逻辑，避免使用原生 confirm() 对话框
+  emit('revert-click', props.file.path, props.isStaged)
 }
 
 const viewDiff = () => {
@@ -189,7 +189,13 @@ const viewDiff = () => {
 }
 
 // 批量选择相关方法
-const toggleSelection = () => {
+const toggleSelection = (event?: Event) => {
+  // 阻止事件冒泡，避免触发父元素的点击事件
+  if (event) {
+    event.stopPropagation()
+    event.preventDefault()
+  }
+  console.log('toggleSelection called for:', props.file.path, 'current selected:', props.selected)
   emit('toggleSelect', props.file.path)
 }
 
