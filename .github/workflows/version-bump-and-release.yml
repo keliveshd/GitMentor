@@ -224,18 +224,35 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/keliveshd/GitMentor.git
 
-      - name: 验证 main 分支已更新
+      - name: 验证版本和检查标签
         run: |
-          CURRENT_MAIN_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
-          echo "当前 main 分支版本: $CURRENT_MAIN_VERSION"
-          echo "✅ main 分支版本已更新"
+          NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
+          TAG_NAME="v$NEW_VERSION"
+
+          echo "📦 当前 main 分支版本: $NEW_VERSION"
+          echo "🏷️  准备创建标签: $TAG_NAME"
+
+          # 检查标签是否已存在
+          if git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME"; then
+            echo "❌ 错误：标签 $TAG_NAME 已存在！"
+            echo ""
+            echo "可能的原因："
+            echo "1. 此版本已经发布过"
+            echo "2. 请先运行第一次工作流创建并合并 PR"
+            echo ""
+            echo "🔗 查看 PR: https://github.com/keliveshd/GitMentor/pulls"
+            echo "🔗 查看 Releases: https://github.com/keliveshd/GitMentor/releases"
+            exit 1
+          fi
+
+          echo "✅ 标签不存在，可以创建"
 
       - name: 创建并推送标签
         run: |
           NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
           TAG_NAME="v$NEW_VERSION"
 
-          echo "🏷️  在 main 分支创建标签: $TAG_NAME"
+          echo "🏷️  创建标签: $TAG_NAME"
           git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
           git push origin "$TAG_NAME"
 
