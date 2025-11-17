@@ -224,28 +224,48 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git remote set-url origin https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/keliveshd/GitMentor.git
 
-      - name: 验证版本和检查标签
+      - name: 验证版本和检查PR状态
         run: |
+          # 获取main分支版本
           NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
           TAG_NAME="v$NEW_VERSION"
 
           echo "📦 当前 main 分支版本: $NEW_VERSION"
           echo "🏷️  准备创建标签: $TAG_NAME"
+          echo ""
+
+          # 获取dev分支版本
+          git fetch origin dev --no-recurse-submodules
+          DEV_VERSION=$(git show origin/dev:GitMentor-Lite/package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
+          echo "📦 dev 分支版本: $DEV_VERSION"
+          echo ""
+
+          # 检查PR是否已合并 - 如果dev版本 > main版本，说明PR没有合并
+          if [ "$(printf '%s\n' "$NEW_VERSION" "$DEV_VERSION" | sort -V | head -n1)" != "$NEW_VERSION" ]; then
+            echo "❌ 错误：dev 分支版本 ($DEV_VERSION) 高于 main 分支版本 ($NEW_VERSION)"
+            echo ""
+            echo "这表明 Pull Request 尚未合并到 main 分支！"
+            echo ""
+            echo "请先合并以下 PR 到 main 分支："
+            echo "🔗 https://github.com/keliveshd/GitMentor/pulls"
+            echo ""
+            echo "或者请先运行第一次工作流创建PR："
+            echo "- 版本号类型: auto"
+            echo "- 推送到 main 分支: ✅ 勾选"
+            echo "- 创建标签: ❌ 不勾选"
+            exit 1
+          fi
 
           # 检查标签是否已存在
           if git ls-remote --tags origin | grep -q "refs/tags/$TAG_NAME"; then
             echo "❌ 错误：标签 $TAG_NAME 已存在！"
             echo ""
-            echo "可能的原因："
-            echo "1. 此版本已经发布过"
-            echo "2. 请先运行第一次工作流创建并合并 PR"
-            echo ""
-            echo "🔗 查看 PR: https://github.com/keliveshd/GitMentor/pulls"
+            echo "此版本已经发布过。请查看："
             echo "🔗 查看 Releases: https://github.com/keliveshd/GitMentor/releases"
             exit 1
           fi
 
-          echo "✅ 标签不存在，可以创建"
+          echo "✅ PR 已合并，标签不存在，可以创建"
 
       - name: 创建并推送标签
         run: |
