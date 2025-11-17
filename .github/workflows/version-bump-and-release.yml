@@ -139,7 +139,9 @@ jobs:
         if: steps.version.outputs.bumped == 'true'
         run: |
           NEW_VERSION="${{ steps.version.outputs.new_version }}"
-          # 创建并切换到dev分支
+          # 强制删除本地dev分支（如果存在）并重新创建
+          git branch -D dev 2>/dev/null || true
+          # 创建dev分支并切换过去
           git checkout -b dev
           # 添加并提交版本号更改到dev分支
           git add GitMentor-Lite/package.json GitMentor-Lite/src-tauri/Cargo.toml GitMentor-Lite/src-tauri/tauri.conf.json
@@ -149,7 +151,7 @@ jobs:
 
           Co-Authored-By: github-actions[bot] <github-actions[bot]@users.noreply.github.com>" || echo "没有更改需要提交"
           # 推送到远程dev分支
-          git push origin dev
+          git push -f origin dev
 
   merge-to-main:
     needs: version-bump
