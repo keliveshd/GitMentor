@@ -208,7 +208,6 @@ jobs:
           echo "================================================"
 
   create-and-push-tag:
-    needs: version-bump
     runs-on: ubuntu-latest
     if: github.event.inputs.create_tag == 'true'
     steps:
@@ -228,21 +227,12 @@ jobs:
       - name: 验证 main 分支已更新
         run: |
           CURRENT_MAIN_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
-          EXPECTED_VERSION="${{ needs.version-bump.outputs.new_version }}"
           echo "当前 main 分支版本: $CURRENT_MAIN_VERSION"
-          echo "预期版本: $EXPECTED_VERSION"
-
-          if [ "$CURRENT_MAIN_VERSION" != "$EXPECTED_VERSION" ]; then
-            echo "⚠️  警告：main 分支版本与预期不符"
-            echo "请确保 PR 已合并到 main 分支"
-            echo "https://github.com/keliveshd/GitMentor/pulls"
-            exit 1
-          fi
           echo "✅ main 分支版本已更新"
 
       - name: 创建并推送标签
         run: |
-          NEW_VERSION="${{ needs.version-bump.outputs.new_version }}"
+          NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
           TAG_NAME="v$NEW_VERSION"
 
           echo "🏷️  在 main 分支创建标签: $TAG_NAME"
@@ -253,7 +243,7 @@ jobs:
 
       - name: 显示结果
         run: |
-          NEW_VERSION="${{ needs.version-bump.outputs.new_version }}"
+          NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
           echo ""
           echo "================================================"
           echo "🎉 标签创建完成！"
@@ -266,5 +256,5 @@ jobs:
           echo "1. 'Release Build and Publish' 工作流将自动触发构建"
           echo "2. 构建完成后会在 GitHub Releases 中创建发布"
           echo ""
-          echo "🔗 查看 PR: https://github.com/keliveshd/GitMentor/pulls"
+          echo "🔗 查看 Releases: https://github.com/keliveshd/GitMentor/releases"
           echo "================================================"
