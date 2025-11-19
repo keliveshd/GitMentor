@@ -42,6 +42,7 @@ jobs:
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
+          ssh-strict: true
           # 不指定 ref，让工作流在默认分支上运行，然后创建dev分支
 
       - name: 配置 Git
@@ -231,24 +232,25 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: 验证版本和检查PR状态
+        id: validate
         run: |
           # 获取main分支版本
-          NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
-          TAG_NAME="v$NEW_VERSION"
-
-          echo "📦 当前 main 分支版本: $NEW_VERSION"
-          echo "🏷️  准备创建标签: $TAG_NAME"
-          echo ""
+          git fetch origin main --no-recurse-submodules
+          MAIN_VERSION=$(git show origin/main:GitMentor-Lite/package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
 
           # 获取dev分支版本
           git fetch origin dev --no-recurse-submodules
-          DEV_VERSION=$(git show origin/dev:GitMentor-Lite/package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
-          echo "📦 dev 分支版本: $DEV_VERSION"
+          NEW_VERSION=$(git show origin/dev:GitMentor-Lite/package.json | node -p "JSON.parse(require('fs').readFileSync('/dev/stdin', 'utf8')).version")
+          TAG_NAME="v$NEW_VERSION"
+
+          echo "📦 当前 main 分支版本: $MAIN_VERSION"
+          echo "📦 dev 分支版本: $NEW_VERSION"
+          echo "🏷️  准备创建标签: $TAG_NAME"
           echo ""
 
           # 检查PR是否已合并 - 如果dev版本 > main版本，说明PR没有合并
-          if [ "$(printf '%s\n' "$NEW_VERSION" "$DEV_VERSION" | sort -V | head -n1)" != "$NEW_VERSION" ]; then
-            echo "❌ 错误：dev 分支版本 ($DEV_VERSION) 高于 main 分支版本 ($NEW_VERSION)"
+          if [ "$(printf '%s\n' "$MAIN_VERSION" "$NEW_VERSION" | sort -V | head -n1)" != "$MAIN_VERSION" ]; then
+            echo "❌ 错误：dev 分支版本 ($NEW_VERSION) 高于 main 分支版本 ($MAIN_VERSION)"
             echo ""
             echo "这表明 Pull Request 尚未合并到 main 分支！"
             echo ""
@@ -271,12 +273,16 @@ jobs:
             exit 1
           fi
 
+          # 验证成功，设置输出
+          echo "NEW_VERSION=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "TAG_NAME=$TAG_NAME" >> $GITHUB_OUTPUT
+
           echo "✅ PR 已合并，标签不存在，可以创建"
 
       - name: 创建并推送标签
         run: |
-          NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
-          TAG_NAME="v$NEW_VERSION"
+          NEW_VERSION="${{ steps.validate.outputs.NEW_VERSION }}"
+          TAG_NAME="${{ steps.validate.outputs.TAG_NAME }}"
 
           echo "🏷️  创建标签: $TAG_NAME"
           git tag -a "$TAG_NAME" -m "Release $TAG_NAME"
@@ -286,13 +292,14 @@ jobs:
 
       - name: 显示结果
         run: |
-          NEW_VERSION=$(node -p "require('./GitMentor-Lite/package.json').version")
+          NEW_VERSION="${{ steps.validate.outputs.NEW_VERSION }}"
+          TAG_NAME="${{ steps.validate.outputs.TAG_NAME }}"
           echo ""
           echo "================================================"
           echo "🎉 标签创建完成！"
           echo "================================================"
           echo "📦 新版本号: $NEW_VERSION"
-          echo "🏷️  标签: v$NEW_VERSION"
+          echo "🏷️  标签: $TAG_NAME"
           echo "🌿 分支: main"
           echo ""
           echo "接下来的步骤："
