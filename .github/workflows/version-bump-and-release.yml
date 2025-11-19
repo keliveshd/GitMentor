@@ -152,7 +152,7 @@ jobs:
   merge-to-main:
     needs: version-bump
     runs-on: ubuntu-latest
-    if: github.event.inputs.push_to_main == 'true'
+    # 总是运行，因为用户已经在表单中勾选了"推送到main分支"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
