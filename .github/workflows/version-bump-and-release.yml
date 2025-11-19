@@ -16,12 +16,7 @@ on:
         required: false
         type: string
       push_to_main:
-        description: '自动推送到 main 分支'
-        required: true
-        default: true
-        type: boolean
-      create_tag:
-        description: '自动创建并推送标签'
+        description: '自动推送到 main 分支 (✅ 推荐)'
         required: true
         default: true
         type: boolean
@@ -211,13 +206,14 @@ jobs:
           echo ""
           echo "接下来的步骤："
           echo "1. 请手动合并此 PR 到 main 分支"
-          echo "2. 合并后，再次运行此工作流创建标签"
-          echo "3. 标签创建后将自动触发构建工作流"
+          echo "2. 合并后，工作流将自动创建标签"
+          echo "3. 标签创建后将自动触发 Release Build and Publish"
           echo "================================================"
 
   create-and-push-tag:
+    needs: merge-to-main
     runs-on: ubuntu-latest
-    if: github.event.inputs.create_tag == 'true'
+    # 当merge-to-main job完成时自动运行（用户勾选"推送到main分支"）
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
