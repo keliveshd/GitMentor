@@ -181,7 +181,7 @@ const handleToggleStage = () => {
 
 const handleRevert = () => {
   // 通过 emits 通知父组件处理确认逻辑，避免使用原生 confirm() 对话框
-  emit('revert-click', props.file.path, props.isStaged)
+  emit('revertClick', props.file.path, props.isStaged)
 }
 
 const viewDiff = () => {
