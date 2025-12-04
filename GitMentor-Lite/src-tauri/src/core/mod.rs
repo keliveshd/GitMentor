@@ -15,6 +15,7 @@ pub mod ai_config;
 pub mod ai_manager;
 pub mod ai_provider;
 pub mod ai_response_cache;
+pub mod codereview;
 pub mod conversation_logger;
 pub mod git_config;
 pub mod git_engine;

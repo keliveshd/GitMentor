@@ -4,6 +4,7 @@
 
 pub mod ai_analysis_commands;
 pub mod ai_commands;
+pub mod codereview_commands;
 pub mod daily_report_commands;
 pub mod debug_commands;
 pub mod git_commands;

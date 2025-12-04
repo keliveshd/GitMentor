@@ -44,7 +44,7 @@ macro_rules! info_log {
 
 use chrono::Local;
 use commands::{
-    ai_analysis_commands, ai_commands, daily_report_commands, debug_commands, git_commands,
+    ai_analysis_commands, ai_commands, codereview_commands, daily_report_commands, debug_commands, git_commands,
     git_config_commands, gitflow_commands, repository_commands, system_commands, template_commands,
     unified_template_commands, update_commands,
 };
@@ -351,6 +351,23 @@ pub fn run() {
         }
     };
 
+    // Initialize Code Review storage (异步初始化)
+    write_startup_log("初始化 Code Review 存储...");
+    let code_review_config_dir = config_dir.join("code_review");
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let code_review_storage = rt.block_on(async {
+        match codereview_commands::init_review_storage(code_review_config_dir).await {
+            Ok(storage) => {
+                write_startup_log("Code Review 存储初始化成功");
+                storage
+            }
+            Err(e) => {
+                write_error_log(&format!("Code Review 存储初始化失败: {}", e));
+                panic!("Failed to initialize Code Review Storage: {}", e);
+            }
+        }
+    });
+
     write_startup_log("构建Tauri应用...");
     let app_result = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
@@ -362,6 +379,7 @@ pub fn run() {
         .manage(git_config_manager)
         .manage(llm_client)
         .manage(ai_manager)
+        .manage(code_review_storage.clone())
         .invoke_handler(tauri::generate_handler![
             greet,
             git_commands::select_repository,
@@ -512,6 +530,17 @@ pub fn run() {
             unified_template_commands::get_all_templates_unified,
             unified_template_commands::batch_update_system_templates,
             unified_template_commands::reset_all_system_templates,
+            // Code Review commands
+            codereview_commands::create_ai_review,
+            codereview_commands::get_review_record,
+            codereview_commands::get_review_history,
+            codereview_commands::delete_review_record,
+            codereview_commands::clear_all_reviews,
+            codereview_commands::get_review_statistics,
+            codereview_commands::get_review_config,
+            codereview_commands::get_review_cache_size,
+            codereview_commands::clear_review_cache,
+            codereview_commands::get_review_storage_paths,
         ])
         .run(tauri::generate_context!());
 
