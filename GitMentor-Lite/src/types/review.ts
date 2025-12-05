@@ -590,6 +590,21 @@ export interface PaginationOptions {
 }
 
 /**
+ * Git 提交记录
+ */
+export interface GitCommit {
+  hash: string;              // 提交哈希
+  message: string;           // 提交信息
+  author: string;            // 作者
+  email: string;             // 作者邮箱
+  date: string;              // 提交日期 (ISO 8601)
+  branch: string;            // 所在分支
+  filesChanged?: number;     // 变更文件数
+  insertions?: number;       // 新增行数
+  deletions?: number;        // 删除行数
+}
+
+/**
  * 分页结果
  */
 export interface PaginatedResult<T> {

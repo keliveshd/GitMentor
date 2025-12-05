@@ -4,6 +4,8 @@
       :current-repo="currentRepo"
       :git-status="gitStatus"
       :available-files="availableFiles"
+      :commit-history="commitHistory"
+      @load-commit-history="loadCommitHistory"
     />
   </div>
 </template>
@@ -12,11 +14,30 @@
 import { ref, onMounted } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import CodeReviewPanel from '../components/codereview/CodeReviewPanel.vue';
-import type { ReviewFile, GitStatus } from '../types/review';
+import type { ReviewFile, GitStatus, GitCommit } from '../types/review';
 
 const currentRepo = ref<string | null>(null);
 const gitStatus = ref<GitStatus | null>(null);
 const availableFiles = ref<ReviewFile[]>([]);
+const commitHistory = ref<GitCommit[]>([]);
+
+// 加载提交历史
+const loadCommitHistory = async (limit: number = 50) => {
+  if (!currentRepo.value) return;
+
+  try {
+    console.log('[CodeReviewPage] 加载提交历史...');
+    const commits = await invoke<GitCommit[]>('get_commit_history', {
+      repoPath: currentRepo.value,
+      limit
+    });
+    commitHistory.value = commits;
+    console.log('[CodeReviewPage] 提交历史加载完成:', commits.length, '条记录');
+  } catch (error) {
+    console.error('[CodeReviewPage] 加载提交历史失败:', error);
+    commitHistory.value = [];
+  }
+};
 
 onMounted(async () => {
   try {
@@ -41,6 +62,9 @@ onMounted(async () => {
           status: 'modified' as const
         })) || []),
       ];
+
+      // 预加载提交历史
+      await loadCommitHistory(20);
     }
   } catch (error) {
     console.error('获取代码审查页面数据失败:', error);
@@ -48,6 +72,7 @@ onMounted(async () => {
     currentRepo.value = null;
     gitStatus.value = null;
     availableFiles.value = [];
+    commitHistory.value = [];
   }
 });
 </script>

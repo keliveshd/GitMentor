@@ -10,11 +10,11 @@
         <el-button
           type="primary"
           :loading="loading"
-          :disabled="!selectedFiles.length"
+          :disabled="(fileFilter === 'commits' && selectedCommits.length === 0) || (fileFilter !== 'commits' && selectedFiles.length === 0)"
           @click="handleStartReview"
         >
           <el-icon><MagicStick /></el-icon>
-          开始 AI 审查
+          {{ fileFilter === 'commits' ? '开始审查提交' : '开始 AI 审查' }}
         </el-button>
         <el-button @click="showHistory">
           <el-icon><Clock /></el-icon>
@@ -79,44 +79,81 @@
           <el-radio-group v-model="fileFilter" size="small">
             <el-radio-button label="staged">暂存文件 ({{ stagedFiles.length }})</el-radio-button>
             <el-radio-button label="modified">修改文件 ({{ modifiedFiles.length }})</el-radio-button>
+            <el-radio-button label="commits">提交记录 ({{ commitHistory.length }})</el-radio-button>
             <el-radio-button label="all">所有文件</el-radio-button>
           </el-radio-group>
         </div>
 
-        <!-- 文件列表 -->
+        <!-- 文件列表或提交记录列表 -->
         <div class="file-list">
-          <el-empty v-if="filteredFiles.length === 0" description="没有可审查的文件" />
-          <el-checkbox-group
-            v-else
-            v-model="selectedFiles"
-          >
-            <div
-              v-for="file in filteredFiles"
-              :key="file.path"
-              class="file-item"
-              :class="{ selected: isFileSelected(file.path) }"
+          <!-- 文件列表 -->
+          <template v-if="fileFilter !== 'commits'">
+            <el-empty v-if="filteredFiles.length === 0" description="没有可审查的文件" />
+            <el-checkbox-group
+              v-else
+              v-model="selectedFiles"
             >
-              <el-checkbox
-                :value="file.path"
-                @change="toggleFileSelection(file.path)"
+              <div
+                v-for="file in filteredFiles"
+                :key="file.path"
+                class="file-item"
+                :class="{ selected: isFileSelected(file.path) }"
               >
-                <div class="file-info">
-                  <div class="file-path">
-                    <el-icon>
-                      <Document />
-                    </el-icon>
-                    {{ file.path }}
+                <el-checkbox
+                  :value="file.path"
+                  @change="toggleFileSelection(file.path)"
+                >
+                  <div class="file-info">
+                    <div class="file-path">
+                      <el-icon>
+                        <Document />
+                      </el-icon>
+                      {{ file.path }}
+                    </div>
+                    <div class="file-meta">
+                      <el-tag size="small" :type="getFileStatusType(file.status)">
+                        {{ getFileStatusText(file.status) }}
+                      </el-tag>
+                      <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                    </div>
                   </div>
-                  <div class="file-meta">
-                    <el-tag size="small" :type="getFileStatusType(file.status)">
-                      {{ getFileStatusText(file.status) }}
-                    </el-tag>
-                    <span class="file-size">{{ formatFileSize(file.size) }}</span>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+          </template>
+
+          <!-- 提交记录列表 -->
+          <template v-else>
+            <el-empty v-if="commitHistory.length === 0" description="没有提交记录" />
+            <el-checkbox-group
+              v-else
+              v-model="selectedCommits"
+            >
+              <div
+                v-for="commit in commitHistory"
+                :key="commit.hash"
+                class="commit-item"
+                :class="{ selected: selectedCommits.includes(commit.hash) }"
+              >
+                <el-checkbox
+                  :value="commit.hash"
+                  @change="toggleCommitSelection(commit.hash)"
+                >
+                  <div class="commit-info">
+                    <div class="commit-header">
+                      <el-icon><Timer /></el-icon>
+                      <span class="commit-message">{{ commit.message }}</span>
+                    </div>
+                    <div class="commit-meta">
+                      <el-tag size="small" type="info">{{ commit.hash.substring(0, 8) }}</el-tag>
+                      <span class="commit-author">{{ commit.author }}</span>
+                      <span class="commit-date">{{ formatDate(commit.date) }}</span>
+                    </div>
                   </div>
-                </div>
-              </el-checkbox>
-            </div>
-          </el-checkbox-group>
+                </el-checkbox>
+              </div>
+            </el-checkbox-group>
+          </template>
         </div>
 
         <!-- 选择提示 -->
@@ -318,18 +355,20 @@ interface Props {
   currentRepo?: string | null;
   gitStatus?: GitStatus | null;
   availableFiles?: ReviewFile[];
+  commitHistory?: any[];
 }
 
 const props = withDefaults(defineProps<Props>(), {
   currentRepo: null,
   gitStatus: null,
-  availableFiles: () => []
+  availableFiles: () => [],
+  commitHistory: () => []
 });
 
 // 响应式数据
 const showReviewDialog = ref(false);
 const showHistoryDialog = ref(false);
-const fileFilter = ref<'staged' | 'modified' | 'all'>('staged');
+const fileFilter = ref<'staged' | 'modified' | 'all' | 'commits'>('staged');
 const reviewForm = ref({
   depth: 'STANDARD' as ReviewDepth,
   provider: 'openai',
@@ -337,6 +376,7 @@ const reviewForm = ref({
   customPrompt: '',
   streaming: true
 });
+const selectedCommits = ref<string[]>([]);
 
 // Composables
 const {
@@ -427,12 +467,24 @@ const handleStartReview = async () => {
       }
     };
 
-    const review = await startReview(
-      selectedFiles.value,
-      reviewForm.value.depth,
-      config as any,
-      props.gitStatus?.branch
-    );
+    let review;
+
+    if (fileFilter.value === 'commits') {
+      // 提交记录审查
+      console.log('[CodeReviewPanel] 开始审查提交:', selectedCommits.value);
+      // TODO: 实现提交记录审查逻辑
+      // 需要后端支持 get_commit_diff 和 analyze_commits 功能
+      ElMessage.info('提交记录审查功能开发中...');
+      return;
+    } else {
+      // 文件审查
+      review = await startReview(
+        selectedFiles.value,
+        reviewForm.value.depth,
+        config as any,
+        props.gitStatus?.branch
+      );
+    }
 
     ElMessage.success('审查完成！');
     showReviewDialog.value = true;
@@ -508,6 +560,44 @@ const formatFileSize = (bytes: number): string => {
 
 const formatDate = (timestamp: string): string => {
   return new Date(timestamp).toLocaleString();
+};
+
+// 切换提交选择
+const toggleCommitSelection = (commitHash: string) => {
+  const index = selectedCommits.value.indexOf(commitHash);
+  if (index >= 0) {
+    selectedCommits.value.splice(index, 1);
+  } else {
+    selectedCommits.value.push(commitHash);
+  }
+  console.log('[CodeReviewPanel] 选中的提交:', selectedCommits.value);
+};
+
+// 验证选择
+const validateSelection = (): { valid: boolean; message?: string } => {
+  if (fileFilter.value === 'commits') {
+    // 验证提交记录选择
+    if (selectedCommits.value.length === 0) {
+      return { valid: false, message: '请选择至少一个提交进行审查' };
+    }
+
+    if (selectedCommits.value.length > 10) {
+      return { valid: false, message: '一次最多只能审查 10 个提交' };
+    }
+
+    return { valid: true };
+  } else {
+    // 验证文件选择
+    if (selectedFiles.value.length === 0) {
+      return { valid: false, message: '请选择至少一个文件进行审查' };
+    }
+
+    if (selectedFiles.value.length > 20) {
+      return { valid: false, message: '一次最多只能审查 20 个文件' };
+    }
+
+    return { valid: true };
+  }
 };
 
 const getStatusType = (status: string): 'success' | 'warning' | 'danger' | 'info' => {
@@ -645,6 +735,56 @@ onMounted(() => {
   gap: 12px;
   font-size: 12px;
   color: #666;
+}
+
+/* 提交记录样式 */
+.commit-item {
+  padding: 8px 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.commit-item:last-child {
+  border-bottom: none;
+}
+
+.commit-item.selected {
+  background-color: #f0f8ff;
+}
+
+.commit-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.commit-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.commit-message {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commit-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: #666;
+}
+
+.commit-author {
+  font-weight: 500;
+}
+
+.commit-date {
+  color: #999;
 }
 
 .selection-warning {
