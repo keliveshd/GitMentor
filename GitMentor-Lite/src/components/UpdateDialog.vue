@@ -403,6 +403,9 @@ const formatBytes = (bytes: number) => {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
 }
 
+// 下载进度监听器
+const unlisten = ref<null | (() => void)>(null)
+
 // 监听 visible 属性变化
 watch(() => props.visible, async (newVisible, oldVisible) => {
   console.log('🔄 [UpdateDialog] visible 属性变化:', { oldVisible, newVisible })
@@ -423,20 +426,23 @@ onMounted(async () => {
     console.log('🔄 [UpdateDialog] 对话框不可见，跳过检查更新')
   }
 
-  // 监听下载进度事件
+  // 设置下载进度监听器
   console.log('🔄 [UpdateDialog] 设置下载进度监听器')
-  const unlisten = await listen('download-progress', (event: any) => {
+  unlisten.value = await listen('download-progress', (event: any) => {
     const { downloaded, total, percentage } = event.payload
     console.log('📥 [UpdateDialog] 下载进度:', { downloaded, total, percentage })
     downloadedBytes.value = downloaded
     totalBytes.value = total
     downloadProgress.value = percentage
   })
+})
 
-  onUnmounted(() => {
-    console.log('🔄 [UpdateDialog] 组件卸载，清理监听器')
-    unlisten()
-  })
+onUnmounted(() => {
+  console.log('🔄 [UpdateDialog] 组件卸载，清理监听器')
+  if (unlisten.value) {
+    unlisten.value()
+    unlisten.value = null
+  }
 })
 </script>
 

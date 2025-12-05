@@ -149,7 +149,7 @@
                   {{ formatDuration(review.duration) }}
                 </span>
                 <span class="meta-item">
-                  <el-icon><Branch /></el-icon>
+                  <el-icon><Collection /></el-icon>
                   {{ review.branch }}
                 </span>
               </div>
@@ -232,7 +232,7 @@ import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Search, Refresh, Download, Delete, View,
-  Document, Timer, Files, Clock, Branch, ArrowUp, ArrowDown
+  Document, Timer, Files, Clock, Collection, ArrowUp, ArrowDown
 } from '@element-plus/icons-vue';
 import { useCodeReview } from '../../composables/useCodeReview';
 import type { ReviewRecord, ReviewType, ReviewStatus } from '../../types/review';

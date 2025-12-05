@@ -93,6 +93,12 @@ export function useCodeReview() {
       });
       reviewHistory.value = result;
     } catch (err: any) {
+      // 如果没有打开仓库，静默失败（不显示错误）
+      if (err.message && err.message.includes('No repository opened')) {
+        console.log('[useCodeReview] 没有打开仓库，跳过加载历史记录');
+        reviewHistory.value = { items: [], total: 0, page: 1, pageSize: 20 };
+        return;
+      }
       error.value = err.message || '获取历史记录失败';
       throw new Error(error.value);
     } finally {

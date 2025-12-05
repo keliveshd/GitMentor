@@ -37,7 +37,7 @@
           </div>
           <div class="repo-stats" v-if="gitStatus">
             <el-tag type="info">
-              <el-icon><Branch /></el-icon>
+              <el-icon><Collection /></el-icon>
               {{ gitStatus.branch }}
             </el-tag>
             <el-tag v-if="gitStatus.ahead > 0" type="success">
@@ -301,7 +301,7 @@ import { ref, computed, onMounted } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import {
   Document, Files, Clock, Setting, MagicStick,
-  FolderOpened, Branch, Timer
+  FolderOpened, Collection, Timer
 } from '@element-plus/icons-vue';
 import { useCodeReview } from '../../composables/useCodeReview';
 import type {
