@@ -84,7 +84,7 @@
         </div>
 
         <!-- 文件列表 -->
-        <div class="file-list" v-loading="loadingFiles">
+        <div class="file-list">
           <el-empty v-if="filteredFiles.length === 0" description="没有可审查的文件" />
           <el-checkbox-group
             v-else
