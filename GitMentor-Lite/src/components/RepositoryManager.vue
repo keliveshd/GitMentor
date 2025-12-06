@@ -314,11 +314,13 @@ const loadRemoteConfiguration = async () => {
     const config = await invoke<RemoteConfiguration>('get_remote_configuration')
     remoteConfig.value = config
   } catch (error: any) {
-    console.error('Load remote configuration failed', error)
+    // 静默处理所有错误，避免在未打开仓库时显示错误信息
     const message = String(error)
     if (!message.includes('No repository opened')) {
+      console.warn('Load remote configuration failed:', error)
       toast.error(message, '加载远程仓库失败')
     } else {
+      // 没有仓库时静默处理
       remoteConfig.value = null
     }
   } finally {

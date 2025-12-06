@@ -1022,18 +1022,20 @@ const fetchGitflowBranches = async () => {
       }
     }
   } catch (err) {
-    console.error('[Gitflow] fetch failed', err)
     const message = (err as Error).message || '无法获取 Gitflow 分支信息'
     if (message.includes('No repository opened')) {
-      error.value = '��������Ϣ����ҳѡ���򿪲ֿ�'
+      // 静默处理没有仓库的错误，避免在初始化时显示错误信息
+      console.log('[Gitflow] 没有打开仓库，跳过加载 Gitflow 分支')
       gitflowBranches.value = []
       usingSampleData.value = false
       gitflowConfig.value = null
       hasOriginRemote.value = true
+      error.value = null  // 清除错误状态
       if (ENABLE_GITFLOW_SAMPLE_DATA) {
         applySampleData()
       }
     } else {
+      console.warn('[Gitflow] fetch failed:', err)
       error.value = message
       if (!gitflowBranches.value.length) {
         usingSampleData.value = false
