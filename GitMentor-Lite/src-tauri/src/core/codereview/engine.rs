@@ -7,16 +7,16 @@
 
 use anyhow::{Result, Context, anyhow};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use crate::core::ai_manager::AIManager;
+use crate::core::ai_provider::{AIRequest, ChatMessage};
 use crate::types::codereview::{
     ReviewRecord, ReviewFile, ReviewConfig, ReviewType, ReviewScope,
     ReviewStatus, ReviewDepth, AIReviewResult, CodeIssue, ReviewResults,
-    ReviewFilters, PaginationOptions, PaginatedResult, ReviewError,
-    ReviewErrorInfo
+    ReviewFilters, PaginationOptions, PaginatedResult
 };
 
 use super::storage::ReviewStorage;
@@ -103,28 +103,26 @@ impl CodeReviewEngine {
         let prompt = self.build_prompt(&review_files, depth, &config)
             .context("构建提示词失败")?;
 
-        // 调用 AI 分析
+        // 调用 AI 管理器进行代码审查
         let ai_manager = self.ai_manager.read().await;
-        let ai_config = crate::core::ai_config::AIConfig {
-            provider: config.ai.provider.clone(),
+        let request = AIRequest {
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: prompt,
+            }],
             model: config.ai.model.clone(),
-            base_url: None,
-            api_key: None,
-            max_tokens: config.ai.max_tokens,
-            temperature: config.ai.temperature,
-            stream: config.ai.streaming,
-            timeout: config.ai.timeout,
-            retries: config.ai.retries,
+            temperature: Some(config.ai.temperature as f32),
+            max_tokens: Some(config.ai.max_tokens),
+            stream: Some(config.ai.streaming),
         };
-
-        let ai_response = ai_manager.generate_response(prompt, ai_config)
+        let ai_response = ai_manager.generate_commit_message(request)
             .await
             .context("AI 审查失败")?;
 
         let duration = start_time.elapsed();
 
         // 解析 AI 响应
-        let ai_result = self.parse_ai_response(ai_response, &review_files)
+        let ai_result = self.parse_ai_response(ai_response.content, &review_files)
             .context("解析 AI 响应失败")?;
 
         // 创建审查记录
@@ -152,7 +150,7 @@ impl CodeReviewEngine {
 
         // 保存审查记录
         {
-            let mut storage = self.storage.write().await;
+            let storage = self.storage.write().await;
             storage.save_review(&review).await
                 .context("保存审查记录失败")?;
         }
@@ -403,22 +401,46 @@ impl CodeReviewEngine {
 
             match issue.issue_type {
                 crate::types::codereview::IssueType::CodeSmell => {
-                    *type_counts.code_smell.get_or_insert(0) += 1
+                    if let Some(count) = type_counts.code_smell.as_mut() {
+                        *count += 1;
+                    } else {
+                        type_counts.code_smell = Some(1);
+                    }
                 }
                 crate::types::codereview::IssueType::Performance => {
-                    *type_counts.performance.get_or_insert(0) += 1
+                    if let Some(count) = type_counts.performance.as_mut() {
+                        *count += 1;
+                    } else {
+                        type_counts.performance = Some(1);
+                    }
                 }
                 crate::types::codereview::IssueType::Security => {
-                    *type_counts.security.get_or_insert(0) += 1
+                    if let Some(count) = type_counts.security.as_mut() {
+                        *count += 1;
+                    } else {
+                        type_counts.security = Some(1);
+                    }
                 }
                 crate::types::codereview::IssueType::Bug => {
-                    *type_counts.bug.get_or_insert(0) += 1
+                    if let Some(count) = type_counts.bug.as_mut() {
+                        *count += 1;
+                    } else {
+                        type_counts.bug = Some(1);
+                    }
                 }
                 crate::types::codereview::IssueType::Style => {
-                    *type_counts.style.get_or_insert(0) += 1
+                    if let Some(count) = type_counts.style.as_mut() {
+                        *count += 1;
+                    } else {
+                        type_counts.style = Some(1);
+                    }
                 }
                 crate::types::codereview::IssueType::Error => {
-                    *type_counts.error.get_or_insert(0) += 1
+                    if let Some(count) = type_counts.error.as_mut() {
+                        *count += 1;
+                    } else {
+                        type_counts.error = Some(1);
+                    }
                 }
                 _ => {}
             }
@@ -471,13 +493,13 @@ impl CodeReviewEngine {
         let total_reviews = reviews.len() as u32;
         let total_files = reviews.iter().map(|r| r.files.len()).sum::<usize>() as u32;
         let total_issues = reviews.iter()
-            .flat_map(|r| r.results.ai.as_ref().map(|ai| ai.issues.len()).unwrap_or(0))
+            .map(|r| r.results.ai.as_ref().map(|ai| ai.issues.len()).unwrap_or(0))
             .sum::<usize>() as u32;
 
         use crate::types::codereview::{IssuesBySeverity, IssuesByType, TokenUsage};
 
         let mut severity_counts = IssuesBySeverity::default();
-        let mut type_counts = IssuesByType::default();
+        let type_counts = IssuesByType::default();
         let mut by_provider = std::collections::HashMap::new();
         let mut by_model = std::collections::HashMap::new();
         let mut total_tokens = 0u32;
