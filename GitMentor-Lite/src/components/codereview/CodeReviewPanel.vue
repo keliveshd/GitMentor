@@ -77,10 +77,10 @@
         <!-- 筛选标签 -->
         <div class="file-filter-tabs">
           <el-radio-group v-model="fileFilter" size="small">
-            <el-radio-button label="staged">暂存文件 ({{ stagedFiles.length }})</el-radio-button>
-            <el-radio-button label="modified">修改文件 ({{ modifiedFiles.length }})</el-radio-button>
-            <el-radio-button label="commits">提交记录 ({{ commitHistory.length }})</el-radio-button>
-            <el-radio-button label="all">所有文件</el-radio-button>
+            <el-radio-button value="staged">暂存文件 ({{ stagedFiles.length }})</el-radio-button>
+            <el-radio-button value="modified">修改文件 ({{ modifiedFiles.length }})</el-radio-button>
+            <el-radio-button value="commits">提交记录 ({{ commitHistory.length }})</el-radio-button>
+            <el-radio-button value="all">所有文件</el-radio-button>
           </el-radio-group>
         </div>
 

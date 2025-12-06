@@ -50,6 +50,7 @@ use commands::{
 };
 use core::{
     ai_manager::AIManager,
+    codereview::{CodeReviewEngine, storage::ReviewStorage},
     git_config::GitConfigManager,
     git_engine::GitEngine,
     llm_client::{LLMClient, LLMConfig},
@@ -380,6 +381,7 @@ pub fn run() {
         .manage(llm_client)
         .manage(ai_manager)
         .manage(code_review_storage.clone())
+        .manage(CodeReviewEngine::new(ai_manager.clone(), code_review_storage.clone()))
         .invoke_handler(tauri::generate_handler![
             greet,
             git_commands::select_repository,

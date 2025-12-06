@@ -41,10 +41,13 @@ const loadCommitHistory = async (limit: number = 50) => {
 
 onMounted(async () => {
   try {
-    // 获取当前仓库信息
-    currentRepo.value = await invoke('get_current_repository');
+    // 注意：get_current_repository 命令未实现，暂不使用
+    // 后续可以从 GitPanel 或全局状态获取当前仓库
 
-    // 获取 Git 状态
+    // 暂时设置为空，等待用户手动选择仓库
+    currentRepo.value = null;
+
+    // 尝试获取 Git 状态（如果已有仓库）
     if (currentRepo.value) {
       gitStatus.value = await invoke('get_repository_status', {
         repoPath: currentRepo.value
@@ -65,6 +68,11 @@ onMounted(async () => {
 
       // 预加载提交历史
       await loadCommitHistory(20);
+    } else {
+      // 没有仓库时显示空状态
+      gitStatus.value = null;
+      availableFiles.value = [];
+      commitHistory.value = [];
     }
   } catch (error) {
     console.error('获取代码审查页面数据失败:', error);
