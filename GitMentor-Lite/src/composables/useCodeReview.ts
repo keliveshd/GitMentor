@@ -93,14 +93,17 @@ export function useCodeReview() {
       });
       reviewHistory.value = result;
     } catch (err: any) {
-      // 如果没有打开仓库，静默失败（不显示错误）
+      // 如果没有打开仓库，静默处理（这是正常情况）
       if (err.message && err.message.includes('No repository opened')) {
         console.log('[useCodeReview] 没有打开仓库，跳过加载历史记录');
-        reviewHistory.value = { items: [], total: 0, page: 1, pageSize: 20 };
-        return;
+        reviewHistory.value = { data: [], total: 0, page: 1, pageSize: 20 };
+        error.value = null; // 不设置错误状态
+      } else {
+        // 其他错误记录但不抛出，避免中断用户操作
+        console.warn('[useCodeReview] 加载历史记录失败:', err.message || err);
+        error.value = null; // 不显示错误，避免干扰用户
+        reviewHistory.value = { data: [], total: 0, page: 1, pageSize: 20 };
       }
-      error.value = err.message || '获取历史记录失败';
-      throw new Error(error.value);
     } finally {
       loading.value = false;
     }
@@ -346,17 +349,34 @@ export function useCodeReview() {
 
   /**
    * 验证文件选择
+   * @param mode 审查模式：'files' | 'commits'
+   * @param selectedCommits 可选的已选择提交列表
    */
-  const validateSelection = (): { valid: boolean; message?: string } => {
-    if (selectedFiles.value.length === 0) {
-      return { valid: false, message: '请选择至少一个文件进行审查' };
-    }
+  const validateSelection = (mode: 'files' | 'commits' = 'files', selectedCommits?: string[]): { valid: boolean; message?: string } => {
+    if (mode === 'commits') {
+      // 验证提交记录选择
+      const commits = selectedCommits || [];
+      if (commits.length === 0) {
+        return { valid: false, message: '请选择至少一个提交进行审查' };
+      }
 
-    if (selectedFiles.value.length > 20) {
-      return { valid: false, message: '一次最多只能审查 20 个文件' };
-    }
+      if (commits.length > 10) {
+        return { valid: false, message: '一次最多只能审查 10 个提交' };
+      }
 
-    return { valid: true };
+      return { valid: true };
+    } else {
+      // 验证文件选择
+      if (selectedFiles.value.length === 0) {
+        return { valid: false, message: '请选择至少一个文件进行审查' };
+      }
+
+      if (selectedFiles.value.length > 20) {
+        return { valid: false, message: '一次最多只能审查 20 个文件' };
+      }
+
+      return { valid: true };
+    }
   };
 
   /**
@@ -371,7 +391,10 @@ export function useCodeReview() {
 
   // 计算属性
   const hasCurrentReview = computed(() => currentReview.value !== null);
-  const hasHistory = computed(() => reviewHistory.value && reviewHistory.value.data.length > 0);
+  const hasHistory = computed(() => {
+    const history = reviewHistory.value;
+    return history && history.data && history.data.length > 0;
+  });
   const hasError = computed(() => error.value !== null);
   const selectedFileCount = computed(() => selectedFiles.value.length);
 

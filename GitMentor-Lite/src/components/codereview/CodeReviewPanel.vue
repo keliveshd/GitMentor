@@ -10,7 +10,7 @@
         <el-button
           type="primary"
           :loading="loading"
-          :disabled="(fileFilter === 'commits' && selectedCommits.length === 0) || (fileFilter !== 'commits' && selectedFiles.length === 0)"
+          :disabled="!selectionValidation.valid"
           @click="handleStartReview"
         >
           <el-icon><MagicStick /></el-icon>
@@ -157,9 +157,9 @@
         </div>
 
         <!-- 选择提示 -->
-        <div v-if="!validateSelection().valid" class="selection-warning">
+        <div v-if="!selectionValidation.valid" class="selection-warning">
           <el-alert
-            :title="validateSelection().message"
+            :title="selectionValidation.message"
             type="warning"
             :closable="false"
           />
@@ -448,9 +448,16 @@ const recentReviews = computed(() => {
   return reviewHistory.value.data.slice(0, 5);
 });
 
+// 验证选择结果
+const selectionValidation = computed(() => {
+  const mode = fileFilter.value === 'commits' ? 'commits' : 'files';
+  const commits = fileFilter.value === 'commits' ? selectedCommits.value : undefined;
+  return validateSelection(mode, commits);
+});
+
 // 方法
 const handleStartReview = async () => {
-  const validation = validateSelection();
+  const validation = selectionValidation.value;
   if (!validation.valid) {
     ElMessage.warning(validation.message);
     return;
@@ -571,33 +578,6 @@ const toggleCommitSelection = (commitHash: string) => {
     selectedCommits.value.push(commitHash);
   }
   console.log('[CodeReviewPanel] 选中的提交:', selectedCommits.value);
-};
-
-// 验证选择
-const validateSelection = (): { valid: boolean; message?: string } => {
-  if (fileFilter.value === 'commits') {
-    // 验证提交记录选择
-    if (selectedCommits.value.length === 0) {
-      return { valid: false, message: '请选择至少一个提交进行审查' };
-    }
-
-    if (selectedCommits.value.length > 10) {
-      return { valid: false, message: '一次最多只能审查 10 个提交' };
-    }
-
-    return { valid: true };
-  } else {
-    // 验证文件选择
-    if (selectedFiles.value.length === 0) {
-      return { valid: false, message: '请选择至少一个文件进行审查' };
-    }
-
-    if (selectedFiles.value.length > 20) {
-      return { valid: false, message: '一次最多只能审查 20 个文件' };
-    }
-
-    return { valid: true };
-  }
 };
 
 const getStatusType = (status: string): 'success' | 'warning' | 'danger' | 'info' => {
