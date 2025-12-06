@@ -390,6 +390,12 @@
         <GitflowDashboard />
       </div>
 
+      <!-- 代码审查Tab页 -->
+      <!-- Author: Evilek, Date: 2025-12-04 -->
+      <div v-show="activeTab === 'code-review'" class="tab-pane code-review-pane">
+        <CodeReviewPage />
+      </div>
+
       <div v-show="activeTab === 'daily-report'" class="tab-pane">
       <div class="daily-report-container">
         <!-- 步骤指示器 -->
@@ -901,6 +907,7 @@ import DebugSettings from './DebugSettings.vue'
 import UpdateDialog from './UpdateDialog.vue'
 import AboutDialog from './AboutDialog.vue'
 import RepositoryManager from './RepositoryManager.vue'
+import CodeReviewPage from '../pages/CodeReviewPage.vue'
 import WindowManager from '../utils/WindowManager'
 import { RecentReposManager, type RecentRepo } from '../utils/RecentRepos'
 import { useToast, setToastInstance } from '../composables/useToast'
@@ -1002,6 +1009,11 @@ const tabs = ref([
     id: 'message-generation',
     name: '消息生成',
     icon: '💬'
+  },
+  {
+    id: 'code-review',
+    name: '代码审查',
+    icon: '🔍'
   },
   {
     id: 'repository-management',
@@ -1223,10 +1235,15 @@ const refreshGitStatus = async (force = false) => {
       gitStatus.value = status
       lastRefreshTime = Date.now()
     } catch (error) {
-      console.error('Failed to get git status:', error)
-      // 如果没有仓库打开，不显示错误提示
-      if (currentRepoPath.value) {
-        toast.error(`获取Git状态失败: ${error}`, '状态更新失败')
+      // 静默处理错误，避免在未打开仓库时显示错误信息
+      const errorMessage = String(error)
+      if (!errorMessage.includes('No repository opened')) {
+        console.warn('Failed to get git status:', error)
+        if (currentRepoPath.value) {
+          toast.error(`获取Git状态失败: ${error}`, '状态更新失败')
+        }
+      } else {
+        console.log('[GitPanel] 没有打开仓库，跳过刷新 git 状态')
       }
       gitStatus.value = null
     } finally {
@@ -1252,10 +1269,15 @@ const refreshHistory = async () => {
       const history = await invoke('get_commit_history', { limit: 10 }) as any[]
       commitHistory.value = history
     } catch (error) {
-      console.error('Failed to get commit history:', error)
-      // 如果没有仓库打开，不显示错误提示
-      if (currentRepoPath.value) {
-        toast.error(`获取提交历史失败: ${error}`, '历史加载失败')
+      // 静默处理错误，避免在未打开仓库时显示错误信息
+      const errorMessage = String(error)
+      if (!errorMessage.includes('No repository opened')) {
+        console.warn('Failed to get commit history:', error)
+        if (currentRepoPath.value) {
+          toast.error(`获取提交历史失败: ${error}`, '历史加载失败')
+        }
+      } else {
+        console.log('[GitPanel] 没有打开仓库，跳过加载提交历史')
       }
       commitHistory.value = []
     } finally {
